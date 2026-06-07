@@ -1,18 +1,21 @@
 name: Frontend Preview
-
 on:
-  pull_request:
+  push:
     branches: [main]
   workflow_dispatch:
-
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 jobs:
-  preview-artifact:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-artifact@v4
+      - run: mkdir public && cp -r frontend/* public/ && mkdir -p public/config && cp config/A2.json public/config/A2.json
+      - uses: actions/upload-pages-artifact@v3
         with:
-          name: audio-studio-frontend-preview
-          path: |
-            frontend
-            config/A2.json
+          path: public
+  deploy:
+    needs: build
+    runs
