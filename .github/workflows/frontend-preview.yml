@@ -1,4 +1,4 @@
-name: Frontend Preview
+name: Pages
 on:
   push:
     branches: [main]
@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir public && cp -r frontend/* public/ && mkdir -p public/config && cp config/A2.json public/config/A2.json
+      - run: mkdir p && cp -r frontend/* p/ && mkdir p/config && cp config/A2.json p/config/A2.json
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: p
   deploy:
     needs: build
-    runs
+    runs-on:
