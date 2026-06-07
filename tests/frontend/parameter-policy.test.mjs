@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { convertPipeline } from '../../frontend/assets/js/configParser.js';
+const cfg = JSON.parse(fs.readFileSync(new URL('../../config/A2.json', import.meta.url), 'utf8'));
+const graph = convertPipeline(cfg, 'PLAY_MAIN');
+const drc = graph.nodes.find(n => n.id === 'DRC');
+assert.ok(drc.moduleType.static_schema.fields.some(f => f.key === 'knee'));
+assert.ok(drc.moduleType.runtime_params.some(p => p.param_id === 'threshold_db'));
+const vol = graph.nodes.find(n => n.id === 'VOL');
+assert.equal(vol.moduleType.runtime_params.find(p => p.param_id === 'mute').value_type, 'bool');
+assert.equal(vol.moduleType.runtime_params.find(p => p.param_id === 'vol_db').range.min, -90);
+console.log('parameter-policy.test passed');

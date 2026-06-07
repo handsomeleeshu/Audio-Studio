@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { convertPipeline } from '../../frontend/assets/js/configParser.js';
+import { autoLayout, checkMinDistance, getPortPosition, edgePath, MIN_X_DISTANCE } from '../../frontend/assets/js/layout.js';
+const cfg = JSON.parse(fs.readFileSync(new URL('../../config/A2.json', import.meta.url), 'utf8'));
+const graph = convertPipeline(cfg, 'PLAY_MAIN');
+autoLayout(graph.nodes, graph.edges);
+assert.ok(checkMinDistance(graph.nodes), 'auto layout must keep minimum distance');
+const edge = graph.edges[0];
+const from = graph.nodes.find(n => n.id === edge.from.nodeId);
+const to = graph.nodes.find(n => n.id === edge.to.nodeId);
+const p1 = getPortPosition(from, 'output', edge.from.portName);
+const p2 = getPortPosition(to, 'input', edge.to.portName);
+assert.ok(p2.x - p1.x >= MIN_X_DISTANCE - 260 || p2.x > p1.x, 'edge should have valid geometry');
+assert.ok(edgePath(p1, p2).startsWith('M '));
+console.log('layout.test passed');
