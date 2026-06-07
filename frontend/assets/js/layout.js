@@ -124,20 +124,19 @@ export function getPortPosition(node, direction, portName) {
   return { x, y };
 }
 
-// Robust routing for near nodes. The earlier pure Bezier path could collapse
-// visually when output and input ports were too close or crossed. This mirrors
-// the uploaded HTML demo: Bezier for normal left-to-right edges, elbow route
-// for short or reverse edges so the wire is always visible and connected.
+// Robust routing for close/reverse nodes. Normal left-to-right connections use
+// Bezier; close or reverse connections use elbow segments so the line cannot
+// collapse into a hidden short curve.
 export function edgePath(fromPos, toPos) {
-  const sx = fromPos.x;
-  const sy = fromPos.y;
-  const tx = toPos.x;
-  const ty = toPos.y;
+  const sx = Math.round(fromPos.x);
+  const sy = Math.round(fromPos.y);
+  const tx = Math.round(toPos.x);
+  const ty = Math.round(toPos.y);
   const dx = tx - sx;
 
   if (dx > 70) {
     const gap = Math.min(130, Math.max(36, dx * 0.45));
-    return `M ${sx} ${sy} C ${sx + gap} ${sy}, ${tx - gap} ${ty}, ${tx} ${ty}`;
+    return `M ${sx} ${sy} C ${Math.round(sx + gap)} ${sy}, ${Math.round(tx - gap)} ${ty}, ${tx} ${ty}`;
   }
 
   const elbow = sx + Math.max(34, Math.min(80, Math.abs(dx) + 38));

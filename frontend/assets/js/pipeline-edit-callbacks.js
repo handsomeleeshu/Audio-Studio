@@ -68,8 +68,9 @@ function handleTool(key) {
     sendTool(key, { applied: clickZoomFit() });
     return;
   }
-  if (key === 'arrange') {
-    sendTool(key, { forwarded_to: 'Topbar.AutoArrange', applied: clickTopbarButton('Auto Arrange') });
+  if (key === 'undo') {
+    window.dispatchEvent(new CustomEvent('audio-studio-undo'));
+    sendTool(key, { dispatched: 'audio-studio-undo' });
     return;
   }
   if (key === 'delete') {
@@ -96,6 +97,14 @@ function createToolbox() {
   return box;
 }
 
+function updateUndoButton() {
+  const button = document.querySelector('.pipeline-tool[data-tool="undo"]');
+  if (!button) return;
+  const ready = document.body.dataset.audioStudioCanUndo === 'true';
+  button.classList.toggle('undo-ready', ready);
+  button.disabled = !ready;
+}
+
 function ensureToolbox() {
   const viewport = document.querySelector('.canvas-viewport');
   if (!viewport) return false;
@@ -106,6 +115,7 @@ function ensureToolbox() {
     box = createToolbox();
     viewport.appendChild(box);
   }
+  updateUndoButton();
   return true;
 }
 
@@ -130,7 +140,7 @@ function observePipeline() {
     lastSummary = next;
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-audio-studio-can-undo'] });
 }
 
 function boot() {

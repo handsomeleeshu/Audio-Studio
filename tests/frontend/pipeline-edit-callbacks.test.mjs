@@ -7,9 +7,9 @@ import {
   toolKeys,
 } from '../../frontend/assets/js/pipelineEditCallbackModel.js';
 
-assert.deepEqual(toolKeys(), ['select', 'pan', 'fit', 'arrange', 'delete']);
-assert.equal(getToolItem('arrange').backend, true);
-assert.equal(getToolItem('select').backend, false);
+assert.deepEqual(toolKeys(), ['select', 'pan', 'fit', 'undo', 'delete']);
+assert.equal(getToolItem('undo').backend, false);
+assert.equal(getToolItem('delete').backend, true);
 assert.equal(getToolItem('missing'), null);
 
 const fakeDoc = {

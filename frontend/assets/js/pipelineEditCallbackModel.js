@@ -2,7 +2,7 @@ export const PIPELINE_TOOL_ITEMS = [
   { key: 'select', icon: '⌖', label: 'Select / edit nodes', backend: false },
   { key: 'pan', icon: '✋', label: 'Pan canvas mode', backend: false },
   { key: 'fit', icon: '⌕', label: 'Fit pipeline view', backend: false },
-  { key: 'arrange', icon: '↺', label: 'Auto arrange pipeline', backend: true },
+  { key: 'undo', icon: '↺', label: 'Undo last pipeline edit', backend: false },
   { key: 'delete', icon: '🗑', label: 'Delete selected node or connection', backend: true },
 ];
 

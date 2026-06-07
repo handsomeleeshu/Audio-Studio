@@ -52,14 +52,7 @@ public:
   virtual std::string run(const std::string& session_id) = 0;
   virtual std::string stop(const std::string& session_id) = 0;
   virtual std::string telemetry(const std::vector<std::string>& node_ids) = 0;
-
-  // Integration hook: graph changes from the frontend editor.
-  // Real DSP integration should update the project graph, invalidate runtime
-  // resources, and schedule validation/rebuild as needed.
   virtual std::string pipelineEditEvent(const std::string& request_json) = 0;
-
-  // Integration hook: canvas tools such as fit/select/pan/auto-arrange/delete.
-  // Most are frontend-only today, but the backend can observe or override policy.
   virtual std::string pipelineToolAction(const std::string& request_json) = 0;
 };
 

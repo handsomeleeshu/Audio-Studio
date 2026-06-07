@@ -31,10 +31,8 @@ int MockRuntimeEngine::rndi(int min, int max) {
 }
 
 std::string MockRuntimeEngine::validatePipeline(const std::string& pipeline_json) {
-  printIntegrationTodo(
-      "IRuntimeEngine::validatePipeline",
-      pipeline_json,
-      "Check graph validity: module existence, port format/channel compatibility, one-output-to-one-input policy, static/runtime parameter policy, and target DSP resource budget.");
+  printIntegrationTodo("IRuntimeEngine::validatePipeline", pipeline_json,
+    "Validate nodes/ports/channel format/one-output-to-one-input policy/static-runtime policy and DSP budget.");
   const bool has_nodes = pipeline_json.find("nodes") != std::string::npos;
   const bool has_edges = pipeline_json.find("edges") != std::string::npos;
   std::ostringstream os;
@@ -47,46 +45,36 @@ std::string MockRuntimeEngine::validatePipeline(const std::string& pipeline_json
 }
 
 std::string MockRuntimeEngine::buildPipeline(const std::string& pipeline_json) {
-  printIntegrationTodo(
-      "IRuntimeEngine::buildPipeline",
-      pipeline_json,
-      "Compile/build the pipeline for the selected DSP target: allocate buffers, map nodes to DSP cores, generate command/config blobs, and create a runtime session.");
+  printIntegrationTodo("IRuntimeEngine::buildPipeline", pipeline_json,
+    "Compile/build DSP pipeline, allocate buffers, map nodes to cores, generate config blobs and create runtime session.");
   std::ostringstream os;
   os << "{\"ok\":true,\"session_id\":\"sess_" << rndi(1000, 9999) << "\",\"message\":\"Mock DSP runtime configured\",\"core_map\":{}}";
   return os.str();
 }
 
 std::string MockRuntimeEngine::run(const std::string& session_id) {
-  printIntegrationTodo(
-      "IRuntimeEngine::run",
-      session_id,
-      "Start DSP runtime/session, enable DMA/audio I/O, start graph scheduler, and begin telemetry collection.");
+  printIntegrationTodo("IRuntimeEngine::run", session_id,
+    "Start DSP runtime/session, enable audio I/O/DMA, scheduler and telemetry.");
   running_.store(true);
   return "{\"ok\":true,\"running\":true}";
 }
 
 std::string MockRuntimeEngine::stop(const std::string& session_id) {
-  printIntegrationTodo(
-      "IRuntimeEngine::stop",
-      session_id,
-      "Stop DSP runtime/session safely, drain/flush buffers, disable audio I/O, and release runtime resources that are not needed while editing.");
+  printIntegrationTodo("IRuntimeEngine::stop", session_id,
+    "Stop DSP runtime/session safely, drain buffers and release runtime resources.");
   running_.store(false);
   return "{\"ok\":true,\"running\":false}";
 }
 
 std::string MockRuntimeEngine::pipelineEditEvent(const std::string& request_json) {
-  printIntegrationTodo(
-      "IRuntimeEngine::pipelineEditEvent",
-      request_json,
-      "Handle graph edit events such as node_added, node_removed, connection_added, connection_removed, and pipeline_canvas_ready. Real code should update the project graph model and invalidate/rebuild DSP resources.");
+  printIntegrationTodo("IRuntimeEngine::pipelineEditEvent", request_json,
+    "Handle node_added/node_removed/node_moved/connection_added/connection_removed/undo events; update project graph and invalidate/rebuild DSP resources.");
   return "{\"ok\":true,\"callback\":\"IRuntimeEngine::pipelineEditEvent\",\"message\":\"mock edit event accepted\"}";
 }
 
 std::string MockRuntimeEngine::pipelineToolAction(const std::string& request_json) {
-  printIntegrationTodo(
-      "IRuntimeEngine::pipelineToolAction",
-      request_json,
-      "Handle canvas tool actions. Select/pan/fit are frontend-only today; auto-arrange/delete can be used by backend policy, project graph management, or DSP-control integration.");
+  printIntegrationTodo("IRuntimeEngine::pipelineToolAction", request_json,
+    "Observe canvas tool actions. Undo/select/pan/fit are frontend-only; delete can be used by backend policy.");
   return "{\"ok\":true,\"callback\":\"IRuntimeEngine::pipelineToolAction\",\"message\":\"mock tool action accepted\"}";
 }
 
@@ -118,20 +106,16 @@ std::string MockRuntimeEngine::telemetry(const std::vector<std::string>& node_id
 }
 
 std::string MockRuntimeEngine::onNodeAction(const std::string& request_json) {
-  printIntegrationTodo(
-      "INodeController::onNodeAction",
-      request_json,
-      "Handle node-level actions such as select, inspect, enable/disable, reset, bypass, or future algorithm-specific control callbacks.");
+  printIntegrationTodo("INodeController::onNodeAction", request_json,
+    "Handle node select/inspect/bypass/reset/algorithm-specific actions.");
   std::ostringstream os;
   os << "{\"ok\":true,\"callback\":\"INodeController::onNodeAction\",\"mock_value\":" << rnd(0, 1) << "}";
   return os.str();
 }
 
 std::string MockRuntimeEngine::updateParameter(const std::string& request_json) {
-  printIntegrationTodo(
-      "IParameterController::updateParameter",
-      request_json,
-      "Apply runtime parameter updates to a live DSP node. Static parameters should be rejected or deferred while running; dynamic parameters should map to the real algorithm control API.");
+  printIntegrationTodo("IParameterController::updateParameter", request_json,
+    "Apply live runtime parameter update to DSP algorithm control API.");
   return "{\"ok\":true,\"callback\":\"IParameterController::updateParameter\",\"apply\":\"mock_next_frame\"}";
 }
 
