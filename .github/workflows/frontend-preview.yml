@@ -18,4 +18,5 @@ jobs:
           path: p
   deploy:
     needs: build
-    runs-on:
+    runs-on: ubuntu-latest
+    environment:
