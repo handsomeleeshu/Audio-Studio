@@ -66,6 +66,17 @@ std::string contentTypeForPath(const std::string& path) {
   return "application/octet-stream";
 }
 
+static void logApiRequest(const HttpRequest& req) {
+  if (req.path.rfind("/api/", 0) != 0) return;
+  std::cout << "\n[AudioStudio HTTP API] " << req.method << " " << req.path;
+  if (!req.query.empty()) std::cout << "?" << req.query;
+  if (!req.body.empty()) {
+    std::cout << "\n  Body: " << req.body.substr(0, 1200)
+              << (req.body.size() > 1200 ? "...(truncated)" : "");
+  }
+  std::cout << "\n" << std::flush;
+}
+
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller)
@@ -85,8 +96,9 @@ HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::strin
 }
 
 HttpResponse HttpServer::handle(const HttpRequest& req) {
+  logApiRequest(req);
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
-  if (req.method == "GET" && (req.path == "/" || req.path == "/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
+  if (req.method == "GET" && (req.path == "/" || req.path == "/index.html" || req.path == "/frontend/" || req.path == "/frontend/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
   if (req.method == "GET" && req.path.rfind("/assets/", 0) == 0) return serveFile("frontend" + req.path, "");
   if (req.method == "GET" && (req.path == "/config/A2.json" || req.path == "/api/config")) return serveFile("config/A2.json", "application/json; charset=utf-8");
   if (req.method == "GET" && req.path == "/api/telemetry") {
@@ -97,6 +109,7 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/tool") return {200, "application/json", runtime_->pipelineToolAction(req.body)};
+  if (req.method == "POST" && req.path == "/api/project/save") return {200, "application/json", runtime_->pipelineEditEvent(std::string("{\"action\":\"project_save\",\"payload\":") + req.body + "}")};
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
@@ -139,7 +152,7 @@ static bool readRequest(int fd, HttpRequest& req) {
       if (lower == "content-length") content_length = static_cast<size_t>(std::stoul(value));
     }
   }
-  req.body = data.substr(header_end + 4);
+  req.body = header_end == std::string::npos ? "" : data.substr(header_end + 4);
   while (req.body.size() < content_length) {
     n = recv(fd, buf, sizeof(buf), 0);
     if (n <= 0) break;
@@ -171,6 +184,7 @@ int HttpServer::run() {
   if (bind(server_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) throw std::runtime_error("bind failed");
   if (listen(server_fd, 32) < 0) throw std::runtime_error("listen failed");
   std::cout << "Audio Studio server: http://127.0.0.1:" << port_ << std::endl;
+  std::cout << "Open this URL, not python -m http.server, to see backend callback prints." << std::endl;
   while (true) {
     int fd = accept(server_fd, nullptr, nullptr);
     if (fd < 0) continue;

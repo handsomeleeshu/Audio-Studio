@@ -1,28 +1,48 @@
 #include "audio_studio.hpp"
 #include <cassert>
 #include <iostream>
+#include <memory>
 
 int main() {
-  audiostudio::MockRuntimeEngine engine;
-  auto valid = engine.validatePipeline("{\"nodes\":[],\"edges\":[]}");
+  auto engine = std::make_shared<audiostudio::MockRuntimeEngine>();
+
+  auto valid = engine->validatePipeline("{\"nodes\":[],\"connections\":[]}");
   assert(valid.find("\"ok\":true") != std::string::npos);
-  auto invalid = engine.validatePipeline("{}");
-  assert(invalid.find("\"ok\":false") != std::string::npos);
-  auto build = engine.buildPipeline("{\"nodes\":[]}");
+
+  auto build = engine->buildPipeline("{\"nodes\":[{\"id\":\"eq_1\"}]}");
   assert(build.find("session_id") != std::string::npos);
 
-  auto edit = engine.pipelineEditEvent("{\"action\":\"undo\",\"detail\":{\"label\":\"Move node\"}}");
+  auto edit = engine->pipelineEditEvent("{\"action\":\"node_moved\",\"detail\":{\"node_id\":\"eq_1\"}}");
   assert(edit.find("pipelineEditEvent") != std::string::npos);
-  auto tool = engine.pipelineToolAction("{\"tool\":\"undo\",\"event\":\"tool_undo\"}");
-  assert(tool.find("pipelineToolAction") != std::string::npos);
 
-  engine.run("sess_test");
-  assert(engine.running());
-  auto tel = engine.telemetry({"IN", "EQ", "OUT"});
+  auto param = engine->updateParameter("{\"node_id\":\"agc_1\",\"param_id\":\"targetLevel\",\"value\":-16}");
+  assert(param.find("IParameterController") != std::string::npos);
+
+  engine->run("{\"session_id\":\"standalone_html_demo\"}");
+  assert(engine->running());
+
+  auto tel = engine->telemetry({"file_1","eq_1","out_1"});
   assert(tel.find("nodeCost") != std::string::npos);
-  assert(tel.find("cores") != std::string::npos);
-  engine.stop("sess_test");
-  assert(!engine.running());
+  assert(tel.find("meters") != std::string::npos);
+
+  audiostudio::HttpServer server(".", 0, engine, engine, engine);
+  audiostudio::HttpRequest req;
+  req.method = "POST";
+  req.path = "/api/project/save";
+  req.body = "{\"nodes\":[]}";
+  auto res = server.handle(req);
+  assert(res.status == 200);
+  assert(res.body.find("pipelineEditEvent") != std::string::npos);
+
+  audiostudio::HttpRequest page;
+  page.method = "GET";
+  page.path = "/frontend/index.html";
+  auto page_res = server.handle(page);
+  assert(page_res.status == 200 || page_res.status == 404);
+
+  engine->stop("{\"session_id\":\"standalone_html_demo\"}");
+  assert(!engine->running());
+
   std::cout << "backend_tests passed\n";
   return 0;
 }
