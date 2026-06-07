@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build static preview folder
-        run: |
-          mkdir -p preview
-          cp -R frontend/* preview/
-          mkdir -p preview/config
-         
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audio-studio-frontend-preview
+          path: |
+            frontend
+            config/A2.json
