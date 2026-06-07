@@ -15,6 +15,4 @@ jobs:
           mkdir -p preview
           cp -R frontend/* preview/
           mkdir -p preview/config
-          cp config/A2.json preview/config/A2.json
-          cat > preview/README-preview.txt <<'TXT'
-          Open index
+         
