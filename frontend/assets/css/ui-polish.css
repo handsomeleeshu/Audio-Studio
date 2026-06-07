@@ -1,42 +1,8 @@
 /* Audio Studio UI polish: brand subtitle, algorithm library, scrollbar. */
-.brand {
-  align-items: center;
-}
+.brand { align-items: center; }
+.brand > div:last-child { display: flex; flex-direction: column; justify-content: center; }
+.brand-subtitle { font-size: 0; margin-top: 4px; line-height: 1.05; }
+.brand-subtitle::after { content: 'VeriSilicon Advanced Sound System'; color: #a8bfd9; font-size: 12px; letter-spacing: .01em; font-weight: 650; }
+.brand-subtitle b { display: none; }
 
-.brand > div:last-child {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.brand-subtitle {
-  color: #a8bfd9;
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.05;
-  letter-spacing: .01em;
-}
-
-.brand-subtitle b {
-  color: inherit;
-  letter-spacing: inherit;
-  font-weight: 650;
-}
-
-.module-library,
-.inspector,
-.event-log,
-.topbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(55, 217, 255, .35) rgba(3, 8, 18, .55);
-}
-
-.module-library::-webkit-scrollbar,
-.inspector::-webkit-scrollbar,
-.event-log::-webkit-scrollbar,
-.topbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.module
+.module-library, .inspector, .event-log, .topbar { scrollbar-width: thin; scrollbar-color: rgba(55,
