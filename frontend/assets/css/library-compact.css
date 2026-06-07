@@ -1,0 +1,135 @@
+/*
+ * Audio Studio library compact override.
+ * This file is intentionally loaded after styles.css from frontend/index.html.
+ * It keeps the latest React logic unchanged and only restores the original
+ * compact algorithm-library density shown in the design reference.
+ */
+
+.left-panel .panel-title {
+  height: 45px;
+  padding: 0 13px;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.left-panel .search {
+  height: 36px;
+  margin: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.module-library {
+  height: calc(100% - 94px);
+  padding: 0 10px 14px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(55, 217, 255, .36) rgba(3, 8, 18, .28);
+}
+
+.module-library::-webkit-scrollbar {
+  width: 8px;
+}
+
+.module-library::-webkit-scrollbar-track {
+  background: rgba(3, 8, 18, .34);
+  border-radius: 999px;
+}
+
+.module-library::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(55, 217, 255, .52), rgba(36, 74, 111, .88));
+  border: 2px solid rgba(3, 8, 18, .74);
+  border-radius: 999px;
+}
+
+.module-library::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(66, 245, 155, .72), rgba(55, 217, 255, .58));
+}
+
+.module-category {
+  margin: 13px 0 6px;
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.1;
+  letter-spacing: .035em;
+}
+
+.module-category::before {
+  content: '⌄ ';
+  font-size: 12px;
+}
+
+.module-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 8px;
+  margin: 5px 0;
+  border: 1px solid rgba(77, 145, 205, .48);
+  border-radius: 7px;
+  background: rgba(9, 22, 38, .82);
+  cursor: grab;
+}
+
+.module-item:hover {
+  border-color: rgba(55, 217, 255, .7);
+  background: rgba(16, 40, 70, .84);
+  transform: none;
+}
+
+.module-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  background: rgba(0, 216, 255, .12);
+  box-shadow: none;
+}
+
+.module-name-block {
+  min-width: 0;
+}
+
+.module-item .name {
+  color: #e8f3ff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.08;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: normal;
+}
+
+.module-summary {
+  justify-self: end;
+  max-width: none;
+  color: #afc1d9;
+  font-size: 12px;
+  line-height: 1.1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Keep the library usable on narrow panels without turning names into “Co...”. */
+@media (max-width: 1320px) {
+  .module-item {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .module-summary {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 2px;
+    font-size: 11px;
+  }
+}
