@@ -1,0 +1,18 @@
+name: Frontend Preview
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  preview-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build static preview folder
+        run: |
+          mkdir -p preview
+          cp -R frontend/* preview/
+          mkdir -p preview/config
+          cp config/A2.json preview/config/A2.json
+      -
