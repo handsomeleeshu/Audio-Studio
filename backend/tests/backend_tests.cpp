@@ -10,6 +10,12 @@ int main() {
   assert(invalid.find("\"ok\":false") != std::string::npos);
   auto build = engine.buildPipeline("{\"nodes\":[]}");
   assert(build.find("session_id") != std::string::npos);
+
+  auto edit = engine.pipelineEditEvent("{\"action\":\"connection_added\",\"detail\":{}}");
+  assert(edit.find("pipelineEditEvent") != std::string::npos);
+  auto tool = engine.pipelineToolAction("{\"tool\":\"arrange\",\"event\":\"tool_auto_arrange\"}");
+  assert(tool.find("pipelineToolAction") != std::string::npos);
+
   engine.run("sess_test");
   assert(engine.running());
   auto tel = engine.telemetry({"IN", "EQ", "OUT"});

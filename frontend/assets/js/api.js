@@ -2,7 +2,7 @@ export class AudioStudioApi {
   constructor(baseUrl = '') { this.baseUrl = baseUrl; }
 
   async getConfig() {
-    const candidates = [`${this.baseUrl}/api/config`, `${this.baseUrl}/config/A2.json`, `./config/A2.json`];
+    const candidates = [`${this.baseUrl}/api/config`, `${this.baseUrl}/config/A2.json`, `./config/A2.json`, `../config/A2.json`];
     let lastErr;
     for (const url of candidates) {
       try {
@@ -19,6 +19,14 @@ export class AudioStudioApi {
 
   async buildPipeline(pipelineJson) {
     return this.post('/api/pipeline/build', pipelineJson, { fallback: { ok: true, session_id: 'frontend_mock', core_map: {}, message: 'Frontend fallback build success' } });
+  }
+
+  async pipelineEdit(payload) {
+    return this.post('/api/pipeline/edit', payload, { fallback: { ok: true, callback: 'frontend_fallback_pipeline_edit', ...payload } });
+  }
+
+  async pipelineTool(payload) {
+    return this.post('/api/pipeline/tool', payload, { fallback: { ok: true, callback: 'frontend_fallback_pipeline_tool', ...payload } });
   }
 
   async startRuntime(sessionId) {
@@ -47,6 +55,7 @@ export class AudioStudioApi {
   }
 
   async post(path, body, { fallback } = {}) {
+    console.info('[AudioStudio Frontend → Backend]', path, body);
     try {
       const r = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)

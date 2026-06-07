@@ -95,6 +95,8 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   }
   if (req.method == "POST" && req.path == "/api/pipeline/validate") return {200, "application/json", runtime_->validatePipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
+  if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
+  if (req.method == "POST" && req.path == "/api/pipeline/tool") return {200, "application/json", runtime_->pipelineToolAction(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
