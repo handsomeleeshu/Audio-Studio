@@ -30,28 +30,31 @@
     .app{
       height:100vh;
       display:grid;
-      grid-template-rows:64px 1fr 292px;
+      grid-template-rows:86px 1fr 292px;
       grid-template-columns:260px minmax(600px,1fr) 360px;
       background:
         radial-gradient(circle at 30% 0%, rgba(0,216,255,.14), transparent 34%),
         radial-gradient(circle at 90% 10%, rgba(182,92,255,.12), transparent 30%),
         linear-gradient(180deg,#040711,#07101d 55%,#050810);
     }
-    .topbar{grid-column:1/4; display:flex; align-items:center; gap:14px; padding:10px 18px; border-bottom:1px solid var(--line); background:rgba(4,10,20,.88); backdrop-filter: blur(14px); z-index:20;}
-    .brand{display:flex; align-items:center; gap:12px; min-width:315px;}
-    .brand-logo{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;border:1px solid rgba(0,216,255,.45);box-shadow:0 0 18px rgba(0,216,255,.28); color:var(--cyan); font-weight:900; font-size:21px;}
-    .brand-title{font-size:22px;letter-spacing:.04em;font-weight:800;}
-    .brand-version{font-size:12px;color:var(--muted);margin-left:4px}
-    .top-group{display:flex; align-items:center; gap:10px; flex:1; min-width:0;}
-    .top-field{height:44px; min-width:98px; padding:6px 12px; border:1px solid var(--line); background:linear-gradient(180deg,rgba(11,22,40,.92),rgba(6,13,25,.92)); border-radius:8px; display:flex; flex-direction:column; justify-content:center; box-shadow:inset 0 0 0 1px rgba(255,255,255,.025);}
-    .top-field small{color:var(--muted);font-size:11px;margin-bottom:2px}.top-field b{font-size:13px;white-space:nowrap}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green); margin-right:6px;}
+    .topbar{grid-column:1/4; display:flex; align-items:center; gap:18px; padding:12px 18px; border:1px solid #17375a; border-bottom:2px solid #1a3a5c; background:linear-gradient(180deg,rgba(10,25,45,.96),rgba(5,13,24,.96)); backdrop-filter: blur(14px); z-index:20; border-radius:22px 22px 0 0; margin:12px 14px 0; box-shadow:0 0 0 1px rgba(0,216,255,.08), inset 0 0 24px rgba(40,110,180,.10);}
+    .brand{display:flex; align-items:center; gap:14px; min-width:620px;}
+    .brand-logo{width:58px;height:58px;border-radius:14px;display:grid;place-items:center;border:1px solid rgba(0,216,255,.55);box-shadow:0 0 18px rgba(0,216,255,.28); color:#fff; font-weight:950; font-size:23px; position:relative; overflow:hidden; background:linear-gradient(145deg,rgba(11,42,70,.9),rgba(4,16,30,.95));}
+    .brand-logo:before,.brand-logo:after{content:"";position:absolute;inset:8px;border-radius:50%;border:4px solid transparent;border-top-color:#48f0a1;border-left-color:#48f0a1;transform:rotate(12deg)}
+    .brand-logo:after{border-top-color:transparent;border-left-color:transparent;border-bottom-color:#48f0a1;border-right-color:#48f0a1;transform:rotate(12deg)}
+    .brand-logo span{position:relative;z-index:1;text-shadow:0 0 10px rgba(0,216,255,.6)}
+    .brand-title{display:block;font-size:30px;letter-spacing:.01em;font-weight:900;line-height:1.05;color:#e8f2ff;}
+    .brand-version{display:block;font-size:16px;color:#b7c8df;margin-left:0;margin-top:4px;font-weight:650;}
+    .top-group{display:flex; align-items:center; gap:12px; flex:1; min-width:0; justify-content:flex-end;}
+    .top-field{height:52px; min-width:118px; padding:0; border:0; background:transparent; border-radius:0; display:flex; flex-direction:column; justify-content:center; box-shadow:none;}
+    .top-field small{color:#7f90a9;font-size:13px;margin-bottom:6px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}.top-field b{font-size:18px;white-space:nowrap}.top-field select{height:38px;min-width:130px;border:1px solid #21466e;border-radius:10px;background:#071426;color:#e7f0ff;padding:0 34px 0 14px;font-size:17px;font-weight:750;outline:none}.top-field.project select{min-width:350px}.top-field.small select{min-width:92px}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green); margin-right:6px;}
     .actions{display:flex; gap:10px; align-items:center;}
     .btn{border:1px solid var(--line);background:#07111f;border-radius:8px;padding:10px 15px;font-weight:700;font-size:13px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);}
     .btn.cyan{border-color:rgba(0,216,255,.6); color:var(--cyan); background:rgba(0,86,130,.18)}
     .btn.purple{border-color:rgba(182,92,255,.7); color:#e3bdff; background:rgba(102,36,153,.25)}
     .btn.green{border-color:rgba(49,242,107,.55); color:#baffc7; background:rgba(22,126,45,.25)}
     .btn.red{border-color:rgba(255,81,81,.55); color:#ffd5d5; background:rgba(130,30,30,.25)}
-    .btn:hover{filter:brightness(1.25)}
+    .btn:hover{filter:brightness(1.25)}.btn:disabled{opacity:.45;cursor:not-allowed;filter:saturate(.6)}
     .menu-btn{font-size:22px; padding:8px 12px;background:transparent;border:0;color:#d7eaff}
     .left-panel{grid-row:2/4; border-right:1px solid var(--line); background:rgba(5,12,23,.78); padding:10px; overflow:hidden; display:flex; flex-direction:column; gap:10px;}
     .panel-head{display:flex;align-items:center;justify-content:space-between;padding:6px 4px; font-size:12px; font-weight:800; letter-spacing:.05em; color:#d9ebff;}
@@ -91,22 +94,22 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-logo">⌁</div>
-        <div><span class="brand-title">AUDIO STUDIO</span><span class="brand-version">v0.1 demo</span></div>
+        <div class="brand-logo"><span>AS</span></div>
+        <div><span class="brand-title">Audio Studio</span><span class="brand-version">VeriSilicon Advanced Sound System</span></div>
       </div>
       <div class="top-group">
-        <div class="top-field"><small>Project</small><b>Smart Speaker v3</b></div>
-        <div class="top-field"><small>Connection</small><b><i class="status-dot"></i>Local Demo</b></div>
-        <div class="top-field"><small>DSP Target</small><b id="targetDsp">HiFi5</b></div>
-        <div class="top-field"><small>Cores</small><b id="coreCount">4</b></div>
-        <div class="top-field"><small>Sample Rate</small><b>48 kHz</b></div>
-        <div class="top-field"><small>Frame Size</small><b>256</b></div>
+        <div class="top-field project"><small>Project</small><select id="projectSelect"><option>A2_Automotive_Full_Feature_Example</option></select></div>
+        <div class="top-field"><small>DSP Target</small><select id="dspSelect"><option>HiFi5s</option><option>ZSP</option><option>Native Mock</option></select></div>
+        <div class="top-field small"><small>Cores</small><select id="coreSelect"><option>4</option><option>8</option></select></div>
+        <div class="top-field small"><small>Rate</small><select id="rateSelect"><option>48000</option><option>96000</option></select></div>
       </div>
       <div class="actions">
         <button class="btn cyan" id="validateBtn">✓ Validate</button>
         <button class="btn purple" id="buildBtn">▣ Build</button>
         <button class="btn green" id="runBtn">▶ Run</button>
         <button class="btn red" id="stopBtn">■ Stop</button>
+        <button class="btn" id="undoBtn">↶ Undo</button>
+        <button class="btn" id="redoBtn">↷ Redo</button>
         <button class="btn" id="saveBtn">▣ Save</button>
         <button class="btn" id="exportBtn">⇧ Export</button>
         <button class="menu-btn" id="panelMenuBtn">☰</button>
@@ -241,8 +244,8 @@
       return {
         project: 'Smart Speaker v3',
         target: {
-          dsp: $('#targetDsp')?.textContent || 'HiFi5',
-          cores: Number($('#coreCount')?.textContent || 4),
+          dsp: $('#dspSelect')?.value || 'HiFi5s',
+          cores: Number($('#coreSelect')?.value || 4),
           sampleRate: 48000,
           frameSize: 256
         },
@@ -336,6 +339,121 @@
       zoom:1,
       world:{w:2200,h:1050}
     };
+
+    const history = { undo: [], redo: [], locked: false };
+    function cloneGraph() {
+      return {
+        nodes: state.nodes.map(n => ({...n})),
+        edges: state.edges.map(e => [...e]),
+        selectedNodeId
+      };
+    }
+    function restoreGraph(snap) {
+      if(!snap) return;
+      state.nodes = snap.nodes.map(n => ({...n}));
+      state.edges = snap.edges.map(e => [...e]);
+      selectedNodeId = snap.selectedNodeId || state.nodes[0]?.id || '';
+      renderAll(true);
+    }
+    function pushHistory(label) {
+      if(history.locked || running) return;
+      history.undo.push({label, snapshot: cloneGraph()});
+      if(history.undo.length > 80) history.undo.shift();
+      history.redo = [];
+      updateHistoryButtons();
+    }
+    function undoEdit() {
+      if(running){ toast('Run 状态下不能 Undo，请先 Stop'); return; }
+      const item = history.undo.pop();
+      if(!item){ toast('Nothing to undo'); return; }
+      history.redo.push({label:item.label, snapshot:cloneGraph()});
+      history.locked = true;
+      restoreGraph(item.snapshot);
+      history.locked = false;
+      updateHistoryButtons();
+      backendEdit('undo', {label:item.label});
+      addLog('info','Undo',item.label);
+    }
+    function redoEdit() {
+      if(running){ toast('Run 状态下不能 Redo，请先 Stop'); return; }
+      const item = history.redo.pop();
+      if(!item){ toast('Nothing to redo'); return; }
+      history.undo.push({label:item.label, snapshot:cloneGraph()});
+      history.locked = true;
+      restoreGraph(item.snapshot);
+      history.locked = false;
+      updateHistoryButtons();
+      backendEdit('redo', {label:item.label});
+      addLog('info','Redo',item.label);
+    }
+    function updateHistoryButtons() {
+      const u=$('#undoBtn'), r=$('#redoBtn');
+      if(u) u.disabled = history.undo.length === 0 || running;
+      if(r) r.disabled = history.redo.length === 0 || running;
+    }
+    function iconForModule(typeId='', category='', name='') {
+      const s = `${typeId} ${category} ${name}`.toLowerCase();
+      if(s.includes('file') || s.includes('source')) return '📄';
+      if(s.includes('mic')) return '🎙';
+      if(s.includes('sink') || s.includes('output') || s.includes('speaker')) return '🔊';
+      if(s.includes('aec')) return '◌';
+      if(s.includes('beam')) return '⌁';
+      if(s.includes('noise') || s.includes('ns')) return '≋';
+      if(s.includes('agc')) return '↕';
+      if(s.includes('vad')) return '⏻';
+      if(s.includes('kws')) return '◎';
+      if(s.includes('drc')) return '▰';
+      if(s.includes('mix')) return '▦';
+      if(s.includes('eq') || s.includes('filter')) return '≋';
+      if(s.includes('volume') || s.includes('gain')) return '◀';
+      if(s.includes('asrc')) return '⟲';
+      if(s.includes('src')) return '⟳';
+      if(s.includes('delay')) return '⏱';
+      if(s.includes('neural') || s.includes('ai')) return '✹';
+      return '≋';
+    }
+    function friendlyName(typeId='') {
+      return String(typeId).split('.').pop().replace(/[_-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+    }
+    function componentFromModuleType(mt) {
+      const inPorts = mt.io?.in_ports?.length || 0;
+      const outPorts = mt.io?.out_ports?.length || 0;
+      const maxCh = Math.max(
+        1,
+        ...(mt.io?.in_ports || []).map(p => Number(p.max_ch || 1)),
+        ...(mt.io?.out_ports || []).map(p => Number(p.max_ch || 1))
+      );
+      const category = mt.category || 'module';
+      const name = friendlyName(mt.type_id || mt.name || 'module');
+      const s = `${mt.type_id} ${category}`.toLowerCase();
+      const type = s.includes('graph') ? 'util' : s.includes('playback') || s.includes('eq') || s.includes('drc') || s.includes('surround') ? 'effect' : s.includes('ai') || s.includes('voice') ? 'voice' : 'util';
+      return {
+        cat: category.toUpperCase(),
+        type,
+        icon: iconForModule(mt.type_id, category, name),
+        name,
+        moduleTypeId: mt.type_id,
+        ch: maxCh === 1 ? '1ch' : `${maxCh}ch`,
+        cpu: s.includes('neural') ? 10.5 : s.includes('beam') ? 7.8 : s.includes('aec') ? 6.1 : s.includes('drc') ? 1.5 : s.includes('eq') ? 1.1 : 0.8,
+        mem: 128 + maxCh * 16,
+        lat: 0.1 + Math.min(2.8, maxCh * 0.02),
+      };
+    }
+    async function loadPlatformConfig() {
+      const cfg = await apiGet('/api/config');
+      if(!cfg) { addLog('warn','Platform JSON not loaded','Using built-in component list'); return; }
+      const projectName = cfg.meta?.build?.config_name || 'A2 Project';
+      const projectSelect = $('#projectSelect');
+      if(projectSelect) projectSelect.innerHTML = `<option>${projectName}</option>`;
+      const moduleTypes = Array.isArray(cfg.module_types) ? cfg.module_types : [];
+      const fromJson = moduleTypes.map(componentFromModuleType);
+      const ioBuiltins = components.filter(c => c.cat === 'INPUT / OUTPUT');
+      components.splice(0, components.length, ...ioBuiltins, ...fromJson);
+      renderLibrary($('#searchInput')?.value || '');
+      addLog('ok','Algorithm library loaded',`${fromJson.length} modules from platform JSON`);
+      backendEdit('platform_config_loaded', {project:projectName, module_types:fromJson.length});
+    }
+
     function componentByName(name){ return components.find(c=>c.name===name) || components[0]; }
     function mkNode(id,name,type,icon,x,y){
       const c = componentByName(name);
@@ -383,6 +501,7 @@
           if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再改线'); return;}
           if(connectFrom && connectFrom!==n.id){
             const from=connectFrom;
+            pushHistory('Add connection');
             if(!state.edges.some(([s,t])=>s===from && t===n.id)) state.edges.push([from,n.id]);
             connectFrom=null; drawEdges(); renderMinimap(); addLog('info','Connection added',`${from} → ${n.name}`); backendEdit('connection_added',{from,to:n.id});
           }
@@ -395,6 +514,7 @@
       el.addEventListener('pointerdown', e=>{
         if(e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
         if(running){ selectedNodeId=n.id; renderAll(false); toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点'); return; }
+        pushHistory('Move node');
         drag=true; startX=e.clientX; startY=e.clientY; origX=n.x; origY=n.y; el.setPointerCapture(e.pointerId); selectedNodeId=n.id; renderAll(false);
       });
       el.addEventListener('pointermove', e=>{
@@ -411,6 +531,7 @@
       drawEdges();
     }
     function setZoom(z){
+      backendTool('zoom',{zoom:z});
       state.zoom=clamp(z,.45,1.35);
       applyZoom();
       renderMinimap();
@@ -457,6 +578,7 @@
     function deleteNode(id){
       if(running){toast('Run 状态下不能删除节点，请先 Stop'); return;}
       const n=nodeById(id); if(!n) return;
+      pushHistory('Delete node');
       state.nodes=state.nodes.filter(x=>x.id!==id);
       state.edges=state.edges.filter(([s,t])=>s!==id && t!==id);
       if(selectedNodeId===id) selectedNodeId=state.nodes[0]?.id || '';
@@ -517,6 +639,7 @@
     function autoArrange(){
       if(running){toast('Run 状态下不能自动布局，请先 Stop'); return;}
       const rows = [ ['file_1','src_1','eq_1','drc_1','vol_1','out_1'], ['mic_1','aec_1','bf_1','ns_1','agc_1','vad_1','kws_1'] ];
+      pushHistory('Auto arrange');
       rows.forEach((row,r)=>row.forEach((id,i)=>{const n=nodeById(id); if(n){n.x=120+i*190; n.y=95+r*190;}}));
       let extras=state.nodes.filter(n=>!rows.flat().includes(n.id)); extras.forEach((n,i)=>{n.x=160+i*165; n.y=475;});
       renderAll(true); backendTool('auto_arrange',{nodes:state.nodes.length}); backendEdit('auto_arrange',{}); toast('Auto layout finished'); addLog('info','Auto layout finished','ELK-like frontend layout demo');
@@ -527,12 +650,12 @@
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
     function init(){
-      renderLibrary(); renderAll(true); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
+      renderLibrary(); renderAll(true); updateHistoryButtons(); loadPlatformConfig(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
       const wrap=$('#canvasWrap');
       wrap.addEventListener('dragover',e=>{e.preventDefault(); wrap.classList.add('dragover')});
       wrap.addEventListener('dragleave',()=>wrap.classList.remove('dragover'));
-      wrap.addEventListener('drop',e=>{e.preventDefault(); wrap.classList.remove('dragover'); const name=e.dataTransfer.getData('text/plain'); if(!name) return; if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return;} const c=componentByName(name); const rect=wrap.getBoundingClientRect(); const id=name.toLowerCase().replace(/\s+/g,'_')+'_'+(++nodeSeq+10); const n=mkNode(id,name,c.type,c.icon,(e.clientX-rect.left)/state.zoom-64,(e.clientY-rect.top)/state.zoom-58); n.core=Math.floor(Math.random()*4); state.nodes.push(n); selectedNodeId=n.id; renderAll(true); backendEdit('node_added',{node_id:n.id,node_name:name}); addLog('info','Node added',name);});
+      wrap.addEventListener('drop',e=>{e.preventDefault(); wrap.classList.remove('dragover'); const name=e.dataTransfer.getData('text/plain'); if(!name) return; if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return;} const c=componentByName(name); const rect=wrap.getBoundingClientRect(); pushHistory('Add node'); const id=name.toLowerCase().replace(/\s+/g,'_')+'_'+(++nodeSeq+10); const n=mkNode(id,name,c.type,c.icon,(e.clientX-rect.left)/state.zoom-64,(e.clientY-rect.top)/state.zoom-58); n.moduleTypeId=c.moduleTypeId||''; n.core=Math.floor(Math.random()*4); state.nodes.push(n); selectedNodeId=n.id; renderAll(true); backendEdit('node_added',{node_id:n.id,node_name:name}); addLog('info','Node added',name);});
       $('#autoBtn').addEventListener('click',autoArrange);
       $('#zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));
       $('#zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));
@@ -540,11 +663,14 @@
       $('#panelMenuBtn').addEventListener('click',()=>$('#panelMenu').classList.toggle('show'));
       $$('#panelMenu input').forEach(cb=>cb.addEventListener('change',e=>setPanelVisible(e.target.dataset.panel,e.target.checked)));
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
-      $('#validateBtn').addEventListener('click',()=>{ $('#warnCount').textContent=Math.random()<.7?'0':'1'; $('#errCount').textContent='0'; addLog('ok','Pipeline validated','Format, channel and latency check passed'); toast('Validate success');});
+      $('#validateBtn').addEventListener('click',async ()=>{ const res=await apiPost('/api/pipeline/validate',pipelineSnapshot()); const warnings=res?.warnings||[]; const errors=res?.errors||[]; $('#warnCount').textContent=String(warnings.length); $('#errCount').textContent=String(errors.length); addLog(errors.length?'warn':'ok','Pipeline validated','Backend callback: /api/pipeline/validate'); toast(errors.length?'Validate failed':'Validate success');});
       $('#buildBtn').addEventListener('click',async ()=>{ buildState='building'; running=false; $('#playBtn').textContent='▶'; $('.badge.ok').textContent='◌ BUILDING'; toast('Building...'); addLog('info','Build started','Calling /api/pipeline/build'); const res=await apiPost('/api/pipeline/build',pipelineSnapshot()); setTimeout(()=>{buildState=res?.ok===false?'failed':'success'; $('.badge.ok').textContent=buildState==='success'?'● BUILD SUCCESS':'● BUILD FAILED'; if(res?.core_map){/* reserved for real DSP mapping */} else state.nodes.forEach(n=>n.core=Math.floor(Math.random()*4)); renderAll(true); addLog(buildState==='success'?'ok':'warn',buildState==='success'?'Build successful':'Build failed','Backend callback: /api/pipeline/build'); toast(buildState==='success'?'Build success':'Build failed');},300);});
-      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
-      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
+      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
+      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
+      $('#undoBtn').addEventListener('click',undoEdit);
+      $('#redoBtn').addEventListener('click',redoEdit);
+      window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
       $('#saveBtn').addEventListener('click',async ()=>{localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
