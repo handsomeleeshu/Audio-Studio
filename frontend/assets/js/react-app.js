@@ -20,22 +20,65 @@ document.getElementById('react-load-fallback')?.remove();
 
 function iconForModule(moduleTypeId = '', category = '') {
   const s = `${moduleTypeId} ${category}`.toLowerCase();
+  if (s.includes('file') || s.includes('port.source')) return '📄';
+  if (s.includes('mic')) return '🎙';
+  if (s.includes('sink') || s.includes('output') || s.includes('speaker')) return '🔊';
+  if (s.includes('aec')) return '○';
+  if (s.includes('beam')) return '⌁';
+  if (s.includes('noise') || s.includes('ns')) return '≋';
+  if (s.includes('agc')) return '↕';
+  if (s.includes('vad')) return '⏻';
+  if (s.includes('kws')) return '◎';
+  if (s.includes('eq')) return '≋';
+  if (s.includes('drc')) return '▰';
+  if (s.includes('mixer') || s.includes('mix')) return '▦';
+  if (s.includes('volume') || s.includes('gain')) return '◀';
+  if (s.includes('asrc')) return '⟲';
+  if (s.includes('src')) return '⟳';
+  if (s.includes('delay')) return '⏱';
+  if (s.includes('route')) return '⇄';
+  if (s.includes('virtual')) return '✦';
+  if (s.includes('neural') || s.includes('ai')) return '✹';
+  return '≋';
+}
+
+function moduleFriendlyName(moduleTypeId = '', category = '') {
+  const raw = String(moduleTypeId || '');
+  const s = `${raw} ${category}`.toLowerCase();
+  if (s.includes('file') || s.includes('port.source')) return 'File Input';
+  if (s.includes('mic')) return 'Mic Input';
+  if (s.includes('sink') || s.includes('output') || s.includes('speaker')) return 'Audio Output';
   if (s.includes('aec')) return 'AEC';
-  if (s.includes('beam')) return 'BF';
+  if (s.includes('beam')) return 'Beamformer';
+  if (s.includes('noise') || s.includes('ns')) return 'Noise Suppression';
   if (s.includes('agc')) return 'AGC';
-  if (s.includes('drc')) return 'DRC';
+  if (s.includes('vad')) return 'VAD';
+  if (s.includes('kws')) return 'KWS';
   if (s.includes('eq')) return 'EQ';
-  if (s.includes('mixer') || s.includes('mix')) return 'MIX';
+  if (s.includes('drc')) return 'DRC';
+  if (s.includes('mixer') || s.includes('mix')) return 'Mixer';
+  if (s.includes('volume') || s.includes('gain')) return 'Volume';
+  if (s.includes('asrc')) return 'ASRC';
   if (s.includes('src')) return 'SRC';
-  if (s.includes('asrc')) return 'AS';
-  if (s.includes('ns')) return 'NS';
-  if (s.includes('volume') || s.includes('gain')) return 'VOL';
-  if (s.includes('port.source')) return 'IN';
-  if (s.includes('port.sink')) return 'OUT';
-  if (s.includes('route')) return 'MUX';
-  if (s.includes('virtual')) return '3D';
-  if (s.includes('speaker')) return 'SP';
-  return String(moduleTypeId).split('.').pop()?.slice(0, 3).toUpperCase() || 'ALG';
+  if (s.includes('delay')) return 'Delay';
+  if (s.includes('neural')) return 'Neural Denoiser';
+  return raw.split('.').pop()?.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Algorithm';
+}
+
+function moduleSummary(mt = {}) {
+  const s = `${mt.type_id || ''} ${mt.category || ''}`.toLowerCase();
+  const inPorts = mt.io?.in_ports?.length || 0;
+  const outPorts = mt.io?.out_ports?.length || 0;
+  const channels = s.includes('mic') || s.includes('aec') || s.includes('beam') ? '4ch'
+    : s.includes('kws') || s.includes('vad') || s.includes('agc') || s.includes('noise') || s.includes('ns') || s.includes('neural') ? '1ch'
+    : inPorts || outPorts ? `${Math.max(inPorts, outPorts)}ch`
+    : 'N';
+  const cpu = s.includes('neural') ? '10.5' : s.includes('beam') ? '7.8' : s.includes('aec') ? '6.1'
+    : s.includes('noise') || s.includes('ns') ? '5.4' : s.includes('kws') ? '3.2' : s.includes('agc') ? '2.3'
+    : s.includes('asrc') ? '2.1' : s.includes('drc') ? '1.5' : s.includes('eq') ? '1.1'
+    : s.includes('vad') ? '0.9' : s.includes('src') || s.includes('mix') ? '0.8'
+    : s.includes('output') || s.includes('sink') || s.includes('delay') ? '0.3' : '0.2';
+  return `${channels} · ~${cpu}% CPU`;
 }
 
 function App() {
@@ -356,7 +399,7 @@ function Topbar(p) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'brand' },
       h('div', { className: 'logo-mark' }, h('div', { className: 'logo-text' }, 'AS')),
-      h('div', null, h('div', { className: 'brand-title' }, 'Audio Studio'), h('div', { className: 'brand-subtitle' }, h('b', null, 'VASS'), ' · VeriSilicon Advanced Sound System'))
+      h('div', { className: 'brand-copy' }, h('div', { className: 'brand-title' }, 'Audio Studio'), h('div', { className: 'brand-subtitle' }, 'VeriSilicon Advanced Sound System'))
     ),
     h('div', { className: 'toolbar-group project' }, h('label', null, 'Project'), h('select', { value: p.projectName, onChange: () => {} }, h('option', { value: p.projectName }, p.projectName))),
     h('div', { className: 'toolbar-group' }, h('label', null, 'DSP Target'), h('select', { value: p.dsp, onChange: e => p.setDsp(e.target.value) }, ['HiFi5s','ZSP','Native Mock','DSP Simulator'].map(v => h('option', { key: v }, v)))),
@@ -394,10 +437,14 @@ function AlgorithmLibrary({ visible, toggle, registry, search, setSearch, disabl
     h('input', { className: 'search', value: search, onChange: e => setSearch(e.target.value), placeholder: 'Search module type / category...' }),
     h('div', { className: 'module-library' }, Array.from(groups.entries()).map(([cat, list]) => h('div', { key: cat },
       h('div', { className: 'module-category' }, cat),
-      list.map(mt => h('div', { key: mt.type_id, className: 'module-item', draggable: !disabled, onDragStart: ev => ev.dataTransfer.setData('application/audio-studio-module', mt.type_id) },
-        h('div', { className: 'module-icon' }, iconForModule(mt.type_id, mt.category)),
-        h('div', null, h('div', { className: 'name' }, mt.type_id), h('div', { className: 'meta' }, h('span', null, `in:${mt.io?.in_ports?.length || 0}`), h('span', null, `out:${mt.io?.out_ports?.length || 0}`), h('span', null, `abi:${mt.abi_version || '-'}`)))
-      ))
+      list.map(mt => {
+        const displayName = moduleFriendlyName(mt.type_id, mt.category);
+        return h('div', { key: mt.type_id, className: 'module-item', draggable: !disabled, onDragStart: ev => ev.dataTransfer.setData('application/audio-studio-module', mt.type_id) },
+          h('div', { className: 'module-icon' }, iconForModule(mt.type_id, mt.category)),
+          h('div', { className: 'module-name-block' }, h('div', { className: 'name' }, displayName)),
+          h('div', { className: 'module-summary' }, moduleSummary(mt))
+        );
+      })
     )))
   );
 }

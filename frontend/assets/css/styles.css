@@ -173,3 +173,105 @@ select:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: not-a
 @media (max-width: 1300px) { .dashboard-grid { grid-template-columns: 1fr 1fr 1.4fr; overflow: auto; } .topbar { overflow-x: auto; } }
 .pipeline-world { pointer-events: none; }
 .node { pointer-events: auto; }
+
+/* Audio Studio UI polish: restore brand/library visual style. */
+.brand {
+  min-width: 320px;
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.brand-title {
+  line-height: 1;
+}
+
+.brand-subtitle {
+  color: #a9bdd5;
+  font-size: 12px;
+  line-height: 1;
+  margin-top: 6px;
+  padding-left: 1px;
+  letter-spacing: .01em;
+}
+
+.brand-subtitle b {
+  display: none;
+}
+
+.module-library {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(55, 217, 255, .36) rgba(3, 8, 18, .28);
+}
+
+.module-library::-webkit-scrollbar {
+  width: 8px;
+}
+
+.module-library::-webkit-scrollbar-track {
+  background: rgba(3, 8, 18, .34);
+  border-radius: 999px;
+}
+
+.module-library::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(55,217,255,.52), rgba(36,74,111,.88));
+  border: 2px solid rgba(3, 8, 18, .74);
+  border-radius: 999px;
+}
+
+.module-library::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(66,245,155,.72), rgba(55,217,255,.58));
+}
+
+.module-category {
+  color: var(--cyan);
+  font-size: 14px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  margin: 18px 0 8px;
+}
+
+.module-item {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  min-height: 70px;
+  padding: 12px 14px;
+  border-color: rgba(77, 145, 205, .48);
+  background: rgba(9, 22, 38, .82);
+  border-radius: 12px;
+}
+
+.module-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: 900;
+  background: rgba(0, 216, 255, .12);
+  box-shadow: none;
+}
+
+.module-name-block {
+  min-width: 0;
+}
+
+.module-item .name {
+  font-size: 16px;
+  font-weight: 850;
+  color: #e8f3ff;
+}
+
+.module-summary {
+  justify-self: end;
+  max-width: 128px;
+  color: #afc1d9;
+  font-size: 14px;
+  line-height: 1.15;
+  text-align: right;
+  white-space: normal;
+}
