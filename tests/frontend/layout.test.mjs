@@ -17,10 +17,11 @@ const p2 = getPortPosition(to, 'input', edge.to.portName);
 assert.ok(p2.x - p1.x >= MIN_X_DISTANCE - 150 || p2.x > p1.x, 'edge should have valid geometry');
 assert.ok(edgePath(p1, p2).startsWith('M '));
 
-// Regression: when nodes are very close or reversed, edgePath must not collapse
-// into a tiny/hidden Bezier. It should use the visible elbow route.
 const closePath = edgePath({ x: 200, y: 100 }, { x: 220, y: 116 });
 assert.ok(closePath.includes(' L '), 'close node connection should use visible elbow segments');
 assert.ok(closePath.endsWith('220 116'));
+
+const reversePath = edgePath({ x: 300, y: 120 }, { x: 250, y: 180 });
+assert.ok(reversePath.includes(' L '), 'reverse connection should still be visible');
 
 console.log('layout.test passed');

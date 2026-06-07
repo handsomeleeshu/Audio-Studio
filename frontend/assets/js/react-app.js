@@ -2,7 +2,7 @@ import { AudioStudioApi } from './api.js';
 import { convertPipeline, makeNodeFromModuleType, exportPipelineJson, buildRegistry } from './configParser.js';
 import { autoLayout, getPortPosition, edgePath, viewportToWorld, WORLD_WIDTH, WORLD_HEIGHT, getNodeSize } from './layout.js';
 import { makeMockTelemetry, drawWaveform, drawSpectrum } from './telemetry.js';
-import { groupBy, nowTime, formatNumber, safeName } from './utils.js';
+import { groupBy, nowTime, formatNumber } from './utils.js';
 import { connectUnique, validateConnection, endpointKey } from './pipelineRules.js';
 
 const React = window.React;
@@ -81,6 +81,22 @@ function moduleSummary(mt = {}) {
   return `${channels} · ~${cpu}% CPU`;
 }
 
+function cloneNode(n) {
+  return {
+    ...n,
+    raw: n.raw ? JSON.parse(JSON.stringify(n.raw)) : n.raw,
+    moduleType: n.moduleType ? JSON.parse(JSON.stringify(n.moduleType)) : n.moduleType,
+    inputs: (n.inputs || []).map(p => ({ ...p })),
+    outputs: (n.outputs || []).map(p => ({ ...p })),
+    staticParams: { ...(n.staticParams || {}) },
+    runtimeParams: { ...(n.runtimeParams || {}) },
+    cost: { ...(n.cost || {}) }
+  };
+}
+
+function cloneNodes(nodes) { return (nodes || []).map(cloneNode); }
+function cloneEdges(edges) { return (edges || []).map(e => ({ ...e, from: { ...e.from }, to: { ...e.to } })); }
+
 function App() {
   const [config, setConfig] = React.useState(null);
   const [registry, setRegistry] = React.useState(null);
@@ -106,15 +122,35 @@ function App() {
   const [dsp, setDsp] = React.useState('HiFi5s');
   const [cores, setCores] = React.useState('4');
   const [rate, setRate] = React.useState('48000');
+  const [undoVersion, setUndoVersion] = React.useState(0);
+
   const viewportRef = React.useRef(null);
   const waveRef = React.useRef(null);
   const spectrumRef = React.useRef(null);
   const miniRef = React.useRef(null);
+  const nodesRef = React.useRef([]);
+  const edgesRef = React.useRef([]);
+  const selectedNodeRef = React.useRef(null);
+  const selectedEdgeRef = React.useRef(null);
+  const cameraRef = React.useRef(camera);
+  const undoStackRef = React.useRef([]);
+  const dragSessionRef = React.useRef(null);
+  const connectorRef = React.useRef(null);
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
   const selectedEdge = edges.find(e => e.id === selectedEdgeId) || null;
   const projectName = config?.meta?.build?.config_name || 'A2 Project';
   const stopped = runStatus === 'stopped';
+
+  React.useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  React.useEffect(() => { edgesRef.current = edges; }, [edges]);
+  React.useEffect(() => { selectedNodeRef.current = selectedNodeId; }, [selectedNodeId]);
+  React.useEffect(() => { selectedEdgeRef.current = selectedEdgeId; }, [selectedEdgeId]);
+  React.useEffect(() => { cameraRef.current = camera; }, [camera]);
+
+  React.useEffect(() => {
+    document.body.dataset.audioStudioCanUndo = undoStackRef.current.length ? 'true' : 'false';
+  }, [undoVersion]);
 
   const addLog = React.useCallback((text) => {
     setLogs(prev => [{ time: nowTime(), text }, ...prev].slice(0, 80));
@@ -161,7 +197,76 @@ function App() {
     return () => cancelAnimationFrame(raf);
   }, [runStatus]);
 
-  React.useEffect(() => { drawMiniMap(); }, [nodes, camera, visiblePanels]);
+  React.useEffect(() => { drawMiniMap(); }, [nodes, edges, camera, visiblePanels]);
+
+  React.useEffect(() => {
+    const onUndo = () => handleUndo();
+    const onKey = ev => {
+      const target = ev.target;
+      const tag = target?.tagName?.toLowerCase?.();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z') {
+        ev.preventDefault();
+        handleUndo();
+      }
+    };
+    window.addEventListener('audio-studio-undo', onUndo);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('audio-studio-undo', onUndo);
+      window.removeEventListener('keydown', onKey);
+    };
+  });
+
+  function pushUndo(label) {
+    if (!stopped) return;
+    const snap = {
+      label,
+      nodes: cloneNodes(nodesRef.current),
+      edges: cloneEdges(edgesRef.current),
+      selectedNodeId: selectedNodeRef.current,
+      selectedEdgeId: selectedEdgeRef.current,
+      time: Date.now()
+    };
+    undoStackRef.current = [...undoStackRef.current, snap].slice(-80);
+    setUndoVersion(v => v + 1);
+  }
+
+  function clearUndo() {
+    undoStackRef.current = [];
+    setUndoVersion(v => v + 1);
+  }
+
+  function handleUndo() {
+    if (!stopped) {
+      addLog('Undo ignored: runtime is not stopped');
+      return;
+    }
+    const snap = undoStackRef.current.pop();
+    if (!snap) {
+      addLog('Nothing to undo');
+      setUndoVersion(v => v + 1);
+      return;
+    }
+    setNodes(cloneNodes(snap.nodes));
+    setEdges(cloneEdges(snap.edges));
+    setSelectedNodeId(snap.selectedNodeId || null);
+    setSelectedEdgeId(snap.selectedEdgeId || null);
+    addLog(`Undo: ${snap.label}`);
+    api.pipelineEdit({ action: 'undo', label: snap.label, nodes: snap.nodes.length, edges: snap.edges.length });
+    setUndoVersion(v => v + 1);
+  }
+
+  function notifyEdit(action, detail = {}) {
+    api.pipelineEdit({
+      action,
+      detail,
+      nodes: nodesRef.current.length,
+      edges: edgesRef.current.length,
+      pipe_id: currentPipeId,
+      timestamp_ms: Date.now()
+    });
+  }
 
   function loadPipeline(cfg, pipeId) {
     if (!cfg || !pipeId) return;
@@ -174,6 +279,7 @@ function App() {
     setSelectedNodeId(laid[0]?.id || null);
     setSelectedEdgeId(null);
     setCamera({ x: 0, y: 0, zoom: 1 });
+    clearUndo();
   }
 
   function handleSceneChange(sceneId) {
@@ -191,9 +297,12 @@ function App() {
 
   function handleArrange() {
     if (!stopped) return;
-    const cloned = nodes.map(n => ({ ...n }));
-    setNodes(autoLayout(cloned, edges));
+    pushUndo('Auto arrange');
+    const cloned = cloneNodes(nodesRef.current);
+    const arranged = autoLayout(cloned, edgesRef.current);
+    setNodes(arranged);
     addLog('Auto arrange applied with minimum node distance');
+    notifyEdit('auto_arrange');
   }
 
   async function handleValidate() {
@@ -232,34 +341,48 @@ function App() {
   function handleDelete() {
     if (!stopped) return;
     if (selectedEdgeId) {
-      setEdges(prev => prev.filter(e => e.id !== selectedEdgeId));
-      addLog(`Connection deleted: ${selectedEdgeId}`);
+      pushUndo('Delete connection');
+      const id = selectedEdgeId;
+      setEdges(prev => prev.filter(e => e.id !== id));
+      addLog(`Connection deleted: ${id}`);
       setSelectedEdgeId(null);
+      notifyEdit('connection_removed', { edge_id: id });
       return;
     }
-    if (selectedNodeId) deleteNode(selectedNodeId);
+    if (selectedNodeId) deleteNode(selectedNodeId, true);
   }
 
-  function deleteNode(nodeId) {
+  function deleteNode(nodeId, withUndo = true) {
     if (!stopped) return;
+    if (withUndo) pushUndo('Delete node');
     setNodes(prev => prev.filter(n => n.id !== nodeId));
     setEdges(prev => prev.filter(e => e.from.nodeId !== nodeId && e.to.nodeId !== nodeId));
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
     addLog(`Node deleted: ${nodeId}`);
+    notifyEdit('node_removed', { node_id: nodeId });
   }
 
   function addEdge(from, to) {
-    if (!stopped) return;
-    const check = validateConnection(nodes, edges, from, to);
+    if (!stopped) return false;
+    const check = validateConnection(nodesRef.current, edgesRef.current, from, to);
     if (!check.ok) {
       addLog(`Connect rejected: ${check.reason}`);
-      return;
+      return false;
     }
-    setEdges(prev => connectUnique(prev, from, to));
+    pushUndo('Add connection');
+    let added = false;
+    setEdges(prev => {
+      const next = connectUnique(prev, from, to);
+      added = next !== prev && JSON.stringify(next) !== JSON.stringify(prev);
+      return next;
+    });
     addLog(`Connected ${endpointKey(from)} → ${endpointKey(to)}; single in/out rule enforced`);
+    notifyEdit('connection_added', { from, to });
+    return true;
   }
 
   function updateParam(nodeId, scope, key, value) {
+    if (scope === 'static' && stopped) pushUndo(`Update static parameter ${key}`);
     setNodes(prev => prev.map(n => {
       if (n.id !== nodeId) return n;
       const field = scope === 'static' ? 'staticParams' : 'runtimeParams';
@@ -269,7 +392,9 @@ function App() {
   }
 
   function updateCore(nodeId, core) {
+    if (stopped) pushUndo('Update core mapping');
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, core: Number(core) } : n));
+    notifyEdit('core_mapping_updated', { node_id: nodeId, core: Number(core) });
   }
 
   function drawMiniMap() {
@@ -296,11 +421,17 @@ function App() {
       const a = nodes.find(n => n.id === e.from.nodeId);
       const b = nodes.find(n => n.id === e.to.nodeId);
       if (!a || !b) continue;
-      ctx.beginPath(); ctx.moveTo(mapX(a.x + 218), mapY(a.y + 55)); ctx.lineTo(mapX(b.x), mapY(b.y + 55)); ctx.stroke();
+      const as = getNodeSize(a);
+      const bs = getNodeSize(b);
+      ctx.beginPath();
+      ctx.moveTo(mapX(a.x + as.w), mapY(a.y + as.h / 2));
+      ctx.lineTo(mapX(b.x), mapY(b.y + bs.h / 2));
+      ctx.stroke();
     }
     for (const n of nodes) {
+      const ns = getNodeSize(n);
       ctx.fillStyle = n.id === selectedNodeId ? '#ffd569' : '#37d9ff';
-      ctx.fillRect(mapX(n.x), mapY(n.y), Math.max(3, 218 * s), Math.max(3, getNodeSize(n).h * s));
+      ctx.fillRect(mapX(n.x), mapY(n.y), Math.max(3, ns.w * s), Math.max(3, ns.h * s));
     }
     const rect = vp.getBoundingClientRect();
     const vx = (-camera.x / camera.zoom);
@@ -313,38 +444,118 @@ function App() {
   }
 
   function onViewportPointerMove(ev) {
-    const rect = viewportRef.current.getBoundingClientRect();
-    const wp = viewportToWorld(ev.clientX, ev.clientY, rect, camera);
-    if (dragNode && stopped) {
-      setNodes(prev => prev.map(n => n.id === dragNode.nodeId ? { ...n, x: Math.max(30, wp.x - dragNode.dx), y: Math.max(30, wp.y - dragNode.dy) } : n));
-    }
-    if (connector) setConnector(c => c ? { ...c, current: wp } : c);
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const wp = viewportToWorld(ev.clientX, ev.clientY, rect, cameraRef.current);
+    if (connectorRef.current) setConnector(c => c ? { ...c, current: wp } : c);
   }
 
   function onViewportPointerUp() {
-    setDragNode(null);
     setConnector(null);
+    connectorRef.current = null;
   }
 
   function startNodeDrag(ev, node) {
     if (!stopped) return;
+    ev.preventDefault();
+    ev.stopPropagation();
     const rect = viewportRef.current.getBoundingClientRect();
-    const wp = viewportToWorld(ev.clientX, ev.clientY, rect, camera);
-    setDragNode({ nodeId: node.id, dx: wp.x - node.x, dy: wp.y - node.y });
+    const wp = viewportToWorld(ev.clientX, ev.clientY, rect, cameraRef.current);
+    let moved = false;
+    let raf = 0;
+    let last = null;
+    setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+    dragSessionRef.current = { nodeId: node.id };
+    setDragNode({ nodeId: node.id });
+
+    const applyMove = () => {
+      raf = 0;
+      if (!last) return;
+      const nextX = Math.max(30, last.x - (wp.x - node.x));
+      const nextY = Math.max(30, last.y - (wp.y - node.y));
+      setNodes(prev => prev.map(n => n.id === node.id ? { ...n, x: nextX, y: nextY } : n));
+    };
+
+    const move = e => {
+      if (e.pointerId !== ev.pointerId) return;
+      const r = viewportRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const p = viewportToWorld(e.clientX, e.clientY, r, cameraRef.current);
+      const distance = Math.hypot(p.x - wp.x, p.y - wp.y);
+      if (!moved && distance > 1.5) {
+        pushUndo('Move node');
+        moved = true;
+      }
+      last = p;
+      if (!raf) raf = requestAnimationFrame(applyMove);
+    };
+
+    const up = e => {
+      if (e.pointerId !== ev.pointerId) return;
+      document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('pointerup', up, true);
+      if (raf) cancelAnimationFrame(raf);
+      if (last) applyMove();
+      setDragNode(null);
+      dragSessionRef.current = null;
+      if (moved) {
+        addLog(`Node moved: ${node.id}`);
+        notifyEdit('node_moved', { node_id: node.id });
+      }
+    };
+
+    document.addEventListener('pointermove', move, true);
+    document.addEventListener('pointerup', up, true);
   }
 
   function startConnector(ev, node, port) {
     if (!stopped) return;
+    ev.preventDefault();
     ev.stopPropagation();
-    const pos = getPortPosition(node, 'output', port.name);
-    setConnector({ from: { nodeId: node.id, portName: port.name }, start: pos, current: pos });
+    const start = getPortPosition(node, 'output', port.name);
+    const initial = { from: { nodeId: node.id, portName: port.name }, start, current: start };
+    setConnector(initial);
+    connectorRef.current = initial;
+    document.querySelector('.canvas-viewport')?.classList.add('connecting');
+
+    const move = e => {
+      if (e.pointerId !== ev.pointerId) return;
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const current = viewportToWorld(e.clientX, e.clientY, rect, cameraRef.current);
+      connectorRef.current = { ...connectorRef.current, current };
+      setConnector(c => c ? { ...c, current } : c);
+    };
+
+    const up = e => {
+      if (e.pointerId !== ev.pointerId) return;
+      document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('pointerup', up, true);
+      document.querySelector('.canvas-viewport')?.classList.remove('connecting');
+
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.port.input');
+      const targetNodeId = el?.dataset?.nodeId;
+      const targetPortName = el?.dataset?.portName;
+      if (targetNodeId && targetPortName && targetNodeId !== node.id) {
+        addEdge({ nodeId: node.id, portName: port.name }, { nodeId: targetNodeId, portName: targetPortName });
+      }
+      setConnector(null);
+      connectorRef.current = null;
+    };
+
+    document.addEventListener('pointermove', move, true);
+    document.addEventListener('pointerup', up, true);
   }
 
   function finishConnector(ev, node, port) {
-    if (!stopped || !connector) return;
+    if (!stopped || !connectorRef.current) return;
+    ev.preventDefault();
     ev.stopPropagation();
-    addEdge(connector.from, { nodeId: node.id, portName: port.name });
+    const from = connectorRef.current.from;
+    if (from.nodeId !== node.id) addEdge(from, { nodeId: node.id, portName: port.name });
     setConnector(null);
+    connectorRef.current = null;
   }
 
   function handleDrop(ev) {
@@ -355,11 +566,13 @@ function App() {
     if (!mt) return;
     const rect = viewportRef.current.getBoundingClientRect();
     const wp = viewportToWorld(ev.clientX, ev.clientY, rect, camera);
-    const node = makeNodeFromModuleType(mt, Math.max(30, wp.x - 100), Math.max(30, wp.y - 50));
+    const node = makeNodeFromModuleType(mt, Math.max(30, wp.x - 64), Math.max(30, wp.y - 58));
+    pushUndo('Add node');
     setNodes(prev => [...prev, node]);
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
     addLog(`Node added: ${node.title}`);
+    notifyEdit('node_added', { node_id: node.id, module_type: node.moduleTypeId });
   }
 
   const appClass = [
@@ -370,16 +583,16 @@ function App() {
   ].filter(Boolean).join(' ');
 
   return h('div', { className: appClass },
-    h(Topbar, { projectName, dsp, setDsp, cores, setCores, rate, setRate, runStatus, buildStatus, onValidate: handleValidate, onBuild: handleBuild, onRun: handleRun, onStop: handleStop, onArrange: handleArrange, onDelete: handleDelete, onExport: () => setModal(JSON.stringify(exportPipelineJson({ currentPipeId, pipeline, nodes, edges }), null, 2)), onDocs: () => setModal('docs/frontend_development.md\n\nReact 版入口：frontend/assets/js/react-app.js\n参数 UI、节点 UI、Dashboard 均已组件化。') }),
+    h(Topbar, { projectName, dsp, setDsp, cores, setCores, rate, setRate, runStatus, buildStatus, canUndo: undoStackRef.current.length > 0, onUndo: handleUndo, onValidate: handleValidate, onBuild: handleBuild, onRun: handleRun, onStop: handleStop, onArrange: handleArrange, onDelete: handleDelete, onExport: () => setModal(JSON.stringify(exportPipelineJson({ currentPipeId, pipeline, nodes, edges }), null, 2)), onDocs: () => setModal('docs/frontend_development.md\\n\\nReact 版入口：frontend/assets/js/react-app.js\\n参数 UI、节点 UI、Dashboard 均已组件化。') }),
     h(AlgorithmLibrary, { visible: visiblePanels.library, toggle: () => setVisiblePanels(p => ({ ...p, library: false })), registry, search, setSearch, disabled: !stopped }),
     h('main', { className: 'pipeline-area' },
       h(PipelineHeader, { config, currentPipeId, currentSceneId, onPipelineChange: handlePipelineChange, onSceneChange: handleSceneChange, buildStatus, pipeline }),
       h('div', { className: 'canvas-viewport', ref: viewportRef, onPointerMove: onViewportPointerMove, onPointerUp: onViewportPointerUp, onDragOver: e => e.preventDefault(), onDrop: handleDrop },
         h(EdgeLayer, { nodes, edges, selectedEdgeId, setSelectedEdgeId, setSelectedNodeId, camera, running: runStatus === 'running', connector }),
         h('div', { className: 'pipeline-world', style: { transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` } },
-          nodes.map(node => h(PipelineNode, { key: node.id, node, selected: node.id === selectedNodeId, running: runStatus === 'running', telemetry: telemetry?.nodeCost?.[node.id], onSelect: () => { setSelectedNodeId(node.id); setSelectedEdgeId(null); api.nodeAction({ node_id: node.id, action: 'select' }); }, onDelete: () => deleteNode(node.id), onDragStart: startNodeDrag, onOutputDown: startConnector, onInputUp: finishConnector }))
+          nodes.map(node => h(PipelineNode, { key: node.id, node, selected: node.id === selectedNodeId, dragging: dragNode?.nodeId === node.id, running: runStatus === 'running', telemetry: telemetry?.nodeCost?.[node.id], onSelect: () => { setSelectedNodeId(node.id); setSelectedEdgeId(null); api.nodeAction({ node_id: node.id, action: 'select' }); }, onDelete: () => deleteNode(node.id), onDragStart: startNodeDrag, onOutputDown: startConnector, onInputUp: finishConnector }))
         ),
-        h('div', { className: 'canvas-hint' }, stopped ? 'Stop 状态：可添加/删除节点、拖动节点、拖拽 output → input 建立连接；点击连线后 Delete 可删除连接。' : 'Running 状态：Pipeline 结构锁定，仅允许修改动态参数。'),
+        h('div', { className: 'canvas-hint' }, stopped ? 'Stop 状态：可添加/删除节点、拖动节点、拖拽 output → input 建立连接；⌘Z/Ctrl+Z 或左上角 ↺ 可撤销上一步。' : 'Running 状态：Pipeline 结构锁定，仅允许修改动态参数。'),
         h(ZoomBox, { camera, setCamera, viewportRef, nodes }),
         h('canvas', { ref: miniRef, className: 'mini-map', width: 220, height: 130 })
       )
@@ -410,6 +623,7 @@ function Topbar(p) {
     h('button', { className: 'btn green', onClick: p.onRun, disabled: p.runStatus !== 'stopped' }, 'Run'),
     h('button', { className: 'btn red', onClick: p.onStop }, 'Stop'),
     h('button', { className: 'btn', onClick: p.onArrange, disabled: p.runStatus !== 'stopped' }, 'Auto Arrange'),
+    h('button', { className: 'btn', onClick: p.onUndo, disabled: p.runStatus !== 'stopped' || !p.canUndo }, 'Undo'),
     h('button', { className: 'btn danger-outline', onClick: p.onDelete, disabled: p.runStatus !== 'stopped' }, 'Delete'),
     h('button', { className: 'btn', onClick: p.onExport }, 'Export'),
     h('button', { className: 'btn', onClick: p.onDocs }, 'Docs'),
@@ -452,8 +666,16 @@ function AlgorithmLibrary({ visible, toggle, registry, search, setSearch, disabl
 function EdgeLayer({ nodes, edges, selectedEdgeId, setSelectedEdgeId, setSelectedNodeId, camera, running, connector }) {
   const byId = new Map(nodes.map(n => [n.id, n]));
   const style = { transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` };
-  const marker = h('defs', null, h('marker', { id: 'arrow', viewBox: '0 0 8 8', refX: '7', refY: '4', markerWidth: '4', markerHeight: '4', orient: 'auto-start-reverse' }, h('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: 'rgba(55,217,255,.78)' })));
-  return h('svg', { className: 'edge-layer', width: WORLD_WIDTH, height: WORLD_HEIGHT, style }, marker,
+  const defs = h('defs', null,
+    h('linearGradient', { id: 'edgeGrad', x1: '0%', y1: '0%', x2: '100%', y2: '0%' },
+      h('stop', { offset: '0%', stopColor: '#00d8ff' }),
+      h('stop', { offset: '100%', stopColor: '#b65cff' })
+    ),
+    h('marker', { id: 'arrow', viewBox: '0 0 8 8', refX: '7', refY: '4', markerWidth: '4', markerHeight: '4', orient: 'auto-start-reverse' },
+      h('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: '#00d8ff' })
+    )
+  );
+  return h('svg', { className: 'edge-layer', width: WORLD_WIDTH, height: WORLD_HEIGHT, style }, defs,
     edges.map(e => {
       const a = byId.get(e.from.nodeId), b = byId.get(e.to.nodeId);
       if (!a || !b) return null;
@@ -471,9 +693,9 @@ function EdgeLayer({ nodes, edges, selectedEdgeId, setSelectedEdgeId, setSelecte
   );
 }
 
-function PipelineNode({ node, selected, running, telemetry, onSelect, onDelete, onDragStart, onOutputDown, onInputUp }) {
+function PipelineNode({ node, selected, dragging, running, telemetry, onSelect, onDelete, onDragStart, onOutputDown, onInputUp }) {
   const size = getNodeSize(node);
-  return h('div', { className: `node ${selected ? 'selected' : ''} ${running ? 'running' : ''}`, style: { left: node.x, top: node.y, height: size.h }, onPointerDown: onSelect },
+  return h('div', { className: `node ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''} ${running ? 'running' : ''}`, style: { left: node.x, top: node.y, height: size.h }, onPointerDown: ev => { ev.stopPropagation(); onSelect(); } },
     h('button', { className: 'node-delete', onClick: ev => { ev.stopPropagation(); onDelete(); } }, '×'),
     h('div', { className: 'node-header', onPointerDown: ev => { onSelect(); onDragStart(ev, node); } },
       h('div', { className: 'node-title-wrap' }, h('div', { className: 'node-mini-icon' }, iconForModule(node.moduleTypeId, node.category)), h('div', { className: 'node-title' }, node.title)),
@@ -485,8 +707,8 @@ function PipelineNode({ node, selected, running, telemetry, onSelect, onDelete, 
       h('span', null, 'MEM ', h('b', null, `${Math.round(telemetry?.memKb || 0)}KB`)),
       h('span', null, 'I/O ', h('b', null, `${node.inputs.length}/${node.outputs.length}`))
     ),
-    h('div', { className: 'port-list inputs' }, node.inputs.map(port => h('div', { key: port.name, className: 'port input', onPointerUp: ev => onInputUp(ev, node, port), title: `${node.id}:${port.name}` }, h('span', { className: 'port-dot' }), h('span', { className: 'port-label' }, port.name)))),
-    h('div', { className: 'port-list outputs' }, node.outputs.map(port => h('div', { key: port.name, className: 'port output', onPointerDown: ev => onOutputDown(ev, node, port), title: `${node.id}:${port.name}` }, h('span', { className: 'port-label' }, port.name), h('span', { className: 'port-dot' }))))
+    h('div', { className: 'port-list inputs' }, node.inputs.map(port => h('div', { key: port.name, className: 'port input', 'data-node-id': node.id, 'data-port-name': port.name, onPointerUp: ev => onInputUp(ev, node, port), title: `${node.id}:${port.name}` }, h('span', { className: 'port-dot' }), h('span', { className: 'port-label' }, port.name)))),
+    h('div', { className: 'port-list outputs' }, node.outputs.map(port => h('div', { key: port.name, className: 'port output', 'data-node-id': node.id, 'data-port-name': port.name, onPointerDown: ev => onOutputDown(ev, node, port), title: `${node.id}:${port.name}` }, h('span', { className: 'port-label' }, port.name), h('span', { className: 'port-dot' }))))
   );
 }
 
@@ -519,7 +741,7 @@ function Inspector({ toggle, node, edge, running, cores, onParamChange, onCoreCh
       h('div', { className: 'node-summary' }, h('div', { className: 'node-summary-title' }, h('span', null, node.title), h('span', null, iconForModule(node.moduleTypeId, node.category))), h('div', { className: 'node-summary-sub' }, `${node.id} · ${node.moduleTypeId}`)),
       h('div', { className: 'tab-row' }, ['parameters','mapping','notes'].map(t => h('button', { key: t, className: tab === t ? 'active' : '', onClick: () => setTab(t) }, t.toUpperCase()))),
       tab === 'parameters' && h(ParamPanel, { node, running, onParamChange }),
-      tab === 'mapping' && h('div', null, h('div', { className: 'param-section-title' }, 'DSP Core Mapping'), h('select', { value: node.core || 0, onChange: e => onCoreChange(node.id, e.target.value), disabled: running }, Array.from({ length: cores }, (_, i) => h('option', { key: i, value: i }, `Core ${i}`))), h('div', { className: 'param-section-title' }, 'I/O Format'), h('div', { className: 'node-summary-sub' }, `Inputs: ${node.inputs.map(p => p.name).join(', ') || '-'}\nOutputs: ${node.outputs.map(p => p.name).join(', ') || '-'}`)),
+      tab === 'mapping' && h('div', null, h('div', { className: 'param-section-title' }, 'DSP Core Mapping'), h('select', { value: node.core || 0, onChange: e => onCoreChange(node.id, e.target.value), disabled: running }, Array.from({ length: cores }, (_, i) => h('option', { key: i, value: i }, `Core ${i}`))), h('div', { className: 'param-section-title' }, 'I/O Format'), h('div', { className: 'node-summary-sub' }, `Inputs: ${node.inputs.map(p => p.name).join(', ') || '-'}\\nOutputs: ${node.outputs.map(p => p.name).join(', ') || '-'}`)),
       tab === 'notes' && h('textarea', { value: JSON.stringify(node.moduleType || node.raw, null, 2), readOnly: true, style: { width: '100%', minHeight: 280 } })
     );
   }

@@ -11,9 +11,9 @@ int main() {
   auto build = engine.buildPipeline("{\"nodes\":[]}");
   assert(build.find("session_id") != std::string::npos);
 
-  auto edit = engine.pipelineEditEvent("{\"action\":\"connection_added\",\"detail\":{}}");
+  auto edit = engine.pipelineEditEvent("{\"action\":\"undo\",\"detail\":{\"label\":\"Move node\"}}");
   assert(edit.find("pipelineEditEvent") != std::string::npos);
-  auto tool = engine.pipelineToolAction("{\"tool\":\"arrange\",\"event\":\"tool_auto_arrange\"}");
+  auto tool = engine.pipelineToolAction("{\"tool\":\"undo\",\"event\":\"tool_undo\"}");
   assert(tool.find("pipelineToolAction") != std::string::npos);
 
   engine.run("sess_test");
