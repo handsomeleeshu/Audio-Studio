@@ -19,4 +19,5 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment:
+    steps:
+      - uses: actions/deploy-pages@v4
