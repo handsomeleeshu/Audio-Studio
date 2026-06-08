@@ -563,27 +563,47 @@
       const p1=portPoint(a,'out'), p2=portPoint(b,'in');
       const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
       const gap=x2-x1;
-      if(gap>70){
-        const dx=clamp(gap*.45,36,130);
+      const dy=y2-y1;
+      const dist=Math.hypot(gap,dy);
+
+      // Very close ports: draw the direct segment. A folded elbow would overlap itself
+      // and can be hidden by the node layer, making the connection look broken.
+      if(dist < 24){
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      }
+
+      // Normal left-to-right route. Use a cubic curve for both long and short positive gaps.
+      // For short gaps the control distance is small, so the line remains continuous.
+      if(gap >= 0){
+        const dx = gap < 70 ? Math.max(6, gap * 0.5) : clamp(gap * .45, 32, 130);
         return `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`;
       }
-      const elbow=x1+Math.max(34, Math.min(80, Math.abs(gap)+38));
-      const tail=x2-24;
-      return `M ${x1} ${y1} L ${elbow} ${y1} L ${elbow} ${y2} L ${tail} ${y2} L ${x2} ${y2}`;
+
+      // If the target is left of the source, route through a side lane instead of folding
+      // between the two ports. This keeps the line visible when nodes are dragged close.
+      const lanePad = 46;
+      const downLane = Math.max(y1,y2) + lanePad;
+      const upLane = Math.min(y1,y2) - lanePad;
+      const laneY = downLane < state.world.h - 30 ? downLane : Math.max(30, upLane);
+      const outX = x1 + 36;
+      const inX = x2 - 36;
+      return `M ${x1} ${y1} C ${outX} ${y1}, ${outX} ${laneY}, ${outX+20} ${laneY} L ${inX-20} ${laneY} C ${inX} ${laneY}, ${inX} ${y2}, ${x2} ${y2}`;
     }
     function drawEdges(){
       const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
       svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
       svg.setAttribute('preserveAspectRatio','none');
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-      defs.innerHTML=`<linearGradient id="edgeGrad" x1="0" x2="1"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="8" markerHeight="8" refX="7.2" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 Z" fill="#00d8ff"/></marker>`;
+      defs.innerHTML=`<linearGradient id="edgeGrad" x1="0" x2="1"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="7" markerHeight="6" refX="6.4" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#00d8ff"/></marker>`;
       svg.appendChild(defs);
       state.edges.forEach(([s,t],idx)=>{
         const a=nodeById(s), b=nodeById(t); if(!a||!b) return;
         const d=edgePath(a,b);
         const key=edgeKey(s,t);
         const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',key===selectedEdgeKey?'5':'3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class',`edge-glow ${key===selectedEdgeKey?'selected':''}`);
+        const paForArrow=portPoint(a,'out'), pbForArrow=portPoint(b,'in');
+        const edgeLen=Math.hypot(pbForArrow.x-paForArrow.x,pbForArrow.y-paForArrow.y);
+        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',key===selectedEdgeKey?'5':'3'); p.setAttribute('marker-end',edgeLen>20?'url(#arrow)':''); p.setAttribute('class',`edge-glow ${key===selectedEdgeKey?'selected':''}`);
         svg.appendChild(p);
         const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
         hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
