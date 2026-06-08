@@ -561,27 +561,8 @@
     }
     function edgeAnchorPoint(node, dir){
       const p=portPoint(node,dir);
-      const pad=14;
-      return { x:p.x + (dir === 'out' ? pad : -pad), y:p.y };
-    }
-    function edgeLaneY(a,b,y1,y2){
-      const top=Math.min(a.y,b.y)-46;
-      if(top > 24) return top;
-      const bottom=Math.max(a.y+a.h,b.y+b.h)+46;
-      return Math.min(state.world.h-24, bottom);
-    }
-    function edgeAnchorPoint(node, dir){
-      const p=portPoint(node,dir);
-      // Keep anchors just outside the visible port ring. This prevents the line
-      // and arrow from being completely covered by the port/node layer when two
-      // nodes are dragged very close together.
-      const pad=9;
-      return { x:p.x + (dir === 'out' ? pad : -pad), y:p.y };
-    }
-    function edgeAnchorPoint(node, dir){
-      const p=portPoint(node,dir);
-      // Put the SVG path endpoint just outside the port ring. The SVG layer is
-      // below nodes, so ending at the port center can hide short lines/arrows.
+      // The SVG edge layer is below nodes. Keep endpoints just outside the
+      // visible port ring so short lines/arrows are not covered by node/port.
       const pad=8;
       return { x:p.x + (dir === 'out' ? pad : -pad), y:p.y };
     }
@@ -589,25 +570,20 @@
       const p1=edgeAnchorPoint(a,'out'), p2=edgeAnchorPoint(b,'in');
       const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
       const gap=x2-x1;
-      const dy=y2-y1;
-
-      // Extremely close same-row ports: draw a small visible segment. Do not
-      // hide the arrow; the endpoint is already outside the input port.
-      if(Math.abs(gap) < 22 && Math.abs(dy) < 18){
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
-      }
-
-      // Universal simple curve. No top/bottom lane and no close-node special
-      // U-turn, so nearby nodes cannot produce the large vertical loops.
       const dx=clamp(Math.abs(gap)*0.45, 18, 110);
       return `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`;
+    }
+    function redrawEdgesAfterLayout(){
+      drawEdges();
+      const raf=window.requestAnimationFrame || (cb=>setTimeout(cb,0));
+      raf(()=>{ drawEdges(); raf(drawEdges); });
     }
     function drawEdges(){
       const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
       svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
       svg.setAttribute('preserveAspectRatio','none');
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-      defs.innerHTML=`<linearGradient id="edgeGrad" x1="0" x2="1"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="5" markerHeight="4" refX="4.7" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L5,2 L0,4 Z" fill="#00d8ff"/></marker>`;
+      defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="8" refX="9.4" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,4 L0,8 Z" fill="#00d8ff"/></marker>`;
       svg.appendChild(defs);
       state.edges.forEach(([s,t],idx)=>{
         const a=nodeById(s), b=nodeById(t); if(!a||!b) return;
@@ -690,7 +666,7 @@
     }
     function renderAll(rebuildNodes=true){
       if(rebuildNodes) renderNodes(); else {$$('.pipeline-node').forEach(el=>el.classList.toggle('selected',el.dataset.id===selectedNodeId));}
-      drawEdges(); renderInspector(); renderCostTable(); renderCoreLoading(); renderHealth(); renderMeters();
+      redrawEdgesAfterLayout(); renderInspector(); renderCostTable(); renderCoreLoading(); renderHealth(); renderMeters();
     }
     async function updateRandom(){
       if(!running) return;
@@ -718,7 +694,7 @@
       pushHistory('Auto arrange');
       rows.forEach((row,r)=>row.forEach((id,i)=>{const n=nodeById(id); if(n){n.x=120+i*190; n.y=95+r*190;}}));
       let extras=state.nodes.filter(n=>!rows.flat().includes(n.id)); extras.forEach((n,i)=>{n.x=160+i*165; n.y=475;});
-      renderAll(true); backendTool('auto_arrange',{nodes:state.nodes.length}); backendEdit('auto_arrange',{}); toast('Auto layout finished'); addLog('info','Auto layout finished','ELK-like frontend layout demo');
+      renderAll(true); redrawEdgesAfterLayout(); backendTool('auto_arrange',{nodes:state.nodes.length}); backendEdit('auto_arrange',{}); toast('Auto layout finished'); addLog('info','Auto layout finished','ELK-like frontend layout demo');
     }
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(([from,to])=>({from:from+'.out',to:to+'.in'}))};
