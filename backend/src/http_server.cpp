@@ -1,6 +1,7 @@
 #include "audio_studio.hpp"
 #include <algorithm>
 #include <cstring>
+#include <dirent.h>
 #include <fstream>
 #include <iostream>
 #include <netinet/in.h>
@@ -57,6 +58,48 @@ std::map<std::string, std::string> parseQuery(const std::string& q) {
   return out;
 }
 
+
+std::string sanitizeConfigFileName(const std::string& input) {
+  if (input.empty()) return "A2.json";
+  std::string out;
+  for (char c : input) {
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+    if (ok) out.push_back(c);
+  }
+  if (out.empty()) out = "A2.json";
+  if (out.size() < 5 || out.substr(out.size() - 5) != ".json") out += ".json";
+  return out;
+}
+
+std::vector<std::string> listConfigJsonFiles(const std::string& root_dir) {
+  std::vector<std::string> files;
+  const std::string dir_path = root_dir + "/config";
+  DIR* dir = opendir(dir_path.c_str());
+  if (!dir) return files;
+  while (auto* ent = readdir(dir)) {
+    std::string name = ent->d_name;
+    if (name.size() >= 5 && name.substr(name.size() - 5) == ".json") files.push_back(name);
+  }
+  closedir(dir);
+  std::sort(files.begin(), files.end());
+  return files;
+}
+
+std::string configProjectListJson(const std::string& root_dir) {
+  auto files = listConfigJsonFiles(root_dir);
+  std::ostringstream ss;
+  ss << "{\"projects\":[";
+  for (size_t i = 0; i < files.size(); ++i) {
+    std::string name = files[i];
+    if (name.size() >= 5) name = name.substr(0, name.size() - 5);
+    if (i) ss << ",";
+    ss << "{\"file\":\"" << jsonEscape(files[i]) << "\",\"name\":\"" << jsonEscape(name) << "\"}";
+  }
+  ss << "]}";
+  return ss.str();
+}
+
 std::string contentTypeForPath(const std::string& path) {
   if (path.size() >= 5 && path.substr(path.size()-5) == ".html") return "text/html; charset=utf-8";
   if (path.size() >= 4 && path.substr(path.size()-4) == ".css") return "text/css; charset=utf-8";
@@ -100,7 +143,17 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
   if (req.method == "GET" && (req.path == "/" || req.path == "/index.html" || req.path == "/frontend/" || req.path == "/frontend/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
   if (req.method == "GET" && req.path.rfind("/assets/", 0) == 0) return serveFile("frontend" + req.path, "");
-  if (req.method == "GET" && (req.path == "/config/A2.json" || req.path == "/api/config")) return serveFile("config/A2.json", "application/json; charset=utf-8");
+  if (req.method == "GET" && req.path == "/api/projects") {
+    return {200, "application/json; charset=utf-8", configProjectListJson(root_dir_)};
+  }
+  if (req.method == "GET" && req.path == "/api/config") {
+    auto q = parseQuery(req.query);
+    return serveFile(std::string("config/") + sanitizeConfigFileName(q["project"]), "application/json; charset=utf-8");
+  }
+  if (req.method == "GET" && req.path.rfind("/config/", 0) == 0 &&
+      req.path.size() >= 12 && req.path.substr(req.path.size() - 5) == ".json") {
+    return serveFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(8)), "application/json; charset=utf-8");
+  }
   if (req.method == "GET" && req.path == "/api/telemetry") {
     auto q = parseQuery(req.query);
     return {200, "application/json", runtime_->telemetry(splitCsv(q["nodes"]))};

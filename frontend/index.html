@@ -66,7 +66,7 @@
     .component .ico{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;background:rgba(0,216,255,.12);color:var(--cyan);font-size:13px}.component span{font-size:12px; font-weight:700}.component small{margin-left:auto;color:#9eb0ca;font-size:10px}
     .hint{font-size:11px;color:var(--muted);text-align:center;border-top:1px solid #162941;padding-top:8px}.left-cost-mini{height:210px;border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:8px; overflow:hidden;}
     .canvas-zone{grid-column:2; grid-row:2; min-width:0; min-height:0; position:relative; border-right:1px solid var(--line); overflow:hidden; display:flex; flex-direction:column;}
-    .pipeline-strip{height:46px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 12px;background:rgba(6,14,26,.62);}
+    .pipeline-strip{height:46px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 12px;background:rgba(6,14,26,.62);}.pipeline-field{height:40px;min-width:190px;max-width:300px;display:flex;flex-direction:column;justify-content:center}.pipeline-field small{color:#7f90a9;font-size:9px;margin-bottom:3px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}.pipeline-field select{height:30px;min-width:190px;border:1px solid #21466e;border-radius:9px;background:#071426;color:#e7f0ff;padding:0 24px 0 10px;font-size:13px;font-weight:800;outline:none;max-width:100%;overflow:hidden;text-overflow:ellipsis}
     .tab{padding:8px 12px;border:1px solid #23405d;border-radius:8px;background:#081425;font-weight:800;font-size:13px}.badge{padding:7px 11px;border-radius:8px;border:1px solid var(--line);font-size:12px;font-weight:800;background:#07111f}.badge.ok{color:#8bff9f;border-color:rgba(49,242,107,.35)}.badge.warn{color:#ffe086}.badge.err{color:#ff9b9b}.strip-spacer{flex:1}.metric-pill{display:flex;align-items:center;gap:10px;border:1px solid #223a56;border-radius:8px;background:#07111f;padding:8px 12px;font-size:12px}.metric-pill b{color:var(--cyan);font-size:20px}.mini-bars{display:flex;gap:2px;align-items:end;height:18px}.mini-bars i{display:block;width:3px;background:linear-gradient(180deg,var(--green),#0a8830);border-radius:2px}
     .canvas-wrap{position:relative; flex:1; overflow:hidden; background-color:#07101d; background-image: linear-gradient(rgba(56,91,128,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(56,91,128,.18) 1px, transparent 1px), linear-gradient(rgba(0,216,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,216,255,.06) 1px, transparent 1px); background-size:32px 32px, 32px 32px, 8px 8px, 8px 8px;}.canvas-scroll{position:absolute;inset:0;overflow:auto;z-index:1;overscroll-behavior:contain;scrollbar-color:#24415f #07101d;scrollbar-width:thin}.canvas-scroll::-webkit-scrollbar{width:10px;height:10px}.canvas-scroll::-webkit-scrollbar-track{background:#07101d}.canvas-scroll::-webkit-scrollbar-thumb{background:#24415f;border-radius:8px;border:2px solid #07101d}.scroll-spacer{position:relative;width:2200px;height:1050px;pointer-events:none;z-index:0}
     .toolbox{position:absolute;left:12px;top:12px;z-index:3;display:flex;gap:7px}.tool{width:32px;height:32px;border:1px solid #254460;background:#091626;border-radius:7px;display:grid;place-items:center;color:#b7d8ff}.tool.active{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 12px rgba(0,216,255,.22)}
@@ -98,7 +98,7 @@
         <div><span class="brand-title">Audio Studio</span><span class="brand-version">VeriSilicon Advanced Sound System</span></div>
       </div>
       <div class="top-group">
-        <div class="top-field project"><small>Project</small><select id="projectSelect"><option>A2_Automotive_Full_Feature_Example</option></select></div>
+        <div class="top-field project"><small>Project</small><select id="projectSelect"><option>Loading...</option></select></div>
         <div class="top-field"><small>DSP Target</small><select id="dspSelect"><option>HiFi5s</option><option>ZSP</option><option>Native Mock</option></select></div>
         <div class="top-field small"><small>Cores</small><select id="coreSelect"><option>4</option><option>8</option></select></div>
         <div class="top-field small"><small>Rate</small><select id="rateSelect"><option>48000</option><option>96000</option></select></div>
@@ -135,7 +135,7 @@
 
     <section class="canvas-zone">
       <div class="pipeline-strip">
-        <div class="tab">Pipeline 1</div>
+        <div class="pipeline-field"><small>Pipeline</small><select id="pipelineSelect"><option value="ALL">All</option></select></div>
         <div class="badge ok">● BUILD SUCCESS</div>
         <div class="badge warn">⚠ <span id="warnCount">0</span> WARNINGS</div>
         <div class="badge err">● <span id="errCount">0</span> ERRORS</div>
@@ -331,7 +331,9 @@
     }
     function pipelineSnapshot() {
       return {
-        project: 'Smart Speaker v3',
+        project: currentProjectFile || 'A2.json',
+        project_name: currentProjectConfig?.meta?.build?.config_name || currentProjectFile || 'A2',
+        active_pipeline: currentPipelineId,
         target: {
           dsp: $('#dspSelect')?.value || 'HiFi5s',
           cores: Number($('#coreSelect')?.value || 4),
@@ -411,6 +413,9 @@
       {cat:'AI', type:'voice', icon:'✹', name:'Neural Denoiser', ch:'1ch', cpu:10.5, mem:640, lat:3.10},
     ];
     let nodeSeq=0;
+    let currentProjectFile = 'A2.json';
+    let currentProjectConfig = null;
+    let currentPipelineId = 'ALL';
     let selectedNodeId = 'agc_1';
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
@@ -604,19 +609,164 @@
         lat: 0.1 + Math.min(2.8, maxCh * 0.02),
       };
     }
-    async function loadPlatformConfig() {
-      const cfg = await apiGet('/api/config');
-      if(!cfg) { addLog('warn','Platform JSON not loaded','Using built-in component list'); return; }
-      const projectName = cfg.meta?.build?.config_name || 'A2 Project';
+    function projectNameFromFile(file='') {
+      return String(file || '').replace(/\.json$/,'') || 'Project';
+    }
+    function projectDisplayName(file='') {
+      return projectNameFromFile(file);
+    }
+    function moduleTypeMap(cfg=currentProjectConfig) {
+      const m = new Map();
+      (cfg?.module_types || []).forEach(mt => m.set(mt.type_id, mt));
+      return m;
+    }
+    function instanceMap(cfg=currentProjectConfig) {
+      const m = new Map();
+      (cfg?.module_instances || []).forEach(inst => m.set(inst.inst_id, inst));
+      return m;
+    }
+    function splitEndpoint(ep='') {
+      const [node='', port='out'] = String(ep).split(':');
+      return {node, port};
+    }
+    function safeGraphId(v='') {
+      return String(v).replace(/[^A-Za-z0-9_\-]+/g,'_');
+    }
+    function graphNodeId(pipeId,nodeId) {
+      return `${safeGraphId(pipeId)}__${safeGraphId(nodeId)}`;
+    }
+    function componentFromResolvedModule(mt, displayName='') {
+      const fallback = {type_id:'graph.unknown', category:'module', io:{in_ports:[{name:'in',max_ch:2}],out_ports:[{name:'out',max_ch:2}]}};
+      const c = componentFromModuleType(mt || fallback);
+      if(displayName) c.name = displayName;
+      return c;
+    }
+    function componentFromPipelinePort(pipe, portRef) {
+      const p = (pipe.ports || []).find(x => x.port_id === portRef) || {port_id:portRef, role:'source', hw:{max_ch:2}};
+      const maxCh = Number(p.hw?.max_ch || 2);
+      const isSource = p.role !== 'sink';
+      return {
+        cat:'PIPELINE PORTS',
+        type:isSource ? 'input' : 'output',
+        icon:isSource ? '🎙' : '🔊',
+        name:p.port_id || portRef,
+        ch:maxCh === 1 ? '1ch' : `${maxCh}ch`,
+        cpu:0.1,
+        mem:32 + maxCh * 8,
+        lat:0.05,
+        moduleTypeId:`port.${p.role || 'io'}`,
+        inPorts:isSource ? [] : [{name:'in', max_ch:maxCh}],
+        outPorts:isSource ? [{name:'out', max_ch:maxCh}] : []
+      };
+    }
+    function resolvePipelineNodeComponent(cfg, pipe, pn) {
+      if(pn.kind === 'port') return componentFromPipelinePort(pipe, pn.port_ref);
+      const mtById = moduleTypeMap(cfg);
+      const instById = instanceMap(cfg);
+      if(pn.kind === 'module') {
+        const inst = instById.get(pn.inst_ref) || {};
+        const mt = mtById.get(inst.module_type) || {type_id:inst.module_type || pn.inst_ref, category:'module', io:{in_ports:[{name:'in',max_ch:2}],out_ports:[{name:'out',max_ch:2}]}};
+        return componentFromResolvedModule(mt, inst.name || friendlyName(mt.type_id));
+      }
+      if(pn.kind === 'module_inline') {
+        const mt = mtById.get(pn.inline?.module_type) || {type_id:pn.inline?.module_type || pn.node_id, category:'module', io:{in_ports:[{name:'in',max_ch:2}],out_ports:[{name:'out',max_ch:2}]}};
+        return componentFromResolvedModule(mt, pn.inline?.name || friendlyName(mt.type_id));
+      }
+      return componentFromResolvedModule(null, pn.node_id);
+    }
+    function mkNodeFromComponent(id,c,x,y) {
+      const inPorts=normalizePortsForComponent(c,'in');
+      const outPorts=normalizePortsForComponent(c,'out');
+      const maxCh=Math.max(1,...inPorts.map(p=>Number(p.max_ch||1)),...outPorts.map(p=>Number(p.max_ch||1)));
+      const h=Math.max(142, 108 + Math.max(inPorts.length,outPorts.length,1)*18);
+      const name=c.name || id;
+      const core = name==='KWS'||name==='VAD'?2:(name==='EQ'||name==='DRC'||name==='Volume'||name==='NS'||name==='AGC'?1:0);
+      return {id,name,type:c.type||'util',icon:c.icon||'≋',x,y,w:128,h,cpu:c.cpu||0.8,mem:c.mem||Math.round(96+maxCh*24),lat:c.lat||0.2,core,rms:-rnd(10,30),peak:-rnd(1,10),selected:false,ch:c.ch||(maxCh===1?'1ch':`${maxCh}ch`),moduleTypeId:c.moduleTypeId||'',inPorts,outPorts,portsFlipped:false};
+    }
+    function renderPipelineSelect() {
+      const select=$('#pipelineSelect');
+      if(!select) return;
+      const pipes=currentProjectConfig?.pipelines || [];
+      const options=[{pipe_id:'ALL', name:'All'}, ...pipes.map(p=>({pipe_id:p.pipe_id, name:p.name || p.pipe_id}))];
+      select.innerHTML=options.map(p=>`<option value="${p.pipe_id}">${p.name}</option>`).join('');
+      select.value = options.some(p=>p.pipe_id===currentPipelineId) ? currentPipelineId : 'ALL';
+      currentPipelineId = select.value || 'ALL';
+      select.onchange = e => {
+        if(running){ toast('Run 状态下不能切换 pipeline，请先 Stop'); e.target.value=currentPipelineId; return; }
+        currentPipelineId = e.target.value || 'ALL';
+        loadPipelineGraphFromConfig(currentPipelineId);
+      };
+    }
+    function layoutPipelineNodes(pipe, pipeIndex, selectedPipesCount) {
+      const startX=120, xStep=185;
+      const startY=selectedPipesCount>1 ? 70 + pipeIndex*230 : 95;
+      return (pipe.nodes || []).map((pn,i)=>({pn, x:pn.ui?.x ?? (startX+i*xStep), y:pn.ui?.y ?? startY}));
+    }
+    function loadPipelineGraphFromConfig(pipelineId='ALL') {
+      if(!currentProjectConfig) return;
+      const allPipes=currentProjectConfig.pipelines || [];
+      const selected=allPipes.filter(p=>pipelineId==='ALL' || p.pipe_id===pipelineId);
+      const finalPipes=selected.length ? selected : allPipes;
+      const nodes=[];
+      const edges=[];
+      finalPipes.forEach((pipe,pi)=>{
+        const positioned=layoutPipelineNodes(pipe,pi,finalPipes.length);
+        const idSet=new Set();
+        positioned.forEach(({pn,x,y})=>{
+          const c=resolvePipelineNodeComponent(currentProjectConfig,pipe,pn);
+          const id=graphNodeId(pipe.pipe_id,pn.node_id);
+          idSet.add(pn.node_id);
+          nodes.push(mkNodeFromComponent(id,c,x,y));
+        });
+        (pipe.edges || []).forEach(e=>{
+          const from=splitEndpoint(e.from), to=splitEndpoint(e.to);
+          if(!idSet.has(from.node) || !idSet.has(to.node)) return;
+          edges.push(makeEdge(graphNodeId(pipe.pipe_id,from.node), from.port || 'out', graphNodeId(pipe.pipe_id,to.node), to.port || 'in'));
+        });
+      });
+      state.nodes=nodes;
+      state.edges=edges;
+      selectedNodeIds.clear(); selectedEdgeKeys.clear();
+      selectedNodeId=state.nodes[0]?.id || '';
+      selectedEdgeKey='';
+      history.undo=[]; history.redo=[]; updateHistoryButtons();
+      renderPipelineSelect();
+      renderAll(true);
+      const label=pipelineId==='ALL'?'All':(finalPipes[0]?.name || pipelineId);
+      addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s)`);
+      backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length});
+    }
+    async function loadProjectList() {
+      const select=$('#projectSelect');
+      const res=await apiGet('/api/projects');
+      const projects=Array.isArray(res?.projects) && res.projects.length ? res.projects : [{file:'A2.json',name:'A2'}];
+      if(select) {
+        select.innerHTML=projects.map(p=>`<option value="${p.file}">${p.name || projectNameFromFile(p.file)}</option>`).join('');
+        if(!projects.some(p=>p.file===currentProjectFile)) currentProjectFile=projects[0].file;
+        select.value=currentProjectFile;
+      }
+      await loadPlatformConfig(currentProjectFile);
+    }
+    async function loadPlatformConfig(projectFile=currentProjectFile) {
+      const cfg = await apiGet('/api/config?project=' + encodeURIComponent(projectFile || 'A2.json'));
+      if(!cfg) { addLog('warn','Project JSON not loaded','Using built-in component list'); return; }
+      currentProjectFile = projectFile || 'A2.json';
+      currentProjectConfig = cfg;
       const projectSelect = $('#projectSelect');
-      if(projectSelect) projectSelect.innerHTML = `<option>${projectName}</option>`;
+      if(projectSelect) projectSelect.value = currentProjectFile;
+
       const moduleTypes = Array.isArray(cfg.module_types) ? cfg.module_types : [];
       const fromJson = moduleTypes.map(componentFromModuleType);
       const ioBuiltins = components.filter(c => c.cat === 'INPUT / OUTPUT');
       components.splice(0, components.length, ...ioBuiltins, ...fromJson);
       renderLibrary($('#searchInput')?.value || '');
-      addLog('ok','Algorithm library loaded',`${fromJson.length} modules from platform JSON`);
-      backendEdit('platform_config_loaded', {project:projectName, module_types:fromJson.length});
+
+      currentPipelineId='ALL';
+      renderPipelineSelect();
+      loadPipelineGraphFromConfig(currentPipelineId);
+
+      addLog('ok','Project JSON loaded',`${projectDisplayName(currentProjectFile)}: ${(cfg.pipelines||[]).length} pipeline(s), ${fromJson.length} module type(s)`);
+      backendEdit('project_config_loaded', {project_file:currentProjectFile, pipelines:(cfg.pipelines||[]).length, module_types:fromJson.length});
     }
 
     function componentByName(name){ return components.find(c=>c.name===name) || components[0]; }
@@ -1063,8 +1213,9 @@
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
     function init(){
-      renderLibrary(); renderAll(true); updateHistoryButtons(); loadPlatformConfig(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
+      renderLibrary(); renderAll(true); updateHistoryButtons(); loadProjectList(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
+      $('#projectSelect').addEventListener('change', e=>loadPlatformConfig(e.target.value));
       const wrap=$('#canvasWrap');
       const sc=getScrollEl();
       setupMinimapNavigation();
