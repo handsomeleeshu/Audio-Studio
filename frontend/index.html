@@ -76,7 +76,7 @@
     .pipeline-node{position:absolute; width:128px; min-height:118px; border-radius:12px; padding:11px; background:linear-gradient(180deg,rgba(11,31,53,.96),rgba(6,18,32,.96)); border:1px solid rgba(0,216,255,.38); box-shadow:0 0 18px rgba(0,216,255,.12), inset 0 0 0 1px rgba(255,255,255,.04); z-index:2; user-select:none; cursor:move;}
     .pipeline-node.purple{border-color:rgba(182,92,255,.55); box-shadow:0 0 18px rgba(182,92,255,.14)}.pipeline-node.orange{border-color:rgba(255,168,38,.55); box-shadow:0 0 18px rgba(255,168,38,.14)}.pipeline-node.green{border-color:rgba(49,242,107,.45); box-shadow:0 0 18px rgba(49,242,107,.1)}.pipeline-node.selected{outline:2px solid var(--cyan); box-shadow:0 0 28px rgba(0,216,255,.34), inset 0 0 0 1px rgba(255,255,255,.08)}
     .delete-node{position:absolute;right:7px;top:7px;width:18px;height:18px;border:1px solid rgba(255,255,255,.12);background:rgba(255,81,81,.12);color:#ff9b9b;border-radius:5px;font-size:13px;line-height:16px;display:none;place-items:center;cursor:pointer;z-index:5}.pipeline-node.editable:hover .delete-node{display:grid}.pipeline-node.locked{cursor:not-allowed;opacity:.94}.pipeline-node.locked .port{cursor:not-allowed;filter:saturate(.5)}
-    .node-title{display:flex;align-items:center;gap:8px;font-weight:900;font-size:14px;margin-bottom:7px}.node-title .nicon{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:rgba(0,216,255,.15); color:var(--cyan)}.alive{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}.node-sub{font-size:11px;color:#aac0dc;margin-bottom:7px}.node-stat{display:grid;grid-template-columns:36px 1fr;gap:4px;font-size:11px;color:#d4e5ff}.node-stat em{font-style:normal;color:var(--muted)}.core-tag{margin-top:8px;font-size:11px;color:var(--cyan);font-weight:800}.port{position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid var(--cyan);background:#06101c;box-shadow:0 0 8px var(--cyan);cursor:crosshair}.port.in{left:-8px;top:50%;transform:translateY(-50%)}.port.out{right:-8px;top:50%;transform:translateY(-50%)}.port:hover{background:var(--cyan)}
+    .node-title{display:flex;align-items:center;gap:8px;font-weight:900;font-size:14px;margin-bottom:7px}.node-title .nicon{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:rgba(0,216,255,.15); color:var(--cyan)}.alive{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}.node-sub{font-size:11px;color:#aac0dc;margin-bottom:7px}.node-stat{display:grid;grid-template-columns:36px 1fr;gap:4px;font-size:11px;color:#d4e5ff}.node-stat em{font-style:normal;color:var(--muted)}.core-tag{margin-top:8px;font-size:11px;color:var(--cyan);font-weight:800}.port{position:absolute;width:14px;height:14px;border-radius:50%;background:#06101c;cursor:crosshair;transform:translateY(-50%);z-index:6}.port.in{left:-8px;border:2px solid var(--cyan);box-shadow:0 0 8px var(--cyan)}.port.out{right:-8px;border:2px solid var(--purple);box-shadow:0 0 8px var(--purple)}.pipeline-node.flipped .port.in{left:auto;right:-8px}.pipeline-node.flipped .port.out{right:auto;left:-8px}.port.in:hover{background:var(--cyan)}.port.out:hover{background:var(--purple)}.port.active{background:var(--yellow);border-color:var(--yellow);box-shadow:0 0 12px var(--yellow)}
     .minimap{position:absolute;left:16px;bottom:16px;width:210px;height:124px;border:1px solid #24405e;background:rgba(3,9,17,.82);border-radius:10px;z-index:3;padding:8px}.minimap-inner{height:76px;border:1px solid #18314b;background:rgba(0,216,255,.05);position:relative;overflow:hidden}.mini-node{position:absolute;background:rgba(0,216,255,.22);border:1px solid rgba(0,216,255,.35);border-radius:2px}.zoom{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px}.zoom button{background:#091626;border:1px solid #24415f;border-radius:5px;width:30px;height:26px;font-weight:900}.zoom span{font-size:12px;color:#c9dbf5}
     .right-panel{grid-column:3; grid-row:2/4; background:rgba(5,12,23,.78); padding:10px; overflow:hidden; display:flex; flex-direction:column; gap:10px;}
     .inspector{flex:1; min-height:0; border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); display:flex;flex-direction:column;overflow:hidden;}
@@ -145,7 +145,7 @@
         <div class="metric-pill">XRuns / Dropouts <b id="xrunsTop">0</b></div>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
-        <div class="toolbox"><button class="tool active">⌖</button><button class="tool">✋</button><button class="tool">⌕</button><button class="tool">↺</button><button class="tool">🗑</button></div>
+        <div class="toolbox"><button class="tool active" id="selectTool">⌖</button><button class="tool" id="panTool">✋</button><button class="tool" id="searchTool">⌕</button><button class="tool" id="undoTool">↺</button><button class="tool" id="swapPortsBtn" title="Swap selected node I/O side">⇄</button><button class="tool" id="deleteTool">🗑</button></div>
         <button class="btn auto-layout" id="autoBtn">Auto Arrange</button>
         <div class="pipeline-world" id="pipelineWorld">
           <svg class="canvas-svg" id="edgeSvg" viewBox="0 0 2200 1050"></svg>
@@ -240,6 +240,33 @@
       }
       return null;
     }
+    function edgeParts(edge) {
+      if (Array.isArray(edge)) {
+        return {from:edge[0], to:edge[1], fromPort:edge[2] || 'out', toPort:edge[3] || 'in'};
+      }
+      return {
+        from:edge.from || edge.source || '',
+        to:edge.to || edge.target || '',
+        fromPort:edge.fromPort || edge.sourcePort || 'out',
+        toPort:edge.toPort || edge.targetPort || 'in'
+      };
+    }
+    function cloneEdge(edge) {
+      const p=edgeParts(edge);
+      return {from:p.from, to:p.to, fromPort:p.fromPort, toPort:p.toPort};
+    }
+    function makeEdge(from, fromPort, to, toPort) {
+      return {from, fromPort, to, toPort};
+    }
+    function edgeKeyFromParts(from, fromPort, to, toPort) {
+      return `${from}.${fromPort}->${to}.${toPort}`;
+    }
+    function parseEdgeKey(key) {
+      const [left='', right=''] = String(key || '').split('->');
+      const [from='', fromPort='out'] = left.split('.');
+      const [to='', toPort='in'] = right.split('.');
+      return {from, fromPort, to, toPort};
+    }
     function pipelineSnapshot() {
       return {
         project: 'Smart Speaker v3',
@@ -254,9 +281,10 @@
         selectedEdgeKey,
         nodes: state.nodes.map(n => ({
           id:n.id, name:n.name, type:n.type, x:n.x, y:n.y, core:n.core,
-          cpu:n.cpu, latencyMs:n.lat, memKb:n.mem, ch:n.ch
+          cpu:n.cpu, latencyMs:n.lat, memKb:n.mem, ch:n.ch,
+          in_ports:(n.inPorts||[]).map(p=>p.name), out_ports:(n.outPorts||[]).map(p=>p.name), ports_flipped:!!n.portsFlipped
         })),
-        connections: state.edges.map(([from,to]) => ({from:from+'.out', to:to+'.in'}))
+        connections: state.edges.map(e => { const p=edgeParts(e); return {from:p.from+'.'+p.fromPort, to:p.to+'.'+p.toPort}; })
       };
     }
     async function syncTelemetryFromBackend() {
@@ -346,7 +374,7 @@
     function cloneGraph() {
       return {
         nodes: state.nodes.map(n => ({...n})),
-        edges: state.edges.map(e => [...e]),
+        edges: state.edges.map(cloneEdge),
         selectedNodeId,
         selectedEdgeKey
       };
@@ -354,7 +382,7 @@
     function restoreGraph(snap) {
       if(!snap) return;
       state.nodes = snap.nodes.map(n => ({...n}));
-      state.edges = snap.edges.map(e => [...e]);
+      state.edges = snap.edges.map(cloneEdge);
       selectedNodeId = snap.selectedNodeId || state.nodes[0]?.id || '';
       selectedEdgeKey = snap.selectedEdgeKey || '';
       renderAll(true);
@@ -437,6 +465,8 @@
         icon: iconForModule(mt.type_id, category, name),
         name,
         moduleTypeId: mt.type_id,
+        inPorts: (mt.io?.in_ports || []).map((p,i)=>({name:p.name || `in${i}`, max_ch:p.max_ch || maxCh})),
+        outPorts: (mt.io?.out_ports || []).map((p,i)=>({name:p.name || `out${i}`, max_ch:p.max_ch || maxCh})),
         ch: maxCh === 1 ? '1ch' : `${maxCh}ch`,
         cpu: s.includes('neural') ? 10.5 : s.includes('beam') ? 7.8 : s.includes('aec') ? 6.1 : s.includes('drc') ? 1.5 : s.includes('eq') ? 1.1 : 0.8,
         mem: 128 + maxCh * 16,
@@ -459,10 +489,25 @@
     }
 
     function componentByName(name){ return components.find(c=>c.name===name) || components[0]; }
+    function normalizePortsForComponent(c, dir) {
+      const key = dir === 'in' ? 'inPorts' : 'outPorts';
+      if (Array.isArray(c?.[key])) return c[key].map((p,i)=>({name:p.name || `${dir}${i}`, max_ch:p.max_ch || 1}));
+      if (dir === 'in' && c?.type === 'input') return [];
+      if (dir === 'out' && c?.type === 'output') return [];
+      return [{name:dir === 'in' ? 'in' : 'out', max_ch:Number(String(c?.ch || '2').replace(/\D/g,'')) || 2}];
+    }
+    function nodePortList(node, dir) {
+      const ports = dir === 'in' ? node.inPorts : node.outPorts;
+      if (Array.isArray(ports)) return ports;
+      return normalizePortsForComponent(node, dir);
+    }
     function mkNode(id,name,type,icon,x,y){
       const c = componentByName(name);
       const core = name==='KWS'||name==='VAD'?2:(name==='EQ'||name==='DRC'||name==='Volume'||name==='Noise Suppression'||name==='AGC'?1:0);
-      return {id,name,type,icon,x,y,w:128,h:118,cpu:c.cpu||rnd(.2,5), mem:c.mem||Math.round(rnd(64,512)), lat:c.lat||rnd(.1,2.2), core, rms:-rnd(10,30), peak:-rnd(1,10), selected:false, ch:c.ch||'2ch'};
+      const inPorts=normalizePortsForComponent(c,'in');
+      const outPorts=normalizePortsForComponent(c,'out');
+      const h=Math.max(142, 108 + Math.max(inPorts.length,outPorts.length,1)*18);
+      return {id,name,type,icon,x,y,w:128,h,cpu:c.cpu||rnd(.2,5), mem:c.mem||Math.round(rnd(64,512)), lat:c.lat||rnd(.1,2.2), core, rms:-rnd(10,30), peak:-rnd(1,10), selected:false, ch:c.ch||'2ch', moduleTypeId:c.moduleTypeId||'', inPorts, outPorts, portsFlipped:false};
     }
     function toast(msg){const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)}
     function addLog(kind,msg,sub=''){
@@ -487,36 +532,94 @@
       applyZoom();
       const layer=$('#nodesLayer'); layer.innerHTML='';
       state.nodes.forEach(n=>{
+        const inPorts=nodePortList(n,'in');
+        const outPorts=nodePortList(n,'out');
+        n.inPorts=inPorts; n.outPorts=outPorts;
+        n.h=Math.max(142, 108 + Math.max(inPorts.length,outPorts.length,1)*18);
+        const portHtml = (ports,dir)=>ports.map((p,i)=>{
+          const top=((i+1)/(ports.length+1))*100;
+          const name=p.name || (dir==='in'?'in':'out');
+          return `<div class="port ${dir}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}" style="top:${top}%"></div>`;
+        }).join('');
         const el=document.createElement('div');
-        el.className=`pipeline-node ${colors[n.type]||''} ${n.id===selectedNodeId?'selected':''} ${running?'locked':'editable'}`;
-        el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.dataset.id=n.id;
-        el.innerHTML=`<button class="delete-node" title="Delete node">×</button><div class="port in" data-port="in"></div><div class="port out" data-port="out"></div><div class="node-title"><span class="nicon">${n.icon}</span><span>${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
+        el.className=`pipeline-node ${colors[n.type]||''} ${n.id===selectedNodeId?'selected':''} ${n.portsFlipped?'flipped':''} ${running?'locked':'editable'}`;
+        el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.style.minHeight=n.h+'px'; el.style.height='auto'; el.dataset.id=n.id;
+        el.innerHTML=`<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts,'in')}${portHtml(outPorts,'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span>${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
         layer.appendChild(el);
+        const measuredH=Math.ceil(el.getBoundingClientRect().height/(state.zoom||1));
+        if(Number.isFinite(measuredH) && measuredH>n.h) n.h=measuredH;
         makeDraggable(el,n);
         el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
         $('.delete-node',el).addEventListener('click', e=>{e.stopPropagation(); deleteNode(n.id);});
-        $('.port.out',el).addEventListener('click', e=>{
-          e.stopPropagation();
-          if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再改线'); return;}
-          connectFrom=n.id; toast(`选择 ${n.name} 输出，点击另一个节点输入端口完成连线`);
-        });
-        $('.port.in',el).addEventListener('click', e=>{
-          e.stopPropagation();
-          if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再改线'); return;}
-          if(connectFrom && connectFrom!==n.id){
-            const from=connectFrom;
-            pushHistory('Add connection');
-            const replaced = state.edges.filter(([s,t])=>s===from || t===n.id);
-            state.edges = state.edges.filter(([s,t])=>s!==from && t!==n.id);
-            if(!state.edges.some(([s,t])=>s===from && t===n.id)) state.edges.push([from,n.id]);
-            selectedEdgeKey = `${from}->${n.id}`;
-            connectFrom=null; drawEdges(); renderMinimap(); addLog('info','Connection added',`${from} → ${n.name}`);
-            if(replaced.length) addLog('warn','Connection replaced',`${replaced.length} old connection(s) removed by one-out/one-in rule`);
-            backendEdit('connection_added',{from,to:n.id,replaced:replaced.map(([s,t])=>({from:s,to:t}))});
-          }
-        });
+        $$('.port',el).forEach(portEl=>setupPortHandlers(portEl,n));
       });
       renderMinimap();
+    }
+
+    function clearActivePorts(){
+      $$('.port.active').forEach(p=>p.classList.remove('active'));
+    }
+    function beginPortConnection(node, dir, port) {
+      if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再改线'); return;}
+      connectFrom={nodeId:node.id, nodeName:node.name, dir, port};
+      clearActivePorts();
+      const nodeEl=$(`.pipeline-node[data-id="${node.id}"]`);
+      const portEl=nodeEl?.querySelector(`.port.${dir}[data-port="${port}"]`);
+      portEl?.classList.add('active');
+      toast(`${node.name} ${dir.toUpperCase()} ${port}：拖到或点击另一个 ${dir==='out'?'输入':'输出'} 端口完成连线`);
+      backendEdit('connection_begin',{node_id:node.id, dir, port});
+    }
+    function finishPortConnection(node, dir, port) {
+      if(running || !connectFrom) return false;
+      if(connectFrom.nodeId===node.id && connectFrom.dir===dir && connectFrom.port===port) return false;
+      if(connectFrom.dir===dir){
+        beginPortConnection(node,dir,port);
+        return false;
+      }
+
+      const from = connectFrom.dir === 'out' ? connectFrom.nodeId : node.id;
+      const fromPort = connectFrom.dir === 'out' ? connectFrom.port : port;
+      const to = connectFrom.dir === 'in' ? connectFrom.nodeId : node.id;
+      const toPort = connectFrom.dir === 'in' ? connectFrom.port : port;
+      if(from===to){ toast('同一个算法组件不能自连接'); connectFrom=null; clearActivePorts(); return false; }
+
+      pushHistory('Add connection');
+      const replaced = state.edges.filter(e=>{
+        const p=edgeParts(e);
+        return (p.from===from && p.fromPort===fromPort) || (p.to===to && p.toPort===toPort);
+      });
+      state.edges = state.edges.filter(e=>{
+        const p=edgeParts(e);
+        return !((p.from===from && p.fromPort===fromPort) || (p.to===to && p.toPort===toPort));
+      });
+      state.edges.push(makeEdge(from,fromPort,to,toPort));
+      selectedEdgeKey=edgeKeyFromParts(from,fromPort,to,toPort);
+      connectFrom=null;
+      clearActivePorts();
+      redrawEdgesAfterLayout(); renderMinimap();
+      addLog('info','Connection added',`${from}.${fromPort} → ${to}.${toPort}`);
+      if(replaced.length) addLog('warn','Connection replaced',`${replaced.length} old connection(s) removed by one-out/one-in rule`);
+      backendEdit('connection_added',{from,fromPort,to,toPort,replaced:replaced.map(edgeParts)});
+      return true;
+    }
+    function setupPortHandlers(portEl,node){
+      const dir=portEl.dataset.dir;
+      const port=portEl.dataset.port;
+      portEl.addEventListener('pointerdown',e=>{
+        e.stopPropagation();
+        if(e.button !== undefined && e.button !== 0) return;
+        beginPortConnection(node,dir,port);
+      });
+      portEl.addEventListener('pointerup',e=>{
+        e.stopPropagation();
+        finishPortConnection(node,dir,port);
+      });
+      portEl.addEventListener('click',e=>{
+        e.stopPropagation();
+        if(connectFrom && !(connectFrom.nodeId===node.id && connectFrom.dir===dir && connectFrom.port===port)){
+          finishPortConnection(node,dir,port);
+        }
+      });
     }
     function makeDraggable(el,n){
       let startX,startY,origX,origY,drag=false;
@@ -546,10 +649,11 @@
       renderMinimap();
     }
     function nodeById(id){return state.nodes.find(n=>n.id===id)}
-    function edgeKey(s,t){ return `${s}->${t}`; }
-    function portPoint(node, dir){
+    function edgeKey(s,t,fromPort='out',toPort='in'){ return edgeKeyFromParts(s,fromPort,t,toPort); }
+    function portPoint(node, dir, portName){
       const nodeEl = $$('.pipeline-node').find(el=>el.dataset.id===node.id);
-      const portEl = nodeEl?.querySelector(dir === 'out' ? '.port.out' : '.port.in');
+      const safePort = String(portName || (dir === 'out' ? 'out' : 'in')).replace(/"/g,'\\"');
+      const portEl = nodeEl?.querySelector(`.port.${dir}[data-port="${safePort}"]`) || nodeEl?.querySelector(`.port.${dir}`);
       const world = $('#pipelineWorld');
       if(portEl && world){
         const pr = portEl.getBoundingClientRect();
@@ -557,21 +661,22 @@
         const zoom = state.zoom || 1;
         return { x:(pr.left + pr.width / 2 - wr.left) / zoom, y:(pr.top + pr.height / 2 - wr.top) / zoom };
       }
-      return dir === 'out' ? {x:node.x + node.w + 7, y:node.y + node.h / 2} : {x:node.x - 7, y:node.y + node.h / 2};
+      const ports=nodePortList(node,dir);
+      const idx=Math.max(0, ports.findIndex(p=>p.name===portName));
+      const y=node.y + ((idx+1)/(ports.length+1))*node.h;
+      const leftSide = (dir==='in' && !node.portsFlipped) || (dir==='out' && node.portsFlipped);
+      return {x:leftSide ? node.x-7 : node.x+node.w+7, y};
     }
-    function edgeAnchorPoint(node, dir){
-      const p=portPoint(node,dir);
-      // The SVG edge layer is below nodes. Keep endpoints just outside the
-      // visible port ring so short lines/arrows are not covered by node/port.
-      const pad=8;
-      return { x:p.x + (dir === 'out' ? pad : -pad), y:p.y };
+    function edgeAnchorPoint(node, dir, portName){
+      const p=portPoint(node,dir,portName);
+      const side = p.x < node.x + node.w/2 ? -1 : 1;
+      return { x:p.x + side*8, y:p.y, side };
     }
-    function edgePath(a,b){
-      const p1=edgeAnchorPoint(a,'out'), p2=edgeAnchorPoint(b,'in');
+    function edgePath(a,b,fromPort='out',toPort='in'){
+      const p1=edgeAnchorPoint(a,'out',fromPort), p2=edgeAnchorPoint(b,'in',toPort);
       const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
-      const gap=x2-x1;
-      const dx=clamp(Math.abs(gap)*0.45, 18, 110);
-      return `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`;
+      const dx=clamp(Math.abs(x2-x1)*0.45, 18, 110);
+      return `M ${x1} ${y1} C ${x1+p1.side*dx} ${y1}, ${x2+p2.side*dx} ${y2}, ${x2} ${y2}`;
     }
     function redrawEdgesAfterLayout(){
       drawEdges();
@@ -585,35 +690,36 @@
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
       defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="8" refX="9.4" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,4 L0,8 Z" fill="#00d8ff"/></marker>`;
       svg.appendChild(defs);
-      state.edges.forEach(([s,t],idx)=>{
-        const a=nodeById(s), b=nodeById(t); if(!a||!b) return;
-        const d=edgePath(a,b);
-        const key=edgeKey(s,t);
+      state.edges.forEach((edge,idx)=>{
+        const ep=edgeParts(edge);
+        const a=nodeById(ep.from), b=nodeById(ep.to); if(!a||!b) return;
+        const d=edgePath(a,b,ep.fromPort,ep.toPort);
+        const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
         const p=document.createElementNS('http://www.w3.org/2000/svg','path');
         p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',key===selectedEdgeKey?'5':'3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class',`edge-glow ${key===selectedEdgeKey?'selected':''}`);
         svg.appendChild(p);
         const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
         hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
-        hit.addEventListener('click',e=>{e.stopPropagation(); selectedEdgeKey=key; selectedNodeId=''; backendEdit('connection_selected',{from:s,to:t}); drawEdges(); toast(`Selected connection: ${s} → ${t}`);});
+        hit.addEventListener('click',e=>{e.stopPropagation(); selectedEdgeKey=key; selectedNodeId=''; backendEdit('connection_selected',ep); drawEdges(); toast(`Selected connection: ${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);});
         svg.appendChild(hit);
         if(running){
           const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r','3'); dot.setAttribute('class','edge-particle');
           const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if(idx%2===0){ const pa=portPoint(a,'out'), pb=portPoint(b,'in'); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
+        if(idx%2===0){ const pa=portPoint(a,'out',ep.fromPort), pb=portPoint(b,'in',ep.toPort); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
       });
     }
     function deleteSelectedEdge(){
       if(running){toast('Run 状态下不能删除连线，请先 Stop'); return false;}
       if(!selectedEdgeKey) return false;
-      const [from,to]=selectedEdgeKey.split('->');
+      const ep=parseEdgeKey(selectedEdgeKey);
       pushHistory('Delete connection');
       const before=state.edges.length;
-      state.edges=state.edges.filter(([s,t])=>edgeKey(s,t)!==selectedEdgeKey);
+      state.edges=state.edges.filter(e=>edgeKeyFromParts(edgeParts(e).from,edgeParts(e).fromPort,edgeParts(e).to,edgeParts(e).toPort)!==selectedEdgeKey);
       selectedEdgeKey='';
-      drawEdges(); renderMinimap();
-      addLog(before!==state.edges.length?'warn':'info','Connection deleted',`${from} → ${to}`);
-      backendEdit('connection_removed',{from,to});
+      redrawEdgesAfterLayout(); renderMinimap();
+      addLog(before!==state.edges.length?'warn':'info','Connection deleted',`${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);
+      backendEdit('connection_removed',ep);
       return true;
     }
 
@@ -632,7 +738,7 @@
       const n=nodeById(id); if(!n) return;
       pushHistory('Delete node');
       state.nodes=state.nodes.filter(x=>x.id!==id);
-      state.edges=state.edges.filter(([s,t])=>s!==id && t!==id);
+      state.edges=state.edges.filter(e=>{const p=edgeParts(e); return p.from!==id && p.to!==id;});
       if(selectedNodeId===id) selectedNodeId=state.nodes[0]?.id || '';
       renderAll(true); addLog('warn','Node deleted',n.name); backendEdit('node_removed',{node_id:id,node_name:n.name}); toast('Node deleted');
     }
@@ -696,8 +802,19 @@
       let extras=state.nodes.filter(n=>!rows.flat().includes(n.id)); extras.forEach((n,i)=>{n.x=160+i*165; n.y=475;});
       renderAll(true); redrawEdgesAfterLayout(); backendTool('auto_arrange',{nodes:state.nodes.length}); backendEdit('auto_arrange',{}); toast('Auto layout finished'); addLog('info','Auto layout finished','ELK-like frontend layout demo');
     }
+    function swapSelectedPorts(){
+      if(running){toast('Run 状态下不能对调端口方向，请先 Stop'); return;}
+      const n=nodeById(selectedNodeId);
+      if(!n){toast('请先选择一个算法组件'); return;}
+      pushHistory('Swap ports');
+      n.portsFlipped=!n.portsFlipped;
+      renderAll(true);
+      backendEdit('ports_swapped',{node_id:n.id,node_name:n.name,ports_flipped:n.portsFlipped});
+      addLog('info','Ports side swapped',`${n.name}: ${n.portsFlipped?'IN right / OUT left':'IN left / OUT right'}`);
+      toast(`${n.name} 端口方向已对调`);
+    }
     function exportJson(){
-      const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(([from,to])=>({from:from+'.out',to:to+'.in'}))};
+      const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
@@ -711,7 +828,8 @@
       $('#autoBtn').addEventListener('click',autoArrange);
       $('#zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));
       $('#zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));
-      $('.toolbox .tool:nth-child(5)').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey}); if(deleteSelectedEdge()) return; if(selectedNodeId) deleteNode(selectedNodeId); });
+      $('#deleteTool').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey}); if(deleteSelectedEdge()) return; if(selectedNodeId) deleteNode(selectedNodeId); });
+      $('#swapPortsBtn').addEventListener('click',()=>{ backendTool('swap_selected_ports',{selectedNodeId}); swapSelectedPorts(); });
       wrap.addEventListener('click',e=>{ if(e.target===wrap || e.target.id==='edgeSvg'){ selectedEdgeKey=''; drawEdges(); }});
       $('#panelMenuBtn').addEventListener('click',()=>$('#panelMenu').classList.toggle('show'));
       $$('#panelMenu input').forEach(cb=>cb.addEventListener('change',e=>setPanelVisible(e.target.dataset.panel,e.target.checked)));
