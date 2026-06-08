@@ -86,7 +86,7 @@
     .bottom{grid-column:2; grid-row:3; border-right:1px solid var(--line); border-top:1px solid var(--line); background:rgba(5,12,23,.78); padding:10px; display:grid; grid-template-columns:1fr 260px 1.25fr 260px 170px; gap:10px; min-width:0;}
     .card{border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:10px; min-width:0; min-height:0; overflow:hidden; box-shadow:var(--shadow)}.card-head{height:24px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:900;letter-spacing:.04em;color:#d8eaff;margin-bottom:6px}.card-head small{font-weight:600;color:var(--muted);letter-spacing:0}.close{border:0;background:transparent;color:#7891ad;font-size:16px;line-height:1}.table{width:100%;border-collapse:collapse;font-size:11px}.table th{color:#8fa5c2;text-align:left;font-weight:800;border-bottom:1px solid #17304a;padding:4px}.table td{padding:4px;border-bottom:1px solid rgba(32,52,78,.45)}.cpu-bar{height:8px;background:#132642;border-radius:5px;overflow:hidden}.cpu-bar i{display:block;height:100%;background:linear-gradient(90deg,#28e85d,#ffd24a)}
     .core-row{display:grid;grid-template-columns:54px 1fr 54px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.loadbar{height:10px;border-radius:10px;background:#12243a;overflow:hidden}.loadbar i{display:block;height:100%;background:linear-gradient(90deg,#1c83ff,#00f6d2)}.core-extra{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:9px}.total{margin-top:12px;border-top:1px solid #172b42;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px}.total b{color:var(--cyan);font-size:18px}.probe canvas{height:170px}.probe-controls{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#9bb0c9}.selectish{border:1px solid #213a56;background:#071320;border-radius:6px;padding:6px 8px}.health-row{display:grid;grid-template-columns:1fr auto; gap:8px; margin:8px 0; font-size:12px}.health-row span{color:#a8bad3}.health-progress{height:6px;background:#14243b;border-radius:5px;overflow:hidden;margin-top:3px}.health-progress i{display:block;height:100%;background:linear-gradient(90deg,#54ff73,#00d8ff)}.meters{display:flex;gap:16px;align-items:end;justify-content:center;height:210px}.meter-wrap{text-align:center;font-size:10px;color:#9fb0ca}.meter{width:28px;height:160px;border:1px solid #263e5c;border-radius:5px;background:linear-gradient(180deg,#14213a,#07101c);display:flex;align-items:end;overflow:hidden;margin-bottom:5px}.meter i{display:block;width:100%;background:linear-gradient(180deg,#ff5151 0%,#ffcc45 32%,#31f26b 58%,#148ef7 100%)}
-    .event-log{font-size:11px;line-height:1.4}.log-item{display:grid;grid-template-columns:46px 14px 1fr;gap:5px;margin:8px 0;color:#c2d5ef}.log-time{color:#879ab4}.log-dot{width:10px;height:10px;border-radius:50%;margin-top:3px}.log-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}.log-dot.info{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}.log-dot.warn{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}.hidden-panel{display:none!important}.floating-menu{position:absolute;right:18px;top:58px;width:260px;border:1px solid #28435f;background:#07111f;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.45),0 0 24px rgba(0,216,255,.12);z-index:50;padding:12px;display:none}.floating-menu.show{display:block}.floating-menu h4{margin:0 0 8px;font-size:13px}.floating-menu label{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #152940;padding:8px 0;font-size:12px;color:#c4d7f1}.floating-menu input{accent-color:var(--cyan)}.toast{position:absolute;left:50%;top:78px;transform:translateX(-50%);background:#071320;border:1px solid rgba(0,216,255,.5);box-shadow:0 0 24px rgba(0,216,255,.15);border-radius:999px;padding:9px 18px;font-size:13px;font-weight:800;color:#ccf6ff;z-index:100;opacity:0;pointer-events:none;transition:.3s}.toast.show{opacity:1;top:84px}.drop-hint{position:absolute;inset:74px 20px 20px 20px;border:2px dashed rgba(0,216,255,.25);border-radius:18px;display:none;align-items:center;justify-content:center;color:rgba(214,240,255,.45);font-size:18px;font-weight:900;letter-spacing:.08em;z-index:0}.canvas-wrap.dragover .drop-hint{display:flex}.edge-glow{filter: drop-shadow(0 0 8px rgba(0,216,255,.65));stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer}.edge-glow.selected{filter: drop-shadow(0 0 14px rgba(0,216,255,.95));}.edge-hit{fill:none;stroke:rgba(255,255,255,.01);stroke-width:30;pointer-events:stroke;cursor:pointer}.edge-label{font-size:10px; fill:#92b7d7;paint-order:stroke;stroke:#07101d;stroke-width:3px;pointer-events:none}.edge-particle{fill:var(--cyan);filter:drop-shadow(0 0 6px var(--cyan));pointer-events:none}.minimap-viewport{position:absolute;border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.05);box-shadow:0 0 10px rgba(0,216,255,.35);pointer-events:none}.footer-note{font-size:10px;color:#7185a0;margin-top:6px}
+    .event-log{font-size:11px;line-height:1.4}.log-item{display:grid;grid-template-columns:46px 14px 1fr;gap:5px;margin:8px 0;color:#c2d5ef}.log-time{color:#879ab4}.log-dot{width:10px;height:10px;border-radius:50%;margin-top:3px}.log-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}.log-dot.info{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}.log-dot.warn{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}.hidden-panel{display:none!important}.floating-menu{position:absolute;right:18px;top:58px;width:260px;border:1px solid #28435f;background:#07111f;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.45),0 0 24px rgba(0,216,255,.12);z-index:50;padding:12px;display:none}.floating-menu.show{display:block}.floating-menu h4{margin:0 0 8px;font-size:13px}.floating-menu label{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #152940;padding:8px 0;font-size:12px;color:#c4d7f1}.floating-menu input{accent-color:var(--cyan)}.toast{position:absolute;left:50%;top:78px;transform:translateX(-50%);background:#071320;border:1px solid rgba(0,216,255,.5);box-shadow:0 0 24px rgba(0,216,255,.15);border-radius:999px;padding:9px 18px;font-size:13px;font-weight:800;color:#ccf6ff;z-index:100;opacity:0;pointer-events:none;transition:.3s}.toast.show{opacity:1;top:84px}.drop-hint{position:absolute;inset:74px 20px 20px 20px;border:2px dashed rgba(0,216,255,.25);border-radius:18px;display:none;align-items:center;justify-content:center;color:rgba(214,240,255,.45);font-size:18px;font-weight:900;letter-spacing:.08em;z-index:0}.canvas-wrap.dragover .drop-hint{display:flex}.edge-glow{filter: drop-shadow(0 0 8px rgba(0,216,255,.65));stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer}.edge-glow.selected{filter: drop-shadow(0 0 14px rgba(0,216,255,.95));}.edge-hit{fill:none;stroke:rgba(255,255,255,.01);stroke-width:30;pointer-events:stroke;cursor:pointer}.edge-label{font-size:10px; fill:#92b7d7;paint-order:stroke;stroke:#07101d;stroke-width:3px;pointer-events:none}.edge-particle{fill:var(--cyan);filter:drop-shadow(0 0 6px var(--cyan));pointer-events:none}.minimap-viewport{position:absolute;border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.05);box-shadow:0 0 10px rgba(0,216,255,.35);pointer-events:none}.footer-note{font-size:10px;color:#7185a0;margin-top:6px}.selection-box{position:absolute;border:1px solid rgba(0,216,255,.95);background:rgba(0,216,255,.12);box-shadow:0 0 18px rgba(0,216,255,.22),inset 0 0 0 1px rgba(255,255,255,.06);border-radius:6px;display:none;pointer-events:none;z-index:4}
     @media(max-width:1320px){.app{grid-template-columns:230px minmax(500px,1fr) 320px}.bottom{grid-template-columns:1fr 240px 1.2fr 240px}.brand{min-width:260px}.brand-title{font-size:18px}.top-field{min-width:82px}.btn{padding:9px 11px}.right-panel{padding:8px}}
   </style>
 </head>
@@ -145,13 +145,14 @@
         <div class="metric-pill">XRuns / Dropouts <b id="xrunsTop">0</b></div>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
-        <div class="toolbox"><button class="tool active" id="selectTool">⌖</button><button class="tool" id="panTool">✋</button><button class="tool" id="searchTool">⌕</button><button class="tool" id="undoTool">↺</button><button class="tool" id="swapPortsBtn" title="Swap selected node I/O side">⇄</button><button class="tool" id="deleteTool">🗑</button></div>
+        <div class="toolbox"><button class="tool active" id="selectTool">⌖</button><button class="tool" id="panTool">✋</button><button class="tool" id="redoTool" title="Redo">↻</button><button class="tool" id="undoTool" title="Undo">↺</button><button class="tool" id="swapPortsBtn" title="Swap selected node I/O side">⇄</button><button class="tool" id="deleteTool">🗑</button></div>
         <button class="btn auto-layout" id="autoBtn">Auto Arrange</button>
         <div class="pipeline-world" id="pipelineWorld">
           <svg class="canvas-svg" id="edgeSvg" viewBox="0 0 2200 1050"></svg>
           <div id="nodesLayer"></div>
         </div>
         <div class="drop-hint">DROP ALGORITHM COMPONENT HERE</div>
+        <div class="selection-box" id="selectionBox"></div>
         <div class="minimap"><div class="minimap-inner" id="minimap"></div><div class="zoom"><button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">+</button></div></div>
       </div>
     </section>
@@ -379,6 +380,10 @@
     let nodeSeq=0;
     let selectedNodeId = 'agc_1';
     let selectedEdgeKey = '';
+    let selectedNodeIds = new Set();
+    let selectedEdgeKeys = new Set();
+    let marquee = null;
+    let suppressCanvasClick = false;
     let connectFrom = null;
     let running = false;
     let buildState = 'success';
@@ -404,7 +409,9 @@
         nodes: state.nodes.map(n => ({...n})),
         edges: state.edges.map(cloneEdge),
         selectedNodeId,
-        selectedEdgeKey
+        selectedEdgeKey,
+        selectedNodeIds:[...selectedNodeIds],
+        selectedEdgeKeys:[...selectedEdgeKeys]
       };
     }
     function restoreGraph(snap) {
@@ -413,6 +420,8 @@
       state.edges = snap.edges.map(cloneEdge);
       selectedNodeId = snap.selectedNodeId || state.nodes[0]?.id || '';
       selectedEdgeKey = snap.selectedEdgeKey || '';
+      selectedNodeIds = new Set(snap.selectedNodeIds || []);
+      selectedEdgeKeys = new Set(snap.selectedEdgeKeys || []);
       renderAll(true);
     }
     function pushHistory(label) {
@@ -447,9 +456,69 @@
       addLog('info','Redo',item.label);
     }
     function updateHistoryButtons() {
-      const u=$('#undoBtn'), r=$('#redoBtn');
-      if(u) u.disabled = history.undo.length === 0 || running;
-      if(r) r.disabled = history.redo.length === 0 || running;
+      const undoDisabled = history.undo.length === 0 || running;
+      const redoDisabled = history.redo.length === 0 || running;
+      ['undoBtn','undoTool'].forEach(id=>{const b=$('#'+id); if(b) b.disabled=undoDisabled;});
+      ['redoBtn','redoTool'].forEach(id=>{const b=$('#'+id); if(b) b.disabled=redoDisabled;});
+    }
+    function edgeKeyForEdge(edge){
+      const p=edgeParts(edge);
+      return edgeKeyFromParts(p.from,p.fromPort,p.to,p.toPort);
+    }
+    function clearSelection(){
+      selectedNodeIds.clear();
+      selectedEdgeKeys.clear();
+      selectedNodeId='';
+      selectedEdgeKey='';
+    }
+    function isNodeSelected(id){
+      return selectedNodeIds.has(id) || selectedNodeId===id;
+    }
+    function isEdgeSelectedKey(key){
+      return selectedEdgeKeys.has(key) || selectedEdgeKey===key;
+    }
+    function rectsIntersect(a,b){
+      return a.x <= b.x+b.w && a.x+a.w >= b.x && a.y <= b.y+b.h && a.y+a.h >= b.y;
+    }
+    function pointInRect(p,r){
+      return p.x>=r.x && p.x<=r.x+r.w && p.y>=r.y && p.y<=r.y+r.h;
+    }
+    function worldPointFromEvent(e){
+      const world=$('#pipelineWorld');
+      const wr=world.getBoundingClientRect();
+      const z=state.zoom || 1;
+      return {x:(e.clientX-wr.left)/z, y:(e.clientY-wr.top)/z};
+    }
+    function canvasPointFromEvent(e){
+      const wrap=$('#canvasWrap');
+      const r=wrap.getBoundingClientRect();
+      return {x:e.clientX-r.left, y:e.clientY-r.top};
+    }
+    function selectByMarquee(rect){
+      selectedNodeIds.clear();
+      selectedEdgeKeys.clear();
+      state.nodes.forEach(n=>{
+        const nr={x:n.x,y:n.y,w:n.w,h:n.h};
+        if(rectsIntersect(rect,nr)) selectedNodeIds.add(n.id);
+      });
+      state.edges.forEach(edge=>{
+        const ep=edgeParts(edge);
+        const a=nodeById(ep.from), b=nodeById(ep.to);
+        if(!a || !b) return;
+        const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
+        const pa=portPoint(a,'out',ep.fromPort);
+        const pb=portPoint(b,'in',ep.toPort);
+        const mid={x:(pa.x+pb.x)/2,y:(pa.y+pb.y)/2};
+        if((selectedNodeIds.has(ep.from) && selectedNodeIds.has(ep.to)) || pointInRect(pa,rect) || pointInRect(pb,rect) || pointInRect(mid,rect)){
+          selectedEdgeKeys.add(key);
+        }
+      });
+      selectedNodeId=[...selectedNodeIds][0] || '';
+      selectedEdgeKey=[...selectedEdgeKeys][0] || '';
+      renderAll(false);
+      drawEdges();
+      addLog('info','Selection box',`${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s) selected`);
+      backendEdit('selection_box',{nodes:[...selectedNodeIds],edges:[...selectedEdgeKeys]});
     }
     function iconForModule(typeId='', category='', name='') {
       const s = `${typeId} ${category} ${name}`.toLowerCase();
@@ -570,14 +639,14 @@
           return `<div class="port ${dir}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}" style="top:${top}%"></div>`;
         }).join('');
         const el=document.createElement('div');
-        el.className=`pipeline-node ${colors[n.type]||''} ${n.id===selectedNodeId?'selected':''} ${n.portsFlipped?'flipped':''} ${running?'locked':'editable'}`;
+        el.className=`pipeline-node ${colors[n.type]||''} ${isNodeSelected(n.id)?'selected':''} ${n.portsFlipped?'flipped':''} ${running?'locked':'editable'}`;
         el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.style.minHeight=n.h+'px'; el.style.height='auto'; el.dataset.id=n.id;
         el.innerHTML=`<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts,'in')}${portHtml(outPorts,'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span>${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
         layer.appendChild(el);
         const measuredH=Math.ceil(el.getBoundingClientRect().height/(state.zoom||1));
         if(Number.isFinite(measuredH) && measuredH>n.h) n.h=measuredH;
         makeDraggable(el,n);
-        el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
+        el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
         $('.delete-node',el).addEventListener('click', e=>{e.stopPropagation(); deleteNode(n.id);});
         $$('.port',el).forEach(portEl=>setupPortHandlers(portEl,n));
       });
@@ -656,7 +725,7 @@
         if(e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
         if(running){ selectedNodeId=n.id; renderAll(false); toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点'); return; }
         pushHistory('Move node');
-        drag=true; startX=e.clientX; startY=e.clientY; origX=n.x; origY=n.y; el.setPointerCapture(e.pointerId); selectedNodeId=n.id; renderAll(false);
+        drag=true; startX=e.clientX; startY=e.clientY; origX=n.x; origY=n.y; el.setPointerCapture(e.pointerId); selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeId=n.id; selectedEdgeKey=''; renderAll(false);
       });
       el.addEventListener('pointermove', e=>{
         if(!drag) return;
@@ -713,10 +782,14 @@
       raf(()=>{ drawEdges(); raf(drawEdges); });
     }
     function selectEdgeForEdit(ep,key){
+      selectedNodeIds.clear();
+      selectedEdgeKeys.clear();
+      selectedEdgeKeys.add(key);
       selectedEdgeKey=key;
       selectedNodeId='';
       backendEdit('connection_selected',ep);
       drawEdges();
+      renderAll(false);
       toast(`Selected connection: ${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);
     }
     function drawEdges(){
@@ -732,7 +805,7 @@
         const d=edgePath(a,b,ep.fromPort,ep.toPort);
         const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
         const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',key===selectedEdgeKey?'5':'3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class',`edge-glow ${key===selectedEdgeKey?'selected':''}`);
+        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',isEdgeSelectedKey(key)?'5':'3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class',`edge-glow ${isEdgeSelectedKey(key)?'selected':''}`);
         const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
         hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
         const bindEdgeSelect=(el)=>{
@@ -753,15 +826,48 @@
     }
     function deleteSelectedEdge(){
       if(running){toast('Run 状态下不能删除连线，请先 Stop'); return false;}
-      if(!selectedEdgeKey) return false;
-      const ep=parseEdgeKey(selectedEdgeKey);
-      pushHistory('Delete connection');
-      const before=state.edges.length;
-      state.edges=state.edges.filter(e=>edgeKeyFromParts(edgeParts(e).from,edgeParts(e).fromPort,edgeParts(e).to,edgeParts(e).toPort)!==selectedEdgeKey);
+      const keys = selectedEdgeKeys.size ? new Set(selectedEdgeKeys) : (selectedEdgeKey ? new Set([selectedEdgeKey]) : new Set());
+      if(!keys.size) return false;
+      pushHistory('Delete connection(s)');
+      const removed=[];
+      state.edges=state.edges.filter(e=>{
+        const k=edgeKeyForEdge(e);
+        if(keys.has(k)){ removed.push(edgeParts(e)); return false; }
+        return true;
+      });
       selectedEdgeKey='';
+      selectedEdgeKeys.clear();
       redrawEdgesAfterLayout(); renderMinimap();
-      addLog(before!==state.edges.length?'warn':'info','Connection deleted',`${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);
-      backendEdit('connection_removed',ep);
+      if(removed.length){
+        addLog('warn','Connection deleted',`${removed.length} connection(s)`);
+        backendEdit('connections_removed',{removed});
+        return true;
+      }
+      return false;
+    }
+    function deleteSelection(){
+      if(running){toast('Run 状态下不能删除选择，请先 Stop'); return false;}
+      const nodeKeys=new Set(selectedNodeIds);
+      const edgeKeys=new Set(selectedEdgeKeys);
+      if(selectedEdgeKey) edgeKeys.add(selectedEdgeKey);
+      if(!nodeKeys.size && !edgeKeys.size && selectedNodeId) nodeKeys.add(selectedNodeId);
+      if(!nodeKeys.size && !edgeKeys.size) return false;
+      pushHistory('Delete selection');
+      const removedNodes=state.nodes.filter(n=>nodeKeys.has(n.id)).map(n=>({id:n.id,name:n.name}));
+      const removedEdges=[];
+      state.edges=state.edges.filter(e=>{
+        const p=edgeParts(e);
+        const k=edgeKeyFromParts(p.from,p.fromPort,p.to,p.toPort);
+        if(edgeKeys.has(k) || nodeKeys.has(p.from) || nodeKeys.has(p.to)){ removedEdges.push(p); return false; }
+        return true;
+      });
+      state.nodes=state.nodes.filter(n=>!nodeKeys.has(n.id));
+      clearSelection();
+      selectedNodeId=state.nodes[0]?.id || '';
+      renderAll(true);
+      addLog('warn','Selection deleted',`${removedNodes.length} node(s), ${removedEdges.length} connection(s)`);
+      backendEdit('selection_deleted',{nodes:removedNodes,edges:removedEdges});
+      toast('Selection deleted');
       return true;
     }
 
@@ -814,7 +920,7 @@
     }
     function renderAll(rebuildNodes=true){
       enforceOneToOneEdges('render');
-      if(rebuildNodes) renderNodes(); else {$$('.pipeline-node').forEach(el=>el.classList.toggle('selected',el.dataset.id===selectedNodeId));}
+      if(rebuildNodes) renderNodes(); else {$$('.pipeline-node').forEach(el=>el.classList.toggle('selected',isNodeSelected(el.dataset.id)));}
       redrawEdgesAfterLayout(); renderInspector(); renderCostTable(); renderCoreLoading(); renderHealth(); renderMeters();
     }
     async function updateRandom(){
@@ -865,15 +971,52 @@
       renderLibrary(); renderAll(true); updateHistoryButtons(); loadPlatformConfig(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
       const wrap=$('#canvasWrap');
+      const selectionBox=$('#selectionBox');
+      wrap.addEventListener('pointerdown',e=>{
+        const tag=e.target?.tagName?.toLowerCase();
+        const isBlank = e.target===wrap || e.target.id==='edgeSvg' || e.target.id==='pipelineWorld' || tag==='svg';
+        if(!isBlank || running || e.button!==0) return;
+        const c=canvasPointFromEvent(e), w=worldPointFromEvent(e);
+        marquee={startClientX:e.clientX,startClientY:e.clientY,startCanvas:c,startWorld:w,active:false};
+      });
+      wrap.addEventListener('pointermove',e=>{
+        if(!marquee) return;
+        const dx=e.clientX-marquee.startClientX, dy=e.clientY-marquee.startClientY;
+        if(!marquee.active && Math.hypot(dx,dy)>4){
+          marquee.active=true;
+          clearSelection();
+          selectionBox.style.display='block';
+        }
+        if(!marquee.active) return;
+        const c=canvasPointFromEvent(e);
+        const x=Math.min(marquee.startCanvas.x,c.x), y=Math.min(marquee.startCanvas.y,c.y);
+        selectionBox.style.left=x+'px'; selectionBox.style.top=y+'px';
+        selectionBox.style.width=Math.abs(c.x-marquee.startCanvas.x)+'px';
+        selectionBox.style.height=Math.abs(c.y-marquee.startCanvas.y)+'px';
+      });
+      wrap.addEventListener('pointerup',e=>{
+        if(!marquee) return;
+        const wasActive=marquee.active;
+        selectionBox.style.display='none';
+        if(wasActive){
+          const w=worldPointFromEvent(e);
+          const x=Math.min(marquee.startWorld.x,w.x), y=Math.min(marquee.startWorld.y,w.y);
+          const rect={x,y,w:Math.abs(w.x-marquee.startWorld.x),h:Math.abs(w.y-marquee.startWorld.y)};
+          selectByMarquee(rect);
+          suppressCanvasClick=true;
+          setTimeout(()=>{suppressCanvasClick=false;},0);
+        }
+        marquee=null;
+      });
       wrap.addEventListener('dragover',e=>{e.preventDefault(); wrap.classList.add('dragover')});
       wrap.addEventListener('dragleave',()=>wrap.classList.remove('dragover'));
       wrap.addEventListener('drop',e=>{e.preventDefault(); wrap.classList.remove('dragover'); const name=e.dataTransfer.getData('text/plain'); if(!name) return; if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return;} const c=componentByName(name); const rect=wrap.getBoundingClientRect(); pushHistory('Add node'); const id=name.toLowerCase().replace(/\s+/g,'_')+'_'+(++nodeSeq+10); const n=mkNode(id,name,c.type,c.icon,(e.clientX-rect.left)/state.zoom-64,(e.clientY-rect.top)/state.zoom-58); n.moduleTypeId=c.moduleTypeId||''; n.core=Math.floor(Math.random()*4); state.nodes.push(n); selectedNodeId=n.id; renderAll(true); backendEdit('node_added',{node_id:n.id,node_name:name}); addLog('info','Node added',name);});
       $('#autoBtn').addEventListener('click',autoArrange);
       $('#zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));
       $('#zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));
-      $('#deleteTool').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey}); if(deleteSelectedEdge()) return; if(selectedNodeId) deleteNode(selectedNodeId); });
+      $('#deleteTool').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey,selectedNodeIds:[...selectedNodeIds],selectedEdgeKeys:[...selectedEdgeKeys]}); deleteSelection(); });
       $('#swapPortsBtn').addEventListener('click',()=>{ backendTool('swap_selected_ports',{selectedNodeId}); swapSelectedPorts(); });
-      wrap.addEventListener('click',e=>{ if(e.target===wrap || e.target.id==='edgeSvg'){ selectedEdgeKey=''; drawEdges(); }});
+      wrap.addEventListener('click',e=>{ if(suppressCanvasClick){suppressCanvasClick=false; return;} if(e.target===wrap || e.target.id==='edgeSvg'){ clearSelection(); drawEdges(); renderAll(false); }});
       $('#panelMenuBtn').addEventListener('click',()=>$('#panelMenu').classList.toggle('show'));
       $$('#panelMenu input').forEach(cb=>cb.addEventListener('change',e=>setPanelVisible(e.target.dataset.panel,e.target.checked)));
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
@@ -884,7 +1027,9 @@
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn').addEventListener('click',undoEdit);
       $('#redoBtn').addEventListener('click',redoEdit);
-      window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if((e.key==='Delete'||e.key==='Backspace')&&selectedEdgeKey){e.preventDefault(); deleteSelectedEdge(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
+      $('#undoTool').addEventListener('click',undoEdit);
+      $('#redoTool').addEventListener('click',redoEdit);
+      window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault(); deleteSelection(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
       $('#saveBtn').addEventListener('click',async ()=>{localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
