@@ -416,6 +416,10 @@
     let currentProjectFile = 'A2.json';
     let currentProjectConfig = null;
     let currentPipelineId = 'ALL';
+    let pipelineLayoutCache = {};
+    let pendingLayoutScroll = null;
+    let loadingPipelineGraph = false;
+    let safariGestureStartZoom = 1;
     let selectedNodeId = 'agc_1';
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
@@ -683,6 +687,65 @@
       const core = name==='KWS'||name==='VAD'?2:(name==='EQ'||name==='DRC'||name==='Volume'||name==='NS'||name==='AGC'?1:0);
       return {id,name,type:c.type||'util',icon:c.icon||'≋',x,y,w:128,h,cpu:c.cpu||0.8,mem:c.mem||Math.round(96+maxCh*24),lat:c.lat||0.2,core,rms:-rnd(10,30),peak:-rnd(1,10),selected:false,ch:c.ch||(maxCh===1?'1ch':`${maxCh}ch`),moduleTypeId:c.moduleTypeId||'',inPorts,outPorts,portsFlipped:false};
     }
+    function layoutCacheKey(pipelineId=currentPipelineId, projectFile=currentProjectFile) {
+      return `${projectFile || 'A2.json'}::${pipelineId || 'ALL'}`;
+    }
+    function loadLayoutCacheFromStorage() {
+      try {
+        const raw=localStorage.getItem('audioStudioPipelineLayouts');
+        const parsed=raw?JSON.parse(raw):{};
+        return parsed && typeof parsed==='object' ? parsed : {};
+      } catch(e) { return {}; }
+    }
+    function persistLayoutCache() {
+      try { localStorage.setItem('audioStudioPipelineLayouts',JSON.stringify(pipelineLayoutCache)); } catch(e) {}
+    }
+    function captureCurrentLayout() {
+      const sc=getScrollEl();
+      return {
+        version:1,
+        project_file:currentProjectFile,
+        pipeline_id:currentPipelineId,
+        nodes:state.nodes.map(n=>({id:n.id,x:n.x,y:n.y,portsFlipped:!!n.portsFlipped,pipelineId:n.pipelineId||inferNodePipelineId(n),pipelineName:n.pipelineName||inferNodePipelineName(inferNodePipelineId(n))})),
+        edges:state.edges.map(cloneEdge),
+        world:{w:state.world.w,h:state.world.h},
+        zoom:state.zoom,
+        scroll:{left:sc?.scrollLeft||0,top:sc?.scrollTop||0}
+      };
+    }
+    function saveCurrentLayout(reason='') {
+      if(loadingPipelineGraph || !currentProjectConfig || !state.nodes.length) return;
+      pipelineLayoutCache[layoutCacheKey()] = captureCurrentLayout();
+      persistLayoutCache();
+      backendEdit('layout_cached',{project_file:currentProjectFile,pipeline_id:currentPipelineId,reason,nodes:state.nodes.length,edges:state.edges.length});
+    }
+    function restoreLayoutForPipeline(pipelineId=currentPipelineId) {
+      const snap=pipelineLayoutCache[layoutCacheKey(pipelineId)];
+      if(!snap || !Array.isArray(snap.nodes)) return false;
+      const pos=new Map(snap.nodes.map(n=>[n.id,n]));
+      state.nodes.forEach(n=>{
+        const p=pos.get(n.id);
+        if(!p) return;
+        if(Number.isFinite(p.x)) n.x=p.x;
+        if(Number.isFinite(p.y)) n.y=p.y;
+        if(typeof p.portsFlipped === 'boolean') n.portsFlipped=p.portsFlipped;
+        if(p.pipelineId) n.pipelineId=p.pipelineId;
+        if(p.pipelineName) n.pipelineName=p.pipelineName;
+      });
+      if(Array.isArray(snap.edges)) state.edges=snap.edges.map(cloneEdge);
+      if(snap.world?.w && snap.world?.h){ state.world.w=snap.world.w; state.world.h=snap.world.h; }
+      if(Number.isFinite(snap.zoom)) state.zoom=clamp(snap.zoom,.35,1.8);
+      pendingLayoutScroll=snap.scroll || null;
+      return true;
+    }
+    function restorePendingScroll() {
+      const sc=getScrollEl();
+      if(!sc || !pendingLayoutScroll) return;
+      const s=pendingLayoutScroll;
+      pendingLayoutScroll=null;
+      const raf=window.requestAnimationFrame || (cb=>setTimeout(cb,0));
+      raf(()=>{ sc.scrollLeft=s.left||0; sc.scrollTop=s.top||0; renderMinimap(); drawEdges(); });
+    }
     function renderPipelineSelect() {
       const select=$('#pipelineSelect');
       if(!select) return;
@@ -693,6 +756,7 @@
       currentPipelineId = select.value || 'ALL';
       select.onchange = e => {
         if(running){ toast('Run 状态下不能切换 pipeline，请先 Stop'); e.target.value=currentPipelineId; return; }
+        saveCurrentLayout('before_pipeline_switch');
         currentPipelineId = e.target.value || 'ALL';
         loadPipelineGraphFromConfig(currentPipelineId);
       };
@@ -724,17 +788,25 @@
           edges.push(makeEdge(graphNodeId(pipe.pipe_id,from.node), from.port || 'out', graphNodeId(pipe.pipe_id,to.node), to.port || 'in'));
         });
       });
+      loadingPipelineGraph=true;
       state.nodes=nodes;
       state.edges=edges;
       selectedNodeIds.clear(); selectedEdgeKeys.clear();
       selectedNodeId=state.nodes[0]?.id || '';
       selectedEdgeKey='';
       history.undo=[]; history.redo=[]; updateHistoryButtons();
+      const restored=restoreLayoutForPipeline(pipelineId);
+      loadingPipelineGraph=false;
       renderPipelineSelect();
-      renderAll(true);
+      if(restored){
+        renderAll(true);
+        restorePendingScroll();
+      } else {
+        autoArrange({silent:true,history:false,reason:'first_load'});
+      }
       const label=pipelineId==='ALL'?'All':(finalPipes[0]?.name || pipelineId);
-      addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s)`);
-      backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length});
+      addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s)${restored?' · restored layout':' · auto arranged'}`);
+      backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length,restored_layout:restored});
     }
     async function apiGetFirstJson(paths=[]) {
       for (const path of paths) {
@@ -938,7 +1010,7 @@
         n.y=origY+(e.clientY-startY)/state.zoom;
         el.style.left=n.x+'px'; el.style.top=n.y+'px'; drawEdges(); renderMinimap();
       });
-      el.addEventListener('pointerup', ()=>{ if(drag) backendEdit('node_moved',{node_id:n.id,x:n.x,y:n.y}); drag=false; });
+      el.addEventListener('pointerup', ()=>{ if(drag){ saveCurrentLayout('manual_node_move'); backendEdit('node_moved',{node_id:n.id,x:n.x,y:n.y}); } drag=false; });
     }
     function applyZoom(){
       const world=$('#pipelineWorld'); if(world) world.style.transform=`scale(${state.zoom})`;
@@ -951,6 +1023,29 @@
       state.zoom=clamp(z,.45,1.35);
       applyZoom();
       renderMinimap();
+    }
+    function setZoomAtClientPoint(z, clientX, clientY){
+      const sc=getScrollEl();
+      const before=worldPointFromEvent({clientX,clientY});
+      state.zoom=clamp(z,.35,1.8);
+      applyZoom();
+      if(sc && before){
+        const sr=sc.getBoundingClientRect();
+        sc.scrollLeft=before.x*state.zoom-(clientX-sr.left);
+        sc.scrollTop=before.y*state.zoom-(clientY-sr.top);
+        clampScroll();
+      }
+      renderMinimap();
+      drawEdges();
+    }
+    function handleCanvasWheelZoom(e){
+      if(!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const factor=Math.exp(-e.deltaY*0.0025);
+      setZoomAtClientPoint(state.zoom*factor,e.clientX,e.clientY);
+      saveCurrentLayout('pinch_zoom');
+      backendTool('pinch_zoom',{zoom:state.zoom});
     }
     function nodeById(id){return state.nodes.find(n=>n.id===id)}
     function edgeKey(s,t,fromPort='out',toPort='in'){ return edgeKeyFromParts(s,fromPort,t,toPort); }
@@ -1482,10 +1577,13 @@
 
       return {height:bandHeight,width:x0 + sortedLayers.length*layerGap + 280,name:bandName};
     }
-    function autoArrange(){
+    function autoArrange(opts={}){
+      if(opts && typeof opts.preventDefault === 'function') opts={};
+      const silent=!!opts.silent;
+      const keepHistory=opts.history!==false;
       if(running){toast('Run 状态下不能自动布局，请先 Stop'); return;}
       if(!state.nodes.length){toast('No nodes to arrange'); return;}
-      pushHistory('Auto arrange');
+      if(keepHistory) pushHistory('Auto arrange');
 
       const groups=new Map();
       state.nodes.forEach(n=>{
@@ -1521,10 +1619,11 @@
       state.world.h=Math.max(1050,Math.ceil(yCursor+160));
       renderAll(true);
       redrawEdgesAfterLayout();
-      backendTool('auto_arrange',{nodes:state.nodes.length,pipelines:arrangedGroups.map(g=>({id:g.id,name:g.name,nodes:g.nodes.length,edges:g.edges.length})),layout:'port_order_fan_aware_pipeline_bands'});
-      backendEdit('auto_arrange',{layout:'port_order_fan_aware_pipeline_bands',pipeline_id:currentPipelineId,groups:arrangedGroups.length});
-      toast('Auto layout finished');
-      addLog('info','Auto layout finished',`Port-order fan-aware layout: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
+      saveCurrentLayout(opts.reason||'auto_arrange');
+      backendTool('auto_arrange',{nodes:state.nodes.length,pipelines:arrangedGroups.map(g=>({id:g.id,name:g.name,nodes:g.nodes.length,edges:g.edges.length})),layout:'port_order_fan_aware_pipeline_bands',silent});
+      backendEdit('auto_arrange',{layout:'port_order_fan_aware_pipeline_bands',pipeline_id:currentPipelineId,groups:arrangedGroups.length,silent});
+      if(!silent) toast('Auto layout finished');
+      addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Port-order fan-aware layout: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
     }
     function swapSelectedPorts(){
       if(running){toast('Run 状态下不能对调端口方向，请先 Stop'); return;}
@@ -1543,13 +1642,17 @@
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
     function init(){
-      renderLibrary(); renderAll(true); updateHistoryButtons(); loadProjectList(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
+      pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); loadProjectList(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
-      $('#projectSelect').addEventListener('change', e=>loadPlatformConfig(e.target.value));
+      $('#projectSelect').addEventListener('change', e=>{ saveCurrentLayout('before_project_switch'); loadPlatformConfig(e.target.value); });
       const wrap=$('#canvasWrap');
       const sc=getScrollEl();
       setupMinimapNavigation();
       sc?.addEventListener('scroll',()=>{renderMinimap(); drawEdges();});
+      sc?.addEventListener('wheel',handleCanvasWheelZoom,{passive:false});
+      wrap.addEventListener('wheel',handleCanvasWheelZoom,{passive:false});
+      wrap.addEventListener('gesturestart',e=>{e.preventDefault(); safariGestureStartZoom=state.zoom;},{passive:false});
+      wrap.addEventListener('gesturechange',e=>{e.preventDefault(); setZoomAtClientPoint(safariGestureStartZoom*e.scale,e.clientX,e.clientY); saveCurrentLayout('pinch_zoom');},{passive:false});
       const selectionBox=$('#selectionBox');
       wrap.addEventListener('pointerdown',e=>{
         const tag=e.target?.tagName?.toLowerCase();
@@ -1590,7 +1693,7 @@
       wrap.addEventListener('dragover',e=>{e.preventDefault(); wrap.classList.add('dragover')});
       wrap.addEventListener('dragleave',()=>wrap.classList.remove('dragover'));
       wrap.addEventListener('drop',e=>{e.preventDefault(); wrap.classList.remove('dragover'); const name=e.dataTransfer.getData('text/plain'); if(!name) return; if(running){toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return;} const c=componentByName(name); const pt=worldPointFromEvent(e); pushHistory('Add node'); const id=name.toLowerCase().replace(/\s+/g,'_')+'_'+(++nodeSeq+10); const n=mkNode(id,name,c.type,c.icon,pt.x-64,pt.y-58); n.moduleTypeId=c.moduleTypeId||''; n.core=Math.floor(Math.random()*4); state.nodes.push(n); selectedNodeId=n.id; renderAll(true); backendEdit('node_added',{node_id:n.id,node_name:name}); addLog('info','Node added',name);});
-      $('#autoBtn').addEventListener('click',autoArrange);
+      $('#autoBtn').addEventListener('click',()=>autoArrange());
       $('#zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));
       $('#zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));
       $('#deleteTool').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey,selectedNodeIds:[...selectedNodeIds],selectedEdgeKeys:[...selectedEdgeKeys]}); deleteSelection(); });
@@ -1609,7 +1712,7 @@
       $('#undoTool')?.addEventListener('click',undoEdit);
       $('#redoTool')?.addEventListener('click',redoEdit);
       window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault(); deleteSelection(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
-      $('#saveBtn').addEventListener('click',async ()=>{localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
+      $('#saveBtn').addEventListener('click',async ()=>{saveCurrentLayout('save_button'); localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges,layouts:pipelineLayoutCache})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
       $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]){$('#fileName').textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
