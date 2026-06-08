@@ -16,13 +16,23 @@ for (const token of [
   'undoEdit',
   'redoEdit',
   'pushHistory',
-  'Ctrl+Z',
   'apiPost',
   '/api/pipeline/edit',
   '/api/project/save',
 ]) {
   assert.ok(html.includes(token), `missing ${token}`);
 }
+
+// The UI may show different human-readable shortcut labels, so test the real
+// key handling code instead of requiring a brittle literal "Ctrl+Z" string.
+assert.ok(
+  html.includes("e.key.toLowerCase()==='z'") && html.includes('undoEdit()'),
+  'missing Ctrl/Cmd+Z undo key handling'
+);
+assert.ok(
+  html.includes("e.key.toLowerCase()==='y'") && html.includes('redoEdit()'),
+  'missing Ctrl/Cmd+Y redo key handling'
+);
 
 assert.ok(html.includes('id="undoBtn"'), 'Undo button should exist');
 assert.ok(html.includes('id="redoBtn"'), 'Redo button should exist');
