@@ -77,7 +77,7 @@
     .pipeline-node.purple{border-color:rgba(182,92,255,.55); box-shadow:0 0 18px rgba(182,92,255,.14)}.pipeline-node.orange{border-color:rgba(255,168,38,.55); box-shadow:0 0 18px rgba(255,168,38,.14)}.pipeline-node.green{border-color:rgba(49,242,107,.45); box-shadow:0 0 18px rgba(49,242,107,.1)}.pipeline-node.selected{outline:2px solid var(--cyan); box-shadow:0 0 28px rgba(0,216,255,.34), inset 0 0 0 1px rgba(255,255,255,.08)}
     .delete-node{position:absolute;right:7px;top:7px;width:18px;height:18px;border:1px solid rgba(255,255,255,.12);background:rgba(255,81,81,.12);color:#ff9b9b;border-radius:5px;font-size:13px;line-height:16px;display:none;place-items:center;cursor:pointer;z-index:5}.pipeline-node.editable:hover .delete-node{display:grid}.pipeline-node.locked{cursor:not-allowed;opacity:.94}.pipeline-node.locked .port{cursor:not-allowed;filter:saturate(.5)}
     .node-title{display:flex;align-items:center;gap:8px;font-weight:900;font-size:14px;margin-bottom:7px}.node-title .nicon{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:rgba(0,216,255,.15); color:var(--cyan)}.alive{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}.node-sub{font-size:11px;color:#aac0dc;margin-bottom:7px}.node-stat{display:grid;grid-template-columns:36px 1fr;gap:4px;font-size:11px;color:#d4e5ff}.node-stat em{font-style:normal;color:var(--muted)}.core-tag{margin-top:8px;font-size:11px;color:var(--cyan);font-weight:800}.port{position:absolute;width:14px;height:14px;border-radius:50%;background:#06101c;cursor:crosshair;transform:translateY(-50%);z-index:6}.port.in{left:-8px;border:2px solid var(--cyan);box-shadow:0 0 8px var(--cyan)}.port.out{right:-8px;border:2px solid var(--purple);box-shadow:0 0 8px var(--purple)}.pipeline-node.flipped .port.in{left:auto;right:-8px}.pipeline-node.flipped .port.out{right:auto;left:-8px}.port.in:hover{background:var(--cyan)}.port.out:hover{background:var(--purple)}.port.active{background:var(--yellow);border-color:var(--yellow);box-shadow:0 0 12px var(--yellow)}
-    .minimap{position:absolute;left:16px;bottom:16px;width:210px;height:124px;border:1px solid #24405e;background:rgba(3,9,17,.82);border-radius:10px;z-index:3;padding:8px}.minimap-inner{height:76px;border:1px solid #18314b;background:rgba(0,216,255,.05);position:relative;overflow:hidden}.mini-node{position:absolute;background:rgba(0,216,255,.22);border:1px solid rgba(0,216,255,.35);border-radius:2px}.zoom{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px}.zoom button{background:#091626;border:1px solid #24415f;border-radius:5px;width:30px;height:26px;font-weight:900}.zoom span{font-size:12px;color:#c9dbf5}
+    .minimap{position:absolute;right:16px;left:auto;bottom:16px;width:210px;height:124px;border:1px solid #24405e;background:rgba(3,9,17,.82);border-radius:10px;z-index:3;padding:8px}.minimap-inner{height:76px;border:1px solid #18314b;background:rgba(0,216,255,.05);position:relative;overflow:hidden}.mini-node{position:absolute;background:rgba(0,216,255,.22);border:1px solid rgba(0,216,255,.35);border-radius:2px}.zoom{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px}.zoom button{background:#091626;border:1px solid #24415f;border-radius:5px;width:30px;height:26px;font-weight:900}.zoom span{font-size:12px;color:#c9dbf5}
     .right-panel{grid-column:3; grid-row:2/4; background:rgba(5,12,23,.78); padding:10px; overflow:hidden; display:flex; flex-direction:column; gap:10px;}
     .inspector{flex:1; min-height:0; border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); display:flex;flex-direction:column;overflow:hidden;}
     .inspector-body{padding:12px; overflow:auto}.selected-card{display:flex;gap:10px;align-items:center;border-bottom:1px solid #172941;padding-bottom:10px}.sel-icon{width:46px;height:46px;border-radius:10px;border:1px solid rgba(0,216,255,.45);display:grid;place-items:center;color:var(--cyan);font-size:22px;background:rgba(0,216,255,.1)}.sel-meta b{font-size:16px}.sel-meta small{display:block;color:var(--muted);font-size:11px}.active-label{margin-left:auto;color:#6dff83;font-size:12px;font-weight:900}.tabs{display:flex;gap:14px;margin:12px 0;border-bottom:1px solid #15283e}.tabs button{background:transparent;border:0;color:#8fa5c2;padding:0 0 8px;font-size:12px;font-weight:900}.tabs button.active{color:var(--cyan);border-bottom:2px solid var(--cyan)}.kv{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:12px;margin:6px 0}.kv span{color:#95a8c1}.barline{height:8px;width:96px;background:#13223a;border-radius:8px;overflow:hidden;display:inline-block}.barline i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#22a5ff)}
@@ -1073,7 +1073,7 @@
         const measuredH=Math.ceil(el.getBoundingClientRect().height/(state.zoom||1));
         if(Number.isFinite(measuredH) && measuredH>n.h) n.h=measuredH;
         makeDraggable(el,n);
-        el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
+        el.addEventListener('click', e=>{ if(el.dataset.dragMoved==='1') return; if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
         $('.delete-node',el).addEventListener('click', e=>{e.stopPropagation(); deleteNode(n.id);});
         $$('.port',el).forEach(portEl=>setupPortHandlers(portEl,n));
       });
@@ -1147,20 +1147,75 @@
       });
     }
     function makeDraggable(el,n){
-      let startX,startY,origX,origY,drag=false;
+      let startX,startY,drag=false,moved=false,dragNodes=[],origPos=new Map();
+      const nodeElementById=(id)=>$$('.pipeline-node').find(x=>x.dataset.id===id);
       el.addEventListener('pointerdown', e=>{
         if(e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
         if(running){ selectedNodeId=n.id; renderAll(false); toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点'); return; }
-        pushHistory('Move node');
-        drag=true; startX=e.clientX; startY=e.clientY; origX=n.x; origY=n.y; el.setPointerCapture(e.pointerId); selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeId=n.id; selectedEdgeKey=''; renderAll(false);
+
+        // If this node is part of a marquee selection, keep the selection and
+        // drag all selected nodes together. If it is not selected, fall back to
+        // the original single-node selection behavior.
+        const isPartOfGroup=selectedNodeIds.has(n.id) && selectedNodeIds.size>1;
+        if(!isPartOfGroup){
+          selectedNodeIds.clear();
+          selectedEdgeKeys.clear();
+          selectedNodeIds.add(n.id);
+          selectedNodeId=n.id;
+          selectedEdgeKey='';
+        } else {
+          selectedNodeId=n.id;
+          selectedEdgeKey='';
+        }
+
+        dragNodes=state.nodes.filter(x=>selectedNodeIds.has(x.id));
+        if(!dragNodes.length) dragNodes=[n];
+        origPos=new Map(dragNodes.map(x=>[x.id,{x:x.x,y:x.y}]));
+        pushHistory(dragNodes.length>1?'Move selection':'Move node');
+
+        drag=true;
+        moved=false;
+        startX=e.clientX;
+        startY=e.clientY;
+        el.setPointerCapture?.(e.pointerId);
+        renderAll(false);
       });
       el.addEventListener('pointermove', e=>{
         if(!drag) return;
-        n.x=origX+(e.clientX-startX)/state.zoom;
-        n.y=origY+(e.clientY-startY)/state.zoom;
-        el.style.left=n.x+'px'; el.style.top=n.y+'px'; drawEdges(); renderMinimap();
+        const dx=(e.clientX-startX)/(state.zoom||1);
+        const dy=(e.clientY-startY)/(state.zoom||1);
+        if(!moved && Math.hypot(e.clientX-startX,e.clientY-startY)>3) moved=true;
+        dragNodes.forEach(node=>{
+          const p=origPos.get(node.id);
+          if(!p) return;
+          node.x=p.x+dx;
+          node.y=p.y+dy;
+          const nodeEl=nodeElementById(node.id);
+          if(nodeEl){ nodeEl.style.left=node.x+'px'; nodeEl.style.top=node.y+'px'; }
+        });
+        drawEdges();
+        renderMinimap();
       });
-      el.addEventListener('pointerup', ()=>{ if(drag){ saveCurrentLayout('manual_node_move'); backendEdit('node_moved',{node_id:n.id,x:n.x,y:n.y}); } drag=false; });
+      el.addEventListener('pointerup', ()=>{
+        if(drag){
+          if(moved){
+            el.dataset.dragMoved='1';
+            setTimeout(()=>{ delete el.dataset.dragMoved; },0);
+          }
+          saveCurrentLayout(dragNodes.length>1?'manual_group_move':'manual_node_move');
+          const movedNodes=dragNodes.map(node=>({node_id:node.id,node_name:node.name,x:node.x,y:node.y}));
+          if(dragNodes.length>1){
+            addLog('info','Selection moved',`${dragNodes.length} node(s)`);
+            backendEdit('nodes_moved',{nodes:movedNodes});
+          } else {
+            backendEdit('node_moved',{node_id:n.id,x:n.x,y:n.y});
+          }
+        }
+        drag=false;
+        moved=false;
+        dragNodes=[];
+        origPos.clear();
+      });
     }
     function applyZoom(){
       const world=$('#pipelineWorld'); if(world) world.style.transform=`scale(${state.zoom})`;
