@@ -71,7 +71,7 @@
     .canvas-wrap{position:relative; flex:1; overflow:hidden; background-color:#07101d; background-image: linear-gradient(rgba(56,91,128,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(56,91,128,.18) 1px, transparent 1px), linear-gradient(rgba(0,216,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,216,255,.06) 1px, transparent 1px); background-size:32px 32px, 32px 32px, 8px 8px, 8px 8px;}
     .toolbox{position:absolute;left:12px;top:12px;z-index:3;display:flex;gap:7px}.tool{width:32px;height:32px;border:1px solid #254460;background:#091626;border-radius:7px;display:grid;place-items:center;color:#b7d8ff}.tool.active{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 12px rgba(0,216,255,.22)}
     .auto-layout{position:absolute;right:16px;top:12px;z-index:3}.pipeline-world{position:absolute;left:0;top:0;width:2200px;height:1050px;transform-origin:0 0;z-index:1;will-change:transform;}
-    .canvas-svg{position:absolute;left:0;top:0; width:2200px;height:1050px; pointer-events:none; z-index:1; overflow:visible;}
+    .canvas-svg{position:absolute;left:0;top:0; width:2200px;height:1050px; pointer-events:auto; z-index:1; overflow:visible;}
     #nodesLayer{position:absolute;left:0;top:0;width:2200px;height:1050px;z-index:2;}
     .pipeline-node{position:absolute; width:128px; min-height:118px; border-radius:12px; padding:11px; background:linear-gradient(180deg,rgba(11,31,53,.96),rgba(6,18,32,.96)); border:1px solid rgba(0,216,255,.38); box-shadow:0 0 18px rgba(0,216,255,.12), inset 0 0 0 1px rgba(255,255,255,.04); z-index:2; user-select:none; cursor:move;}
     .pipeline-node.purple{border-color:rgba(182,92,255,.55); box-shadow:0 0 18px rgba(182,92,255,.14)}.pipeline-node.orange{border-color:rgba(255,168,38,.55); box-shadow:0 0 18px rgba(255,168,38,.14)}.pipeline-node.green{border-color:rgba(49,242,107,.45); box-shadow:0 0 18px rgba(49,242,107,.1)}.pipeline-node.selected{outline:2px solid var(--cyan); box-shadow:0 0 28px rgba(0,216,255,.34), inset 0 0 0 1px rgba(255,255,255,.08)}
@@ -86,7 +86,7 @@
     .bottom{grid-column:2; grid-row:3; border-right:1px solid var(--line); border-top:1px solid var(--line); background:rgba(5,12,23,.78); padding:10px; display:grid; grid-template-columns:1fr 260px 1.25fr 260px 170px; gap:10px; min-width:0;}
     .card{border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:10px; min-width:0; min-height:0; overflow:hidden; box-shadow:var(--shadow)}.card-head{height:24px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:900;letter-spacing:.04em;color:#d8eaff;margin-bottom:6px}.card-head small{font-weight:600;color:var(--muted);letter-spacing:0}.close{border:0;background:transparent;color:#7891ad;font-size:16px;line-height:1}.table{width:100%;border-collapse:collapse;font-size:11px}.table th{color:#8fa5c2;text-align:left;font-weight:800;border-bottom:1px solid #17304a;padding:4px}.table td{padding:4px;border-bottom:1px solid rgba(32,52,78,.45)}.cpu-bar{height:8px;background:#132642;border-radius:5px;overflow:hidden}.cpu-bar i{display:block;height:100%;background:linear-gradient(90deg,#28e85d,#ffd24a)}
     .core-row{display:grid;grid-template-columns:54px 1fr 54px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.loadbar{height:10px;border-radius:10px;background:#12243a;overflow:hidden}.loadbar i{display:block;height:100%;background:linear-gradient(90deg,#1c83ff,#00f6d2)}.core-extra{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:9px}.total{margin-top:12px;border-top:1px solid #172b42;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px}.total b{color:var(--cyan);font-size:18px}.probe canvas{height:170px}.probe-controls{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#9bb0c9}.selectish{border:1px solid #213a56;background:#071320;border-radius:6px;padding:6px 8px}.health-row{display:grid;grid-template-columns:1fr auto; gap:8px; margin:8px 0; font-size:12px}.health-row span{color:#a8bad3}.health-progress{height:6px;background:#14243b;border-radius:5px;overflow:hidden;margin-top:3px}.health-progress i{display:block;height:100%;background:linear-gradient(90deg,#54ff73,#00d8ff)}.meters{display:flex;gap:16px;align-items:end;justify-content:center;height:210px}.meter-wrap{text-align:center;font-size:10px;color:#9fb0ca}.meter{width:28px;height:160px;border:1px solid #263e5c;border-radius:5px;background:linear-gradient(180deg,#14213a,#07101c);display:flex;align-items:end;overflow:hidden;margin-bottom:5px}.meter i{display:block;width:100%;background:linear-gradient(180deg,#ff5151 0%,#ffcc45 32%,#31f26b 58%,#148ef7 100%)}
-    .event-log{font-size:11px;line-height:1.4}.log-item{display:grid;grid-template-columns:46px 14px 1fr;gap:5px;margin:8px 0;color:#c2d5ef}.log-time{color:#879ab4}.log-dot{width:10px;height:10px;border-radius:50%;margin-top:3px}.log-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}.log-dot.info{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}.log-dot.warn{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}.hidden-panel{display:none!important}.floating-menu{position:absolute;right:18px;top:58px;width:260px;border:1px solid #28435f;background:#07111f;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.45),0 0 24px rgba(0,216,255,.12);z-index:50;padding:12px;display:none}.floating-menu.show{display:block}.floating-menu h4{margin:0 0 8px;font-size:13px}.floating-menu label{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #152940;padding:8px 0;font-size:12px;color:#c4d7f1}.floating-menu input{accent-color:var(--cyan)}.toast{position:absolute;left:50%;top:78px;transform:translateX(-50%);background:#071320;border:1px solid rgba(0,216,255,.5);box-shadow:0 0 24px rgba(0,216,255,.15);border-radius:999px;padding:9px 18px;font-size:13px;font-weight:800;color:#ccf6ff;z-index:100;opacity:0;pointer-events:none;transition:.3s}.toast.show{opacity:1;top:84px}.drop-hint{position:absolute;inset:74px 20px 20px 20px;border:2px dashed rgba(0,216,255,.25);border-radius:18px;display:none;align-items:center;justify-content:center;color:rgba(214,240,255,.45);font-size:18px;font-weight:900;letter-spacing:.08em;z-index:0}.canvas-wrap.dragover .drop-hint{display:flex}.edge-glow{filter: drop-shadow(0 0 8px rgba(0,216,255,.65));}.edge-label{font-size:10px; fill:#92b7d7}.edge-particle{fill:var(--cyan);filter:drop-shadow(0 0 6px var(--cyan))}.minimap-viewport{position:absolute;border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.05);box-shadow:0 0 10px rgba(0,216,255,.35);pointer-events:none}.footer-note{font-size:10px;color:#7185a0;margin-top:6px}
+    .event-log{font-size:11px;line-height:1.4}.log-item{display:grid;grid-template-columns:46px 14px 1fr;gap:5px;margin:8px 0;color:#c2d5ef}.log-time{color:#879ab4}.log-dot{width:10px;height:10px;border-radius:50%;margin-top:3px}.log-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}.log-dot.info{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}.log-dot.warn{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}.hidden-panel{display:none!important}.floating-menu{position:absolute;right:18px;top:58px;width:260px;border:1px solid #28435f;background:#07111f;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.45),0 0 24px rgba(0,216,255,.12);z-index:50;padding:12px;display:none}.floating-menu.show{display:block}.floating-menu h4{margin:0 0 8px;font-size:13px}.floating-menu label{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #152940;padding:8px 0;font-size:12px;color:#c4d7f1}.floating-menu input{accent-color:var(--cyan)}.toast{position:absolute;left:50%;top:78px;transform:translateX(-50%);background:#071320;border:1px solid rgba(0,216,255,.5);box-shadow:0 0 24px rgba(0,216,255,.15);border-radius:999px;padding:9px 18px;font-size:13px;font-weight:800;color:#ccf6ff;z-index:100;opacity:0;pointer-events:none;transition:.3s}.toast.show{opacity:1;top:84px}.drop-hint{position:absolute;inset:74px 20px 20px 20px;border:2px dashed rgba(0,216,255,.25);border-radius:18px;display:none;align-items:center;justify-content:center;color:rgba(214,240,255,.45);font-size:18px;font-weight:900;letter-spacing:.08em;z-index:0}.canvas-wrap.dragover .drop-hint{display:flex}.edge-glow{filter: drop-shadow(0 0 8px rgba(0,216,255,.65));stroke-linecap:round;stroke-linejoin:round}.edge-glow.selected{filter: drop-shadow(0 0 14px rgba(0,216,255,.95));}.edge-hit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer}.edge-label{font-size:10px; fill:#92b7d7;paint-order:stroke;stroke:#07101d;stroke-width:3px}.edge-particle{fill:var(--cyan);filter:drop-shadow(0 0 6px var(--cyan))}.minimap-viewport{position:absolute;border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.05);box-shadow:0 0 10px rgba(0,216,255,.35);pointer-events:none}.footer-note{font-size:10px;color:#7185a0;margin-top:6px}
     @media(max-width:1320px){.app{grid-template-columns:230px minmax(500px,1fr) 320px}.bottom{grid-template-columns:1fr 240px 1.2fr 240px}.brand{min-width:260px}.brand-title{font-size:18px}.top-field{min-width:82px}.btn{padding:9px 11px}.right-panel{padding:8px}}
   </style>
 </head>
@@ -251,6 +251,7 @@
         },
         running,
         selectedNodeId,
+        selectedEdgeKey,
         nodes: state.nodes.map(n => ({
           id:n.id, name:n.name, type:n.type, x:n.x, y:n.y, core:n.core,
           cpu:n.cpu, latencyMs:n.lat, memKb:n.mem, ch:n.ch
@@ -321,6 +322,7 @@
     ];
     let nodeSeq=0;
     let selectedNodeId = 'agc_1';
+    let selectedEdgeKey = '';
     let connectFrom = null;
     let running = false;
     let buildState = 'success';
@@ -345,7 +347,8 @@
       return {
         nodes: state.nodes.map(n => ({...n})),
         edges: state.edges.map(e => [...e]),
-        selectedNodeId
+        selectedNodeId,
+        selectedEdgeKey
       };
     }
     function restoreGraph(snap) {
@@ -353,6 +356,7 @@
       state.nodes = snap.nodes.map(n => ({...n}));
       state.edges = snap.edges.map(e => [...e]);
       selectedNodeId = snap.selectedNodeId || state.nodes[0]?.id || '';
+      selectedEdgeKey = snap.selectedEdgeKey || '';
       renderAll(true);
     }
     function pushHistory(label) {
@@ -489,7 +493,7 @@
         el.innerHTML=`<button class="delete-node" title="Delete node">×</button><div class="port in" data-port="in"></div><div class="port out" data-port="out"></div><div class="node-title"><span class="nicon">${n.icon}</span><span>${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
         layer.appendChild(el);
         makeDraggable(el,n);
-        el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeId=n.id; backendNodeAction(n,'select'); renderAll(false);} });
+        el.addEventListener('click', e=>{ if(!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')){selectedNodeId=n.id; selectedEdgeKey=''; backendNodeAction(n,'select'); renderAll(false);} });
         $('.delete-node',el).addEventListener('click', e=>{e.stopPropagation(); deleteNode(n.id);});
         $('.port.out',el).addEventListener('click', e=>{
           e.stopPropagation();
@@ -502,8 +506,13 @@
           if(connectFrom && connectFrom!==n.id){
             const from=connectFrom;
             pushHistory('Add connection');
+            const replaced = state.edges.filter(([s,t])=>s===from || t===n.id);
+            state.edges = state.edges.filter(([s,t])=>s!==from && t!==n.id);
             if(!state.edges.some(([s,t])=>s===from && t===n.id)) state.edges.push([from,n.id]);
-            connectFrom=null; drawEdges(); renderMinimap(); addLog('info','Connection added',`${from} → ${n.name}`); backendEdit('connection_added',{from,to:n.id});
+            selectedEdgeKey = `${from}->${n.id}`;
+            connectFrom=null; drawEdges(); renderMinimap(); addLog('info','Connection added',`${from} → ${n.name}`);
+            if(replaced.length) addLog('warn','Connection replaced',`${replaced.length} old connection(s) removed by one-out/one-in rule`);
+            backendEdit('connection_added',{from,to:n.id,replaced:replaced.map(([s,t])=>({from:s,to:t}))});
           }
         });
       });
@@ -537,8 +546,22 @@
       renderMinimap();
     }
     function nodeById(id){return state.nodes.find(n=>n.id===id)}
+    function edgeKey(s,t){ return `${s}->${t}`; }
+    function portPoint(node, dir){
+      const nodeEl = $$('.pipeline-node').find(el=>el.dataset.id===node.id);
+      const portEl = nodeEl?.querySelector(dir === 'out' ? '.port.out' : '.port.in');
+      const world = $('#pipelineWorld');
+      if(portEl && world){
+        const pr = portEl.getBoundingClientRect();
+        const wr = world.getBoundingClientRect();
+        const zoom = state.zoom || 1;
+        return { x:(pr.left + pr.width / 2 - wr.left) / zoom, y:(pr.top + pr.height / 2 - wr.top) / zoom };
+      }
+      return dir === 'out' ? {x:node.x + node.w + 7, y:node.y + node.h / 2} : {x:node.x - 7, y:node.y + node.h / 2};
+    }
     function edgePath(a,b){
-      const x1=a.x+a.w+8, y1=a.y+a.h/2, x2=b.x-8, y2=b.y+b.h/2;
+      const p1=portPoint(a,'out'), p2=portPoint(b,'in');
+      const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
       const gap=x2-x1;
       if(gap>70){
         const dx=clamp(gap*.45,36,130);
@@ -550,22 +573,43 @@
     }
     function drawEdges(){
       const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
+      svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
+      svg.setAttribute('preserveAspectRatio','none');
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-      defs.innerHTML=`<linearGradient id="edgeGrad" x1="0" x2="1"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="4" markerHeight="4" refX="3.6" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 Z" fill="#00d8ff"/></marker>`;
+      defs.innerHTML=`<linearGradient id="edgeGrad" x1="0" x2="1"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><marker id="arrow" markerWidth="8" markerHeight="8" refX="7.2" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 Z" fill="#00d8ff"/></marker>`;
       svg.appendChild(defs);
       state.edges.forEach(([s,t],idx)=>{
         const a=nodeById(s), b=nodeById(t); if(!a||!b) return;
         const d=edgePath(a,b);
+        const key=edgeKey(s,t);
         const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width','3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class','edge-glow');
+        p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke','url(#edgeGrad)'); p.setAttribute('stroke-width',key===selectedEdgeKey?'5':'3'); p.setAttribute('marker-end','url(#arrow)'); p.setAttribute('class',`edge-glow ${key===selectedEdgeKey?'selected':''}`);
         svg.appendChild(p);
+        const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+        hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
+        hit.addEventListener('click',e=>{e.stopPropagation(); selectedEdgeKey=key; selectedNodeId=''; backendEdit('connection_selected',{from:s,to:t}); drawEdges(); toast(`Selected connection: ${s} → ${t}`);});
+        svg.appendChild(hit);
         if(running){
           const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r','3'); dot.setAttribute('class','edge-particle');
           const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if(idx%2===0){ const tx=(a.x+a.w+b.x)/2, ty=(a.y+a.h/2+b.y+b.h/2)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
+        if(idx%2===0){ const pa=portPoint(a,'out'), pb=portPoint(b,'in'); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
       });
     }
+    function deleteSelectedEdge(){
+      if(running){toast('Run 状态下不能删除连线，请先 Stop'); return false;}
+      if(!selectedEdgeKey) return false;
+      const [from,to]=selectedEdgeKey.split('->');
+      pushHistory('Delete connection');
+      const before=state.edges.length;
+      state.edges=state.edges.filter(([s,t])=>edgeKey(s,t)!==selectedEdgeKey);
+      selectedEdgeKey='';
+      drawEdges(); renderMinimap();
+      addLog(before!==state.edges.length?'warn':'info','Connection deleted',`${from} → ${to}`);
+      backendEdit('connection_removed',{from,to});
+      return true;
+    }
+
     function renderMinimap(){
       const mm=$('#minimap'); if(!mm) return; mm.innerHTML='';
       const pad=6, W=mm.clientWidth||188, H=mm.clientHeight||76;
@@ -576,6 +620,7 @@
       vr.style.left=pad+'px'; vr.style.top=pad+'px'; vr.style.width=Math.min(W-pad*2,vw)+'px'; vr.style.height=Math.min(H-pad*2,vh)+'px'; mm.appendChild(vr);
     }
     function deleteNode(id){
+      selectedEdgeKey='';
       if(running){toast('Run 状态下不能删除节点，请先 Stop'); return;}
       const n=nodeById(id); if(!n) return;
       pushHistory('Delete node');
@@ -659,7 +704,8 @@
       $('#autoBtn').addEventListener('click',autoArrange);
       $('#zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));
       $('#zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));
-      $('.toolbox .tool:nth-child(5)').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId}); if(selectedNodeId) deleteNode(selectedNodeId); });
+      $('.toolbox .tool:nth-child(5)').addEventListener('click',()=>{ backendTool('delete_selected',{selectedNodeId,selectedEdgeKey}); if(deleteSelectedEdge()) return; if(selectedNodeId) deleteNode(selectedNodeId); });
+      wrap.addEventListener('click',e=>{ if(e.target===wrap || e.target.id==='edgeSvg'){ selectedEdgeKey=''; drawEdges(); }});
       $('#panelMenuBtn').addEventListener('click',()=>$('#panelMenu').classList.toggle('show'));
       $$('#panelMenu input').forEach(cb=>cb.addEventListener('change',e=>setPanelVisible(e.target.dataset.panel,e.target.checked)));
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
@@ -670,7 +716,7 @@
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn').addEventListener('click',undoEdit);
       $('#redoBtn').addEventListener('click',redoEdit);
-      window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
+      window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if((e.key==='Delete'||e.key==='Backspace')&&selectedEdgeKey){e.preventDefault(); deleteSelectedEdge(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
       $('#saveBtn').addEventListener('click',async ()=>{localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
