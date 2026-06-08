@@ -420,6 +420,7 @@
     let pendingLayoutScroll = null;
     let loadingPipelineGraph = false;
     let safariGestureStartZoom = 1;
+    let defaultViewportZoomApplied = false;
     let selectedNodeId = 'agc_1';
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
@@ -767,8 +768,38 @@
     function restoreViewLayout(viewId=currentPipelineId) {
       const snap=pipelineLayoutCache[viewLayoutKey(viewId)];
       if(!snap) return false;
-      if(Number.isFinite(snap.zoom)) state.zoom=clamp(snap.zoom,.35,1.8);
+      if(Number.isFinite(snap.zoom)) { state.zoom=clamp(snap.zoom,.35,1.8); defaultViewportZoomApplied=true; }
       pendingLayoutScroll=snap.scroll || null;
+      return true;
+    }
+    function computeDefaultZoomFor80Nodes() {
+      const sc=getScrollEl();
+      const visibleW=Math.max(640, sc?.clientWidth || $('#canvasWrap')?.clientWidth || 1200);
+      const visibleH=Math.max(420, sc?.clientHeight || $('#canvasWrap')?.clientHeight || 700);
+
+      // Target display capacity: about 80 algorithm cards, 10 columns x 8 rows.
+      const nodeW=128, nodeH=142;
+      const cols=10, rows=8;
+      const gapX=48, gapY=32;
+      const marginX=180, marginY=170;
+      const targetW=cols*nodeW + (cols-1)*gapX + marginX;
+      const targetH=rows*nodeH + (rows-1)*gapY + marginY;
+      const fit=Math.min(visibleW/targetW, visibleH/targetH);
+
+      // Keep it readable: avoid microscopic zoom and avoid defaulting to 100%.
+      return clamp(fit, .35, .92);
+    }
+    function applyInitialViewportZoomIfNeeded(reason='') {
+      if(defaultViewportZoomApplied) return false;
+      const z=computeDefaultZoomFor80Nodes();
+      if(!Number.isFinite(z)) return false;
+      state.zoom=z;
+      defaultViewportZoomApplied=true;
+      applyZoom();
+      renderMinimap();
+      drawEdges();
+      backendEdit('initial_viewport_zoom',{reason,zoom:state.zoom,target_nodes:80});
+      addLog('info','Initial viewport zoom',`${Math.round(state.zoom*100)}% for ~80 algorithm cards`);
       return true;
     }
     function saveCurrentLayout(reason='') {
@@ -855,9 +886,10 @@
       state.edges=nextEdges;
       state.world.w=Math.max(2200,Math.ceil(maxW+220));
       state.world.h=Math.max(1050,Math.ceil(yCursor+160));
-      restoreViewLayout(pipelineId);
-      if(autoArranged) { saveViewLayout(pipelineId); persistLayoutCache(); }
-      return {restored,autoArranged};
+      const restoredView=restoreViewLayout(pipelineId);
+      if(!restoredView) applyInitialViewportZoomIfNeeded('first_view_load');
+      if(autoArranged || !restoredView) { saveViewLayout(pipelineId); persistLayoutCache(); }
+      return {restored,autoArranged,restoredView};
     }
     function restorePendingScroll() {
       const sc=getScrollEl();
@@ -962,6 +994,7 @@
       if(!cfg) { addLog('warn','Project JSON not loaded','Tried backend /api/config and static /config/*.json'); return; }
       currentProjectFile = projectFile || 'A2.json';
       currentProjectConfig = cfg;
+      defaultViewportZoomApplied=false;
       const projectSelect = $('#projectSelect');
       if(projectSelect) projectSelect.value = currentProjectFile;
 
@@ -1136,14 +1169,17 @@
       drawEdges();
     }
     function setZoom(z){
-      backendTool('zoom',{zoom:z});
-      state.zoom=clamp(z,.45,1.35);
+      defaultViewportZoomApplied=true;
+      state.zoom=clamp(z,.35,1.8);
       applyZoom();
       renderMinimap();
+      saveCurrentLayout('manual_zoom_button');
+      backendTool('zoom',{zoom:state.zoom});
     }
     function setZoomAtClientPoint(z, clientX, clientY){
       const sc=getScrollEl();
       const before=worldPointFromEvent({clientX,clientY});
+      defaultViewportZoomApplied=true;
       state.zoom=clamp(z,.35,1.8);
       applyZoom();
       if(sc && before){
@@ -1837,7 +1873,7 @@
       ['targetLevel','maxGain','attack','release'].forEach(id=>$('#'+id).addEventListener('input',()=>{ $('#targetValue').textContent=$('#targetLevel').value+' dB'; $('#gainValue').textContent=$('#maxGain').value+' dB'; $('#attackValue').textContent=$('#attack').value+' ms'; $('#releaseValue').textContent=$('#release').value+' ms'; apiPost('/api/param/update',{session_id:API_SESSION_ID,node_id:selectedNodeId,param_id:id,value:$('#'+id).value}); addLog('info','Runtime parameter updated',`${nodeById(selectedNodeId)?.name||'Node'} parameters`); }));
       setInterval(updateRandom,600); animate();
     }
-    window.addEventListener('resize',()=>{updateWorldBounds(); renderAll(true);});
+    window.addEventListener('resize',()=>{updateWorldBounds(); if(!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true);});
     init();
   </script>
 </body>
