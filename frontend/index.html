@@ -736,10 +736,31 @@
       addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s)`);
       backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length});
     }
+    async function apiGetFirstJson(paths=[]) {
+      for (const path of paths) {
+        const data = await apiGet(path);
+        if (data) return data;
+      }
+      return null;
+    }
+    function staticConfigPaths(file='A2.json') {
+      const safe = encodeURIComponent(file || 'A2.json');
+      // First path works for server root. Second path is useful when the HTML is
+      // opened from a subdirectory or static hosting rewrites absolute paths.
+      return [`/config/${safe}`, `config/${safe}`];
+    }
+    async function loadStaticProjectManifest() {
+      const manifest = await apiGetFirstJson(['/config/projects.json','config/projects.json']);
+      if(Array.isArray(manifest?.projects) && manifest.projects.length) return manifest.projects;
+      return null;
+    }
     async function loadProjectList() {
       const select=$('#projectSelect');
       const res=await apiGet('/api/projects');
-      const projects=Array.isArray(res?.projects) && res.projects.length ? res.projects : [{file:'A2.json',name:'A2'}];
+      const manifestProjects = res?.projects?.length ? null : await loadStaticProjectManifest();
+      const projects=Array.isArray(res?.projects) && res.projects.length
+        ? res.projects
+        : (Array.isArray(manifestProjects) && manifestProjects.length ? manifestProjects : [{file:'A2.json',name:'A2'}]);
       if(select) {
         select.innerHTML=projects.map(p=>`<option value="${p.file}">${p.name || projectNameFromFile(p.file)}</option>`).join('');
         if(!projects.some(p=>p.file===currentProjectFile)) currentProjectFile=projects[0].file;
@@ -748,8 +769,8 @@
       await loadPlatformConfig(currentProjectFile);
     }
     async function loadPlatformConfig(projectFile=currentProjectFile) {
-      const cfg = await apiGet('/api/config?project=' + encodeURIComponent(projectFile || 'A2.json'));
-      if(!cfg) { addLog('warn','Project JSON not loaded','Using built-in component list'); return; }
+      const cfg = await apiGetFirstJson(['/api/config?project=' + encodeURIComponent(projectFile || 'A2.json'), ...staticConfigPaths(projectFile || 'A2.json')]);
+      if(!cfg) { addLog('warn','Project JSON not loaded','Tried backend /api/config and static /config/*.json'); return; }
       currentProjectFile = projectFile || 'A2.json';
       currentProjectConfig = cfg;
       const projectSelect = $('#projectSelect');
