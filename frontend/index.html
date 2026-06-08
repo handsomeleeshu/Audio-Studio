@@ -687,56 +687,177 @@
       const core = name==='KWS'||name==='VAD'?2:(name==='EQ'||name==='DRC'||name==='Volume'||name==='NS'||name==='AGC'?1:0);
       return {id,name,type:c.type||'util',icon:c.icon||'≋',x,y,w:128,h,cpu:c.cpu||0.8,mem:c.mem||Math.round(96+maxCh*24),lat:c.lat||0.2,core,rms:-rnd(10,30),peak:-rnd(1,10),selected:false,ch:c.ch||(maxCh===1?'1ch':`${maxCh}ch`),moduleTypeId:c.moduleTypeId||'',inPorts,outPorts,portsFlipped:false};
     }
+    function pipelineLayoutKey(pipeId, projectFile=currentProjectFile) {
+      return `${projectFile || 'A2.json'}::PIPE::${pipeId || 'ALL'}`;
+    }
+    function viewLayoutKey(viewId=currentPipelineId, projectFile=currentProjectFile) {
+      return `${projectFile || 'A2.json'}::VIEW::${viewId || 'ALL'}`;
+    }
     function layoutCacheKey(pipelineId=currentPipelineId, projectFile=currentProjectFile) {
-      return `${projectFile || 'A2.json'}::${pipelineId || 'ALL'}`;
+      return pipelineId==='ALL' ? viewLayoutKey(pipelineId,projectFile) : pipelineLayoutKey(pipelineId,projectFile);
     }
     function loadLayoutCacheFromStorage() {
       try {
-        const raw=localStorage.getItem('audioStudioPipelineLayouts');
+        // V2 intentionally ignores old v23 cache. Old ALL-level snapshots can
+        // incorrectly block first-load Auto Arrange.
+        const raw=localStorage.getItem('audioStudioPipelineLayoutsV2');
         const parsed=raw?JSON.parse(raw):{};
         return parsed && typeof parsed==='object' ? parsed : {};
       } catch(e) { return {}; }
     }
     function persistLayoutCache() {
-      try { localStorage.setItem('audioStudioPipelineLayouts',JSON.stringify(pipelineLayoutCache)); } catch(e) {}
+      try { localStorage.setItem('audioStudioPipelineLayoutsV2',JSON.stringify(pipelineLayoutCache)); } catch(e) {}
     }
-    function captureCurrentLayout() {
-      const sc=getScrollEl();
+    function pipelineNodes(pipeId, nodes=state.nodes) {
+      return nodes.filter(n=>inferNodePipelineId(n)===pipeId);
+    }
+    function pipelineEdgesForNodes(nodes, edges=state.edges) {
+      const ids=new Set(nodes.map(n=>n.id));
+      return edges.filter(e=>{const p=edgeParts(e); return ids.has(p.from) && ids.has(p.to);});
+    }
+    function boundsOfNodes(nodes) {
+      if(!nodes.length) return {x:120,y:80,w:0,h:0,maxX:120,maxY:80};
+      const x=Math.min(...nodes.map(n=>n.x));
+      const y=Math.min(...nodes.map(n=>n.y));
+      const maxX=Math.max(...nodes.map(n=>n.x+(n.w||128)));
+      const maxY=Math.max(...nodes.map(n=>n.y+(n.h||142)));
+      return {x,y,w:maxX-x,h:maxY-y,maxX,maxY};
+    }
+    function shiftNodes(nodes, dx, dy) {
+      nodes.forEach(n=>{ n.x+=dx; n.y+=dy; });
+    }
+    function capturePipelineLayout(pipeId, nodes=pipelineNodes(pipeId), edges=pipelineEdgesForNodes(nodes), reason='') {
+      if(!pipeId || !nodes.length) return null;
+      const old=pipelineLayoutCache[pipelineLayoutKey(pipeId)] || {};
+      const b=boundsOfNodes(nodes);
+      const fromAll=currentPipelineId==='ALL';
+      const singleOrigin=fromAll
+        ? (old.singleOrigin || old.origin || {x:120,y:80})
+        : {x:b.x,y:b.y};
       return {
-        version:1,
+        version:2,
         project_file:currentProjectFile,
-        pipeline_id:currentPipelineId,
-        nodes:state.nodes.map(n=>({id:n.id,x:n.x,y:n.y,portsFlipped:!!n.portsFlipped,pipelineId:n.pipelineId||inferNodePipelineId(n),pipelineName:n.pipelineName||inferNodePipelineName(inferNodePipelineId(n))})),
-        edges:state.edges.map(cloneEdge),
+        pipeline_id:pipeId,
+        reason,
+        origin:{x:b.x,y:b.y},
+        singleOrigin,
+        size:{w:b.w,h:b.h},
+        nodes:nodes.map(n=>({id:n.id,relX:n.x-b.x,relY:n.y-b.y,portsFlipped:!!n.portsFlipped,pipelineId:pipeId,pipelineName:n.pipelineName||inferNodePipelineName(pipeId)})),
+        edges:edges.map(cloneEdge)
+      };
+    }
+    function savePipelineLayout(pipeId, nodes=pipelineNodes(pipeId), edges=pipelineEdgesForNodes(nodes), reason='') {
+      const snap=capturePipelineLayout(pipeId,nodes,edges,reason);
+      if(!snap) return false;
+      pipelineLayoutCache[pipelineLayoutKey(pipeId)] = snap;
+      return true;
+    }
+    function saveViewLayout(viewId=currentPipelineId) {
+      const sc=getScrollEl();
+      pipelineLayoutCache[viewLayoutKey(viewId)] = {
+        version:2,
+        kind:'view',
+        project_file:currentProjectFile,
+        view_id:viewId,
         world:{w:state.world.w,h:state.world.h},
         zoom:state.zoom,
         scroll:{left:sc?.scrollLeft||0,top:sc?.scrollTop||0}
       };
     }
-    function saveCurrentLayout(reason='') {
-      if(loadingPipelineGraph || !currentProjectConfig || !state.nodes.length) return;
-      pipelineLayoutCache[layoutCacheKey()] = captureCurrentLayout();
-      persistLayoutCache();
-      backendEdit('layout_cached',{project_file:currentProjectFile,pipeline_id:currentPipelineId,reason,nodes:state.nodes.length,edges:state.edges.length});
-    }
-    function restoreLayoutForPipeline(pipelineId=currentPipelineId) {
-      const snap=pipelineLayoutCache[layoutCacheKey(pipelineId)];
-      if(!snap || !Array.isArray(snap.nodes)) return false;
-      const pos=new Map(snap.nodes.map(n=>[n.id,n]));
-      state.nodes.forEach(n=>{
-        const p=pos.get(n.id);
-        if(!p) return;
-        if(Number.isFinite(p.x)) n.x=p.x;
-        if(Number.isFinite(p.y)) n.y=p.y;
-        if(typeof p.portsFlipped === 'boolean') n.portsFlipped=p.portsFlipped;
-        if(p.pipelineId) n.pipelineId=p.pipelineId;
-        if(p.pipelineName) n.pipelineName=p.pipelineName;
-      });
-      if(Array.isArray(snap.edges)) state.edges=snap.edges.map(cloneEdge);
-      if(snap.world?.w && snap.world?.h){ state.world.w=snap.world.w; state.world.h=snap.world.h; }
+    function restoreViewLayout(viewId=currentPipelineId) {
+      const snap=pipelineLayoutCache[viewLayoutKey(viewId)];
+      if(!snap) return false;
       if(Number.isFinite(snap.zoom)) state.zoom=clamp(snap.zoom,.35,1.8);
       pendingLayoutScroll=snap.scroll || null;
       return true;
+    }
+    function saveCurrentLayout(reason='') {
+      if(loadingPipelineGraph || !currentProjectConfig || !state.nodes.length) return;
+      const ids=[...new Set(state.nodes.map(inferNodePipelineId))];
+      ids.forEach(pid=>{
+        const ns=pipelineNodes(pid);
+        savePipelineLayout(pid,ns,pipelineEdgesForNodes(ns),reason);
+      });
+      saveViewLayout(currentPipelineId);
+      persistLayoutCache();
+      backendEdit('layout_cached',{project_file:currentProjectFile,pipeline_id:currentPipelineId,reason,pipelines:ids,nodes:state.nodes.length,edges:state.edges.length});
+    }
+    function applyPipelineSnapshot(pipeId, nodes, snap, anchor) {
+      if(!snap || !Array.isArray(snap.nodes) || !nodes.length) return false;
+      const pos=new Map(snap.nodes.map(n=>[n.id,n]));
+      const origin=anchor || snap.singleOrigin || snap.origin || {x:120,y:80};
+      nodes.forEach(n=>{
+        const p=pos.get(n.id);
+        if(!p) return;
+        n.x=origin.x+(Number.isFinite(p.relX)?p.relX:0);
+        n.y=origin.y+(Number.isFinite(p.relY)?p.relY:0);
+        if(typeof p.portsFlipped === 'boolean') n.portsFlipped=p.portsFlipped;
+        n.pipelineId=pipeId;
+        n.pipelineName=p.pipelineName || inferNodePipelineName(pipeId);
+      });
+      return true;
+    }
+    function restoreLayoutForPipeline(pipelineId=currentPipelineId) {
+      if(pipelineId==='ALL') return false;
+      const snap=pipelineLayoutCache[pipelineLayoutKey(pipelineId)];
+      if(!snap) return false;
+      const nodes=pipelineNodes(pipelineId);
+      const ok=applyPipelineSnapshot(pipelineId,nodes,snap,null);
+      if(ok && Array.isArray(snap.edges)) state.edges=snap.edges.map(cloneEdge);
+      restoreViewLayout(pipelineId);
+      return ok;
+    }
+    function applyPipelineLayoutsForView(finalPipes, pipelineId='ALL') {
+      const ids=finalPipes.map(p=>p.pipe_id);
+      const generatedEdges=state.edges.map(cloneEdge);
+      const nextEdges=[];
+      let yCursor=80;
+      const bandGap=96;
+      let maxW=0;
+      let autoArranged=0;
+      let restored=0;
+
+      ids.forEach(pid=>{
+        const ns=pipelineNodes(pid);
+        if(!ns.length) return;
+        const generatedForPipe=pipelineEdgesForNodes(ns,generatedEdges);
+        let snap=pipelineLayoutCache[pipelineLayoutKey(pid)];
+        const anchor=pipelineId==='ALL'
+          ? {x:120,y:yCursor}
+          : (snap?.singleOrigin || snap?.origin || {x:120,y:80});
+
+        if(snap && applyPipelineSnapshot(pid,ns,snap,anchor)) {
+          restored++;
+          const cachedEdges=Array.isArray(snap.edges) ? snap.edges.map(cloneEdge) : generatedForPipe;
+          nextEdges.push(...cachedEdges);
+        } else {
+          arrangePipelineBand(ns,generatedForPipe,pipelineId==='ALL'?yCursor:80,inferNodePipelineName(pid));
+          autoArranged++;
+          snap=capturePipelineLayout(pid,ns,generatedForPipe,'first_load_auto_arrange');
+          if(snap) pipelineLayoutCache[pipelineLayoutKey(pid)] = snap;
+          nextEdges.push(...generatedForPipe);
+        }
+
+        const b=boundsOfNodes(ns);
+        if(pipelineId==='ALL') {
+          const dx=120-b.x;
+          const dy=yCursor-b.y;
+          if(Math.abs(dx)>0.01 || Math.abs(dy)>0.01) shiftNodes(ns,dx,dy);
+          const b2=boundsOfNodes(ns);
+          yCursor=b2.maxY+bandGap;
+          maxW=Math.max(maxW,b2.maxX+260);
+        } else {
+          maxW=Math.max(maxW,b.maxX+260);
+          yCursor=Math.max(yCursor,b.maxY+160);
+        }
+      });
+
+      state.edges=nextEdges;
+      state.world.w=Math.max(2200,Math.ceil(maxW+220));
+      state.world.h=Math.max(1050,Math.ceil(yCursor+160));
+      restoreViewLayout(pipelineId);
+      if(autoArranged) { saveViewLayout(pipelineId); persistLayoutCache(); }
+      return {restored,autoArranged};
     }
     function restorePendingScroll() {
       const sc=getScrollEl();
@@ -795,18 +916,14 @@
       selectedNodeId=state.nodes[0]?.id || '';
       selectedEdgeKey='';
       history.undo=[]; history.redo=[]; updateHistoryButtons();
-      const restored=restoreLayoutForPipeline(pipelineId);
+      const layoutResult=applyPipelineLayoutsForView(finalPipes,pipelineId);
       loadingPipelineGraph=false;
       renderPipelineSelect();
-      if(restored){
-        renderAll(true);
-        restorePendingScroll();
-      } else {
-        autoArrange({silent:true,history:false,reason:'first_load'});
-      }
+      renderAll(true);
+      restorePendingScroll();
       const label=pipelineId==='ALL'?'All':(finalPipes[0]?.name || pipelineId);
-      addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s)${restored?' · restored layout':' · auto arranged'}`);
-      backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length,restored_layout:restored});
+      addLog('ok','Pipeline loaded',`${label}: ${state.nodes.length} node(s), ${state.edges.length} connection(s) · restored ${layoutResult.restored}, auto ${layoutResult.autoArranged}`);
+      backendEdit('pipeline_config_loaded',{project_file:currentProjectFile,pipeline_id:pipelineId,nodes:state.nodes.length,edges:state.edges.length,restored_pipelines:layoutResult.restored,auto_arranged_pipelines:layoutResult.autoArranged});
     }
     async function apiGetFirstJson(paths=[]) {
       for (const path of paths) {
@@ -1623,7 +1740,7 @@
       backendTool('auto_arrange',{nodes:state.nodes.length,pipelines:arrangedGroups.map(g=>({id:g.id,name:g.name,nodes:g.nodes.length,edges:g.edges.length})),layout:'port_order_fan_aware_pipeline_bands',silent});
       backendEdit('auto_arrange',{layout:'port_order_fan_aware_pipeline_bands',pipeline_id:currentPipelineId,groups:arrangedGroups.length,silent});
       if(!silent) toast('Auto layout finished');
-      addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Port-order fan-aware layout: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
+      addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Per-pipeline layout saved: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
     }
     function swapSelectedPorts(){
       if(running){toast('Run 状态下不能对调端口方向，请先 Stop'); return;}
@@ -1632,6 +1749,7 @@
       pushHistory('Swap ports');
       n.portsFlipped=!n.portsFlipped;
       renderAll(true);
+      saveCurrentLayout('ports_swapped');
       backendEdit('ports_swapped',{node_id:n.id,node_name:n.name,ports_flipped:n.portsFlipped});
       addLog('info','Ports side swapped',`${n.name}: ${n.portsFlipped?'IN right / OUT left':'IN left / OUT right'}`);
       toast(`${n.name} 端口方向已对调`);
