@@ -716,7 +716,7 @@
           const c=resolvePipelineNodeComponent(currentProjectConfig,pipe,pn);
           const id=graphNodeId(pipe.pipe_id,pn.node_id);
           idSet.add(pn.node_id);
-          nodes.push(mkNodeFromComponent(id,c,x,y));
+          const gn=mkNodeFromComponent(id,c,x,y); gn.pipelineId=pipe.pipe_id; gn.pipelineName=pipe.name || pipe.pipe_id; nodes.push(gn);
         });
         (pipe.edges || []).forEach(e=>{
           const from=splitEndpoint(e.from), to=splitEndpoint(e.to);
@@ -1209,13 +1209,130 @@
       resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h); const bars=96; const bw=w/bars; for(let i=0;i<bars;i++){ const val=(Math.sin(i*.16+t*.02)+1)*.25 + Math.random()*.18 + (1-i/bars)*.35; const bh=clamp(val*h,4,h*.92); const g=ctx.createLinearGradient(0,h-bh,0,h); g.addColorStop(0,'#b65cff'); g.addColorStop(1,'#00d8ff'); ctx.fillStyle=g; ctx.fillRect(i*bw+1,h-bh,bw-2,bh); }
     }
     function animate(){ if(running){ t+=2; drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); } requestAnimationFrame(animate); }
+    function inferNodePipelineId(n){
+      if(n.pipelineId) return n.pipelineId;
+      const s=String(n.id||'');
+      return s.includes('__') ? s.split('__')[0] : 'MANUAL';
+    }
+    function inferNodePipelineName(pid){
+      const pipe=(currentProjectConfig?.pipelines||[]).find(p=>p.pipe_id===pid);
+      return pipe?.name || pid;
+    }
+    function topoLayerNodes(nodes, edges){
+      const nodeIds=new Set(nodes.map(n=>n.id));
+      const inDeg=new Map(nodes.map(n=>[n.id,0]));
+      const outs=new Map(nodes.map(n=>[n.id,[]]));
+      const ins=new Map(nodes.map(n=>[n.id,[]]));
+      edges.forEach(e=>{
+        const p=edgeParts(e);
+        if(!nodeIds.has(p.from)||!nodeIds.has(p.to)) return;
+        outs.get(p.from).push(p.to);
+        ins.get(p.to).push(p.from);
+        inDeg.set(p.to,(inDeg.get(p.to)||0)+1);
+      });
+
+      const q=nodes.filter(n=>(inDeg.get(n.id)||0)===0).map(n=>n.id);
+      const layer=new Map(nodes.map(n=>[n.id,0]));
+      const visited=new Set();
+      while(q.length){
+        const id=q.shift();
+        if(visited.has(id)) continue;
+        visited.add(id);
+        (outs.get(id)||[]).forEach(to=>{
+          layer.set(to,Math.max(layer.get(to)||0,(layer.get(id)||0)+1));
+          inDeg.set(to,(inDeg.get(to)||0)-1);
+          if((inDeg.get(to)||0)===0) q.push(to);
+        });
+      }
+
+      // Cycle or disconnected fallback: place unvisited nodes after their inputs,
+      // and keep deterministic order. This avoids collapsed components.
+      nodes.forEach((n,i)=>{
+        if(visited.has(n.id)) return;
+        const parentLayers=(ins.get(n.id)||[]).map(id=>layer.get(id)||0);
+        layer.set(n.id,parentLayers.length?Math.max(...parentLayers)+1:Math.floor(i/5));
+      });
+
+      const byLayer=new Map();
+      nodes.forEach(n=>{
+        const l=layer.get(n.id)||0;
+        if(!byLayer.has(l)) byLayer.set(l,[]);
+        byLayer.get(l).push(n);
+      });
+
+      // Basic barycentric ordering: nodes with related predecessors stay close.
+      const sortedLayers=[...byLayer.keys()].sort((a,b)=>a-b);
+      sortedLayers.forEach(l=>{
+        const arr=byLayer.get(l);
+        arr.sort((a,b)=>{
+          const ain=(ins.get(a.id)||[]).map(id=>layer.get(id)||0).reduce((x,y)=>x+y,0);
+          const bin=(ins.get(b.id)||[]).map(id=>layer.get(id)||0).reduce((x,y)=>x+y,0);
+          const adeg=(outs.get(a.id)||[]).length+(ins.get(a.id)||[]).length;
+          const bdeg=(outs.get(b.id)||[]).length+(ins.get(b.id)||[]).length;
+          return (bin-ain) || (bdeg-adeg) || String(a.name).localeCompare(String(b.name));
+        });
+      });
+      return {byLayer, sortedLayers};
+    }
+    function arrangePipelineBand(nodes, edges, bandIndex, bandCount, bandName=''){
+      const {byLayer, sortedLayers}=topoLayerNodes(nodes,edges);
+      const x0=120, layerGap=225, nodeGapY=168;
+      const maxLayerSize=Math.max(1,...[...byLayer.values()].map(a=>a.length));
+      const bandHeight=Math.max(230, 120 + maxLayerSize*nodeGapY);
+      const y0=80 + bandIndex*bandHeight;
+      sortedLayers.forEach((layerNo,li)=>{
+        const arr=byLayer.get(layerNo) || [];
+        const layerX=x0 + li*layerGap;
+        const centerY=y0 + bandHeight/2 - 70;
+        arr.forEach((n,i)=>{
+          const offset=(i-(arr.length-1)/2)*nodeGapY;
+          n.x=layerX;
+          n.y=Math.max(40,y0+50,centerY+offset);
+        });
+      });
+      return {height:bandHeight,width:x0 + sortedLayers.length*layerGap + 260,name:bandName};
+    }
     function autoArrange(){
       if(running){toast('Run 状态下不能自动布局，请先 Stop'); return;}
-      const rows = [ ['file_1','src_1','eq_1','drc_1','vol_1','out_1'], ['mic_1','aec_1','bf_1','ns_1','agc_1','vad_1','kws_1'] ];
+      if(!state.nodes.length){toast('No nodes to arrange'); return;}
       pushHistory('Auto arrange');
-      rows.forEach((row,r)=>row.forEach((id,i)=>{const n=nodeById(id); if(n){n.x=120+i*190; n.y=95+r*190;}}));
-      let extras=state.nodes.filter(n=>!rows.flat().includes(n.id)); extras.forEach((n,i)=>{n.x=160+i*165; n.y=475;});
-      renderAll(true); redrawEdgesAfterLayout(); backendTool('auto_arrange',{nodes:state.nodes.length}); backendEdit('auto_arrange',{}); toast('Auto layout finished'); addLog('info','Auto layout finished','ELK-like frontend layout demo');
+
+      const groups=new Map();
+      state.nodes.forEach(n=>{
+        const pid=(currentPipelineId==='ALL') ? inferNodePipelineId(n) : (currentPipelineId || inferNodePipelineId(n));
+        if(!groups.has(pid)) groups.set(pid,{id:pid,name:inferNodePipelineName(pid),nodes:[],edges:[]});
+        groups.get(pid).nodes.push(n);
+      });
+      state.edges.forEach(e=>{
+        const p=edgeParts(e);
+        const from=nodeById(p.from), to=nodeById(p.to);
+        if(!from||!to) return;
+        const fromPid=(currentPipelineId==='ALL') ? inferNodePipelineId(from) : (currentPipelineId || inferNodePipelineId(from));
+        const toPid=(currentPipelineId==='ALL') ? inferNodePipelineId(to) : (currentPipelineId || inferNodePipelineId(to));
+        if(fromPid===toPid && groups.has(fromPid)) groups.get(fromPid).edges.push(e);
+      });
+
+      const order=(currentProjectConfig?.pipelines||[]).map(p=>p.pipe_id);
+      const arrangedGroups=[...groups.values()].sort((a,b)=>{
+        const ia=order.indexOf(a.id), ib=order.indexOf(b.id);
+        return (ia<0?999:ia)-(ib<0?999:ib) || String(a.name).localeCompare(String(b.name));
+      });
+
+      let maxW=0,totalH=0;
+      arrangedGroups.forEach((g,idx)=>{
+        const r=arrangePipelineBand(g.nodes,g.edges,idx,arrangedGroups.length,g.name);
+        maxW=Math.max(maxW,r.width);
+        totalH+=r.height;
+      });
+
+      state.world.w=Math.max(2200,Math.ceil(maxW+220));
+      state.world.h=Math.max(1050,Math.ceil(totalH+220));
+      renderAll(true);
+      redrawEdgesAfterLayout();
+      backendTool('auto_arrange',{nodes:state.nodes.length,pipelines:arrangedGroups.map(g=>({id:g.id,name:g.name,nodes:g.nodes.length,edges:g.edges.length})),layout:'layered_pipeline_bands'});
+      backendEdit('auto_arrange',{layout:'layered_pipeline_bands',pipeline_id:currentPipelineId,groups:arrangedGroups.length});
+      toast('Auto layout finished');
+      addLog('info','Auto layout finished',`Layered layout: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
     }
     function swapSelectedPorts(){
       if(running){toast('Run 状态下不能对调端口方向，请先 Stop'); return;}
