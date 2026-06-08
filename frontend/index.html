@@ -37,25 +37,25 @@
         radial-gradient(circle at 90% 10%, rgba(182,92,255,.12), transparent 30%),
         linear-gradient(180deg,#040711,#07101d 55%,#050810);
     }
-    .topbar{grid-column:1/4; display:flex; align-items:center; gap:18px; padding:12px 18px; border:1px solid #17375a; border-bottom:2px solid #1a3a5c; background:linear-gradient(180deg,rgba(10,25,45,.96),rgba(5,13,24,.96)); backdrop-filter: blur(14px); z-index:20; border-radius:22px 22px 0 0; margin:12px 14px 0; box-shadow:0 0 0 1px rgba(0,216,255,.08), inset 0 0 24px rgba(40,110,180,.10);}
-    .brand{display:flex; align-items:center; gap:14px; min-width:620px;}
-    .brand-logo{width:58px;height:58px;border-radius:14px;display:grid;place-items:center;border:1px solid rgba(0,216,255,.55);box-shadow:0 0 18px rgba(0,216,255,.28); color:#fff; font-weight:950; font-size:23px; position:relative; overflow:hidden; background:linear-gradient(145deg,rgba(11,42,70,.9),rgba(4,16,30,.95));}
-    .brand-logo:before,.brand-logo:after{content:"";position:absolute;inset:8px;border-radius:50%;border:4px solid transparent;border-top-color:#48f0a1;border-left-color:#48f0a1;transform:rotate(12deg)}
+    .topbar{grid-column:1/4; display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid #17375a; border-bottom:2px solid #1a3a5c; background:linear-gradient(180deg,rgba(10,25,45,.96),rgba(5,13,24,.96)); backdrop-filter: blur(14px); z-index:20; border-radius:20px 20px 0 0; margin:8px 10px 0; box-shadow:0 0 0 1px rgba(0,216,255,.08), inset 0 0 24px rgba(40,110,180,.10); overflow:visible;}
+    .brand{display:flex; align-items:center; gap:9px; flex:0 0 396px; min-width:330px; max-width:396px; overflow:hidden;}
+    .brand-logo{width:37px;height:37px;border-radius:10px;display:grid;place-items:center;border:1px solid rgba(0,216,255,.55);box-shadow:0 0 16px rgba(0,216,255,.25); color:#fff; font-weight:950; font-size:15px; position:relative; overflow:hidden; background:linear-gradient(145deg,rgba(11,42,70,.9),rgba(4,16,30,.95)); flex:0 0 auto;}
+    .brand-logo:before,.brand-logo:after{content:"";position:absolute;inset:6px;border-radius:50%;border:2px solid transparent;border-top-color:#48f0a1;border-left-color:#48f0a1;transform:rotate(12deg)}
     .brand-logo:after{border-top-color:transparent;border-left-color:transparent;border-bottom-color:#48f0a1;border-right-color:#48f0a1;transform:rotate(12deg)}
     .brand-logo span{position:relative;z-index:1;text-shadow:0 0 10px rgba(0,216,255,.6)}
-    .brand-title{display:block;font-size:30px;letter-spacing:.01em;font-weight:900;line-height:1.05;color:#e8f2ff;}
-    .brand-version{display:block;font-size:16px;color:#b7c8df;margin-left:0;margin-top:4px;font-weight:650;}
-    .top-group{display:flex; align-items:center; gap:12px; flex:1; min-width:0; justify-content:flex-end;}
-    .top-field{height:52px; min-width:118px; padding:0; border:0; background:transparent; border-radius:0; display:flex; flex-direction:column; justify-content:center; box-shadow:none;}
-    .top-field small{color:#7f90a9;font-size:13px;margin-bottom:6px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}.top-field b{font-size:18px;white-space:nowrap}.top-field select{height:38px;min-width:130px;border:1px solid #21466e;border-radius:10px;background:#071426;color:#e7f0ff;padding:0 34px 0 14px;font-size:17px;font-weight:750;outline:none}.top-field.project select{min-width:350px}.top-field.small select{min-width:92px}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green); margin-right:6px;}
-    .actions{display:flex; gap:10px; align-items:center;}
-    .btn{border:1px solid var(--line);background:#07111f;border-radius:8px;padding:10px 15px;font-weight:700;font-size:13px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);}
+    .brand-title{display:block;font-size:19px;letter-spacing:.01em;font-weight:900;line-height:1.02;color:#e8f2ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .brand-version{display:block;font-size:11px;color:#b7c8df;margin-left:0;margin-top:2px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .top-group{display:flex; align-items:center; gap:7px; flex:1 1 auto; min-width:0; justify-content:flex-start; overflow:visible;}
+    .top-field{height:40px; min-width:76px; padding:0; border:0; background:transparent; border-radius:0; display:flex; flex-direction:column; justify-content:center; box-shadow:none;}
+    .top-field small{color:#7f90a9;font-size:9px;margin-bottom:3px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}.top-field b{font-size:13px;white-space:nowrap}.top-field select{height:30px;min-width:96px;border:1px solid #21466e;border-radius:9px;background:#071426;color:#e7f0ff;padding:0 24px 0 10px;font-size:13px;font-weight:750;outline:none;max-width:100%;overflow:hidden;text-overflow:ellipsis}.top-field.project{flex:1 1 240px;min-width:190px;max-width:300px}.top-field.project select{min-width:0;width:100%;}.top-field.small{min-width:64px}.top-field.small select{min-width:64px;width:78px}.top-field.rate select,#rateSelect{min-width:128px;width:136px}.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green); margin-right:5px;}
+    .actions{display:flex; gap:6px; align-items:center; justify-content:flex-end; flex:0 0 auto; min-width:max-content;}
+    .btn{border:1px solid var(--line);background:#07111f;border-radius:8px;padding:7px 9px;font-weight:700;font-size:11px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);white-space:nowrap;}
     .btn.cyan{border-color:rgba(0,216,255,.6); color:var(--cyan); background:rgba(0,86,130,.18)}
     .btn.purple{border-color:rgba(182,92,255,.7); color:#e3bdff; background:rgba(102,36,153,.25)}
     .btn.green{border-color:rgba(49,242,107,.55); color:#baffc7; background:rgba(22,126,45,.25)}
     .btn.red{border-color:rgba(255,81,81,.55); color:#ffd5d5; background:rgba(130,30,30,.25)}
     .btn:hover{filter:brightness(1.25)}.btn:disabled{opacity:.45;cursor:not-allowed;filter:saturate(.6)}
-    .menu-btn{font-size:22px; padding:8px 12px;background:transparent;border:0;color:#d7eaff}
+    .menu-btn{font-size:17px; padding:6px 7px;background:transparent;border:0;color:#d7eaff;flex:0 0 auto}.topbar-compat-hidden{display:none!important}
     .left-panel{grid-row:2/4; border-right:1px solid var(--line); background:rgba(5,12,23,.78); padding:10px; overflow:hidden; display:flex; flex-direction:column; gap:10px;}
     .panel-head{display:flex;align-items:center;justify-content:space-between;padding:6px 4px; font-size:12px; font-weight:800; letter-spacing:.05em; color:#d9ebff;}
     .search{width:100%;background:#050b15;border:1px solid #20334c;border-radius:6px;padding:9px 10px;color:#b6c9e5;outline:none}
@@ -108,8 +108,8 @@
         <button class="btn purple" id="buildBtn">▣ Build</button>
         <button class="btn green" id="runBtn">▶ Run</button>
         <button class="btn red" id="stopBtn">■ Stop</button>
-        <button class="btn" id="undoBtn">↶ Undo</button>
-        <button class="btn" id="redoBtn">↷ Redo</button>
+        <button class="btn topbar-compat-hidden" id="undoBtn" aria-hidden="true" tabindex="-1">↶ Undo</button>
+        <button class="btn topbar-compat-hidden" id="redoBtn" aria-hidden="true" tabindex="-1">↷ Redo</button>
         <button class="btn" id="saveBtn">▣ Save</button>
         <button class="btn" id="exportBtn">⇧ Export</button>
         <button class="menu-btn" id="panelMenuBtn">☰</button>
@@ -1123,10 +1123,10 @@
       $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
       $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
-      $('#undoBtn').addEventListener('click',undoEdit);
-      $('#redoBtn').addEventListener('click',redoEdit);
-      $('#undoTool').addEventListener('click',undoEdit);
-      $('#redoTool').addEventListener('click',redoEdit);
+      $('#undoBtn')?.addEventListener('click',undoEdit);
+      $('#redoBtn')?.addEventListener('click',redoEdit);
+      $('#undoTool')?.addEventListener('click',undoEdit);
+      $('#redoTool')?.addEventListener('click',redoEdit);
       window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault(); deleteSelection(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
       $('#saveBtn').addEventListener('click',async ()=>{localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
