@@ -397,25 +397,10 @@
     }
 
     const colors = {input:'cyan', voice:'green', effect:'purple', util:'orange', output:'cyan'};
-    const components = [
-      {cat:'INPUT / OUTPUT', type:'input', icon:'📄', name:'File Input', ch:'2ch', cpu:.2, mem:96, lat:.10},
-      {cat:'INPUT / OUTPUT', type:'input', icon:'🎙', name:'Mic Input', ch:'4ch', cpu:.8, mem:160, lat:.15},
-      {cat:'INPUT / OUTPUT', type:'output', icon:'🔊', name:'Audio Output', ch:'2ch', cpu:.3, mem:64, lat:.10},
-      {cat:'VOICE', type:'voice', icon:'◌', name:'AEC', ch:'4ch', cpu:6.1, mem:512, lat:2.10},
-      {cat:'VOICE', type:'voice', icon:'⌁', name:'Beamformer', ch:'4ch', cpu:7.8, mem:384, lat:2.60},
-      {cat:'VOICE', type:'voice', icon:'≋', name:'Noise Suppression', ch:'1ch', cpu:5.4, mem:256, lat:1.60},
-      {cat:'VOICE', type:'voice', icon:'↕', name:'AGC', ch:'1ch', cpu:2.3, mem:128, lat:.70},
-      {cat:'VOICE', type:'voice', icon:'⏻', name:'VAD', ch:'1ch', cpu:.9, mem:64, lat:.20},
-      {cat:'VOICE', type:'voice', icon:'◎', name:'KWS', ch:'1ch', cpu:3.2, mem:256, lat:1.10},
-      {cat:'EFFECTS', type:'effect', icon:'≋', name:'EQ', ch:'2ch', cpu:1.1, mem:160, lat:.40},
-      {cat:'EFFECTS', type:'effect', icon:'▰', name:'DRC', ch:'2ch', cpu:1.5, mem:192, lat:.40},
-      {cat:'EFFECTS', type:'effect', icon:'▦', name:'Mixer', ch:'N', cpu:.8, mem:128, lat:.20},
-      {cat:'EFFECTS', type:'effect', icon:'◀', name:'Volume', ch:'2ch', cpu:.2, mem:64, lat:.05},
-      {cat:'UTILITIES', type:'util', icon:'⟳', name:'SRC', ch:'2ch', cpu:.8, mem:96, lat:.25},
-      {cat:'UTILITIES', type:'util', icon:'⟲', name:'ASRC', ch:'2ch', cpu:2.1, mem:128, lat:.45},
-      {cat:'UTILITIES', type:'util', icon:'⏱', name:'Delay', ch:'2ch', cpu:.3, mem:96, lat:.10},
-      {cat:'AI', type:'voice', icon:'✹', name:'Neural Denoiser', ch:'1ch', cpu:10.5, mem:640, lat:3.10},
-    ];
+    const components = [];
+    let builtInComponents = [];
+    let platformComponents = [];
+    const collapsedLibraryCategories = new Set();
     let nodeSeq=0;
     let currentProjectFile = 'A2.json';
     let currentProjectConfig = null;
@@ -437,14 +422,8 @@
     let buildState = 'success';
     let playSec = 42;
     const state = {
-      nodes: [
-        mkNode('file_1','File Input','input','📄',120,95), mkNode('src_1','SRC','util','⟳',350,95), mkNode('eq_1','EQ','effect','≋',560,95), mkNode('drc_1','DRC','effect','▰',770,95), mkNode('vol_1','Volume','effect','◀',980,95), mkNode('out_1','Audio Output','output','🔊',1170,95),
-        mkNode('mic_1','Mic Input','input','🎙',120,285), mkNode('aec_1','AEC','voice','◌',320,285), mkNode('bf_1','Beamformer','voice','⌁',505,285), mkNode('ns_1','Noise Suppression','voice','≋',700,285), mkNode('agc_1','AGC','voice','↕',865,285), mkNode('vad_1','VAD','voice','⏻',1025,285), mkNode('kws_1','KWS','voice','◎',1180,285),
-      ],
-      edges: [
-        ['file_1','src_1'],['src_1','eq_1'],['eq_1','drc_1'],['drc_1','vol_1'],['vol_1','out_1'],
-        ['mic_1','aec_1'],['aec_1','bf_1'],['bf_1','ns_1'],['ns_1','agc_1'],['agc_1','vad_1'],['vad_1','kws_1'],['mic_1','src_1']
-      ],
+      nodes: [],
+      edges: [],
       cores:[28,45,41,18],
       logs:[],
       zoom:1,
@@ -593,30 +572,49 @@
       return String(typeId).split('.').pop().replace(/[_-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
     }
     function componentFromModuleType(mt) {
-      const inPorts = mt.io?.in_ports?.length || 0;
-      const outPorts = mt.io?.out_ports?.length || 0;
+      const inDefs = mt.io?.in_ports || [];
+      const outDefs = mt.io?.out_ports || [];
       const maxCh = Math.max(
         1,
-        ...(mt.io?.in_ports || []).map(p => Number(p.max_ch || 1)),
-        ...(mt.io?.out_ports || []).map(p => Number(p.max_ch || 1))
+        ...inDefs.map(p => Number(p.max_ch || 1)),
+        ...outDefs.map(p => Number(p.max_ch || 1))
       );
-      const category = mt.category || 'module';
-      const name = friendlyName(mt.type_id || mt.name || 'module');
-      const s = `${mt.type_id} ${category}`.toLowerCase();
-      const type = s.includes('graph') ? 'util' : s.includes('playback') || s.includes('eq') || s.includes('drc') || s.includes('surround') ? 'effect' : s.includes('ai') || s.includes('voice') ? 'voice' : 'util';
+      const ui = mt.ui || {};
+      const categoryRaw = ui.library_category || mt.library_category || mt.category || 'module';
+      const cat = String(categoryRaw).toUpperCase();
+      const name = ui.display_name || mt.display_name || mt.name || friendlyName(mt.type_id || 'module');
+      const s = `${mt.type_id || ''} ${mt.category || ''} ${cat} ${name}`.toLowerCase();
+      const inferredType = s.includes('graph') ? 'util' : s.includes('playback') || s.includes('eq') || s.includes('drc') || s.includes('surround') || s.includes('effect') ? 'effect' : s.includes('ai') || s.includes('voice') ? 'voice' : s.includes('input') ? 'input' : s.includes('output') ? 'output' : 'util';
+      const perf = mt.performance || {};
+      const cpu = Number(perf.cpu_percent ?? perf.cpu ?? (s.includes('neural') ? 10.5 : s.includes('beam') ? 7.8 : s.includes('aec') ? 6.1 : s.includes('drc') ? 1.5 : s.includes('eq') ? 1.1 : 0.8));
+      const mem = Number(perf.mem_kb ?? perf.memory_kb ?? (128 + maxCh * 16));
+      const lat = Number(perf.latency_ms ?? perf.lat_ms ?? (0.1 + Math.min(2.8, maxCh * 0.02)));
       return {
-        cat: category.toUpperCase(),
-        type,
-        icon: iconForModule(mt.type_id, category, name),
+        cat,
+        type: ui.library_type || mt.library_type || inferredType,
+        icon: ui.icon || iconForModule(mt.type_id, mt.category || categoryRaw, name),
         name,
         moduleTypeId: mt.type_id,
-        inPorts: (mt.io?.in_ports || []).map((p,i)=>({name:p.name || `in${i}`, max_ch:p.max_ch || maxCh})),
-        outPorts: (mt.io?.out_ports || []).map((p,i)=>({name:p.name || `out${i}`, max_ch:p.max_ch || maxCh})),
-        ch: maxCh === 1 ? '1ch' : `${maxCh}ch`,
-        cpu: s.includes('neural') ? 10.5 : s.includes('beam') ? 7.8 : s.includes('aec') ? 6.1 : s.includes('drc') ? 1.5 : s.includes('eq') ? 1.1 : 0.8,
-        mem: 128 + maxCh * 16,
-        lat: 0.1 + Math.min(2.8, maxCh * 0.02),
+        source: ui.source || mt.source || 'platform',
+        inPorts: inDefs.map((p,i)=>({name:p.name || `in${i}`, max_ch:p.max_ch || maxCh})),
+        outPorts: outDefs.map((p,i)=>({name:p.name || `out${i}`, max_ch:p.max_ch || maxCh})),
+        ch: ui.channels || (maxCh === 1 ? '1ch' : `${maxCh}ch`),
+        cpu,
+        mem,
+        lat,
+        staticSchema: mt.static_schema || null,
+        runtimeParams: mt.runtime_params || [],
+        rawModuleType: mt
       };
+    }
+    function mergeLibraryComponents() {
+      components.splice(0, components.length, ...builtInComponents, ...platformComponents);
+    }
+    function fallbackComponentForName(name='') {
+      const n=String(name || 'Module');
+      const s=n.toLowerCase();
+      const type=s.includes('input')?'input':s.includes('output')?'output':'util';
+      return {cat:'MODULE',type,icon:iconForModule(n,'',n),name:n,ch:'2ch',cpu:.8,mem:128,lat:.2,moduleTypeId:`fallback.${n.toLowerCase().replace(/\s+/g,'_')}`,inPorts:type==='input'?[]:[{name:'in',max_ch:2}],outPorts:type==='output'?[]:[{name:'out',max_ch:2}],runtimeParams:[]};
     }
     function projectNameFromFile(file='') {
       return String(file || '').replace(/\.json$/,'') || 'Project';
@@ -979,6 +977,26 @@
       if(Array.isArray(manifest?.projects) && manifest.projects.length) return manifest.projects;
       return null;
     }
+    async function loadBuiltInAlgorithms() {
+      const cfg = await apiGetFirstJson(['/config/built-in-algorithm.json','config/built-in-algorithm.json']);
+      if(!cfg || !Array.isArray(cfg.module_types)) {
+        addLog('warn','Built-in algorithms not loaded','Missing config/built-in-algorithm.json');
+        builtInComponents = [];
+        mergeLibraryComponents();
+        renderLibrary($('#searchInput')?.value || '');
+        return false;
+      }
+      builtInComponents = cfg.module_types.map(mt=>({...componentFromModuleType(mt), source:'built-in'}));
+      mergeLibraryComponents();
+      renderLibrary($('#searchInput')?.value || '');
+      addLog('ok','Built-in algorithms loaded',`${builtInComponents.length} common algorithm(s)`);
+      backendEdit('built_in_algorithms_loaded',{count:builtInComponents.length,config:'built-in-algorithm.json'});
+      return true;
+    }
+    async function loadAlgorithmCatalogThenProject() {
+      await loadBuiltInAlgorithms();
+      await loadProjectList();
+    }
     async function loadProjectList() {
       const select=$('#projectSelect');
       const res=await apiGet('/api/projects');
@@ -1003,20 +1021,19 @@
       if(projectSelect) projectSelect.value = currentProjectFile;
 
       const moduleTypes = Array.isArray(cfg.module_types) ? cfg.module_types : [];
-      const fromJson = moduleTypes.map(componentFromModuleType);
-      const ioBuiltins = components.filter(c => c.cat === 'INPUT / OUTPUT');
-      components.splice(0, components.length, ...ioBuiltins, ...fromJson);
+      platformComponents = moduleTypes.map(mt=>({...componentFromModuleType(mt), source:'platform'}));
+      mergeLibraryComponents();
       renderLibrary($('#searchInput')?.value || '');
 
       currentPipelineId='ALL';
       renderPipelineSelect();
       loadPipelineGraphFromConfig(currentPipelineId);
 
-      addLog('ok','Project JSON loaded',`${projectDisplayName(currentProjectFile)}: ${(cfg.pipelines||[]).length} pipeline(s), ${fromJson.length} module type(s)`);
-      backendEdit('project_config_loaded', {project_file:currentProjectFile, pipelines:(cfg.pipelines||[]).length, module_types:fromJson.length});
+      addLog('ok','Project JSON loaded',`${projectDisplayName(currentProjectFile)}: ${(cfg.pipelines||[]).length} pipeline(s), ${platformComponents.length} platform module type(s)`);
+      backendEdit('project_config_loaded', {project_file:currentProjectFile, pipelines:(cfg.pipelines||[]).length, module_types:platformComponents.length});
     }
 
-    function componentByName(name){ return components.find(c=>c.name===name) || components[0]; }
+    function componentByName(name){ return components.find(c=>c.name===name) || fallbackComponentForName(name); }
     function normalizePortsForComponent(c, dir) {
       const key = dir === 'in' ? 'inPorts' : 'outPorts';
       if (Array.isArray(c?.[key])) return c[key].map((p,i)=>({name:p.name || `${dir}${i}`, max_ch:p.max_ch || 1}));
@@ -1045,13 +1062,25 @@
       $('#eventLog').innerHTML = state.logs.map(l=>`<div class="log-item"><span class="log-time">${l.time.slice(0,5)}</span><i class="log-dot ${l.kind}"></i><div><b>${l.msg}</b><br><small style="color:var(--muted)">${l.sub}</small></div></div>`).join('');
     }
     function renderLibrary(filter=''){
+      const q=String(filter||'').toLowerCase();
       const cats = [...new Set(components.map(c=>c.cat))];
-      $('#componentLib').innerHTML = cats.map(cat=>{
-        const items = components.filter(c=>c.cat===cat && c.name.toLowerCase().includes(filter.toLowerCase()));
+      const html = cats.map(cat=>{
+        const items = components.filter(c=>c.cat===cat && c.name.toLowerCase().includes(q));
         if(!items.length) return '';
         const cls = cat.includes('EFFECT')?'effects':cat.includes('UTIL')?'utilities':cat.includes('AI')?'ai':'';
-        return `<div class="cat"><div class="cat-title ${cls}">⌄ ${cat}</div>${items.map(c=>`<div class="component" draggable="true" data-name="${c.name}"><div class="ico">${c.icon}</div><span>${c.name}</span><small>${c.ch} · ~${c.cpu}% CPU</small></div>`).join('')}</div>`;
+        const collapsed = collapsedLibraryCategories.has(cat) && !q;
+        const caret = collapsed ? '›' : '⌄';
+        const sourceHint = items.some(c=>c.source==='built-in') && items.some(c=>c.source==='platform') ? 'mixed' : (items[0]?.source || '');
+        return `<div class="cat ${collapsed?'collapsed':''}" data-cat="${cat}"><div class="cat-title ${cls}" data-cat="${cat}" title="Click to collapse / expand">${caret} ${cat}<small style="margin-left:auto;color:#6f829d;font-size:10px">${items.length}${sourceHint==='platform'?' ext':''}</small></div>${collapsed?'':items.map(c=>`<div class="component" draggable="true" data-name="${c.name}" title="${c.moduleTypeId || c.name}"><div class="ico">${c.icon}</div><span>${c.name}</span><small>${c.ch} · ~${c.cpu}% CPU</small></div>`).join('')}</div>`;
       }).join('');
+      $('#componentLib').innerHTML = html || '<div style="color:var(--muted);padding:10px;font-size:12px">No matching algorithms</div>';
+      $$('.cat-title').forEach(el=>el.addEventListener('click',()=>{
+        const cat=el.dataset.cat;
+        if(!cat) return;
+        if(collapsedLibraryCategories.has(cat)) collapsedLibraryCategories.delete(cat);
+        else collapsedLibraryCategories.add(cat);
+        renderLibrary($('#searchInput')?.value || '');
+      }));
       $$('.component').forEach(el=>{
         el.addEventListener('dragstart', e=>{e.dataTransfer.setData('text/plain', el.dataset.name);});
       });
@@ -1855,7 +1884,7 @@
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
     function init(){
-      pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); loadProjectList(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
+      pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
       $('#projectSelect').addEventListener('change', e=>{ saveCurrentLayout('before_project_switch'); loadPlatformConfig(e.target.value); });
       const wrap=$('#canvasWrap');
