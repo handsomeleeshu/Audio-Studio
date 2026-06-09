@@ -79,7 +79,7 @@ std::vector<std::string> listConfigJsonFiles(const std::string& root_dir) {
   if (!dir) return files;
   while (auto* ent = readdir(dir)) {
     std::string name = ent->d_name;
-    if (name.size() >= 5 && name.substr(name.size() - 5) == ".json") files.push_back(name);
+    if (name.size() >= 5 && name.substr(name.size() - 5) == ".json" && name != "built-in-algorithm.json" && name != "projects.json") files.push_back(name);
   }
   closedir(dir);
   std::sort(files.begin(), files.end());
