@@ -70,6 +70,48 @@
           "apply": {
             "mode": "safe_point"
           }
+        },
+        {
+          "param_id": "loop",
+          "param_name": "Loop Playback",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 25780,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "start_offset_ms",
+          "param_name": "Start Offset",
+          "value_type": "uint16",
+          "default": 0,
+          "tlv": {
+            "type": 24713,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "safe_point"
+          },
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 5000,
+            "step": 100
+          }
         }
       ],
       "static_schema": {
@@ -86,6 +128,22 @@
             "default": 2
           }
         ]
+      },
+      "description": "Local or staged audio file source used to feed a pipeline with repeatable test content.",
+      "notes": {
+        "summary": "Local or staged audio file source used to feed a pipeline with repeatable test content.",
+        "use_cases": [
+          "Offline algorithm tuning",
+          "Regression playback",
+          "Demo input for GitHub Pages and local backend"
+        ],
+        "configuration_tips": [
+          "Use 48 kHz content when validating A2 demo pipelines.",
+          "Enable Loop Playback for continuous probe visualization."
+        ],
+        "ports": {
+          "out": "Decoded PCM stream"
+        }
       }
     },
     {
@@ -156,6 +214,50 @@
             "max": 24,
             "step": 1
           }
+        },
+        {
+          "param_id": "hp_filter_hz",
+          "param_name": "High-pass Filter",
+          "value_type": "enum",
+          "default": 80,
+          "tlv": {
+            "type": 26059,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "Hz",
+          "enum": [
+            0,
+            60,
+            80,
+            120,
+            160
+          ]
+        },
+        {
+          "param_id": "dc_block",
+          "param_name": "DC Block",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 26489,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
         }
       ],
       "static_schema": {
@@ -166,6 +268,18 @@
             "type": "uint8",
             "default": 4
           }
+        ]
+      },
+      "description": "Microphone capture source for voice front-end pipelines.",
+      "notes": {
+        "summary": "Microphone capture source for voice front-end pipelines.",
+        "use_cases": [
+          "AEC reference/capture demo",
+          "Beamformer and VAD input"
+        ],
+        "configuration_tips": [
+          "Enable DC Block for real microphone input.",
+          "Use high-pass filtering to reduce handling noise."
         ]
       }
     },
@@ -237,6 +351,48 @@
             "max": 12,
             "step": 1
           }
+        },
+        {
+          "param_id": "limiter_enable",
+          "param_name": "Safety Limiter",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 25464,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "fade_ms",
+          "param_name": "Fade Time",
+          "value_type": "uint16",
+          "default": 20,
+          "tlv": {
+            "type": 25722,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 5
+          }
         }
       ],
       "static_schema": {
@@ -247,6 +403,17 @@
             "type": "uint8",
             "default": 2
           }
+        ]
+      },
+      "description": "Audio sink that represents speaker, file, or host output.",
+      "notes": {
+        "summary": "Audio sink that represents speaker, file, or host output.",
+        "use_cases": [
+          "Playback pipeline sink",
+          "Probe final output"
+        ],
+        "configuration_tips": [
+          "Keep Safety Limiter enabled in demos to avoid clipped output."
         ]
       }
     },
@@ -323,8 +490,71 @@
             "max": 256,
             "step": 16
           }
+        },
+        {
+          "param_id": "erle_target_db",
+          "param_name": "ERLE Target",
+          "value_type": "uint8",
+          "default": 35,
+          "tlv": {
+            "type": 25430,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": 10,
+            "max": 60,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "nlms_mu",
+          "param_name": "Adapt Speed",
+          "value_type": "float",
+          "default": 0.35,
+          "tlv": {
+            "type": 25632,
+            "length_bytes": 4
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "range": {
+            "min": 0.05,
+            "max": 1.0,
+            "step": 0.05
+          }
         }
-      ]
+      ],
+      "description": "Acoustic Echo Cancellation removes loudspeaker echo from microphone capture.",
+      "notes": {
+        "summary": "Acoustic Echo Cancellation removes loudspeaker echo from microphone capture.",
+        "use_cases": [
+          "Hands-free voice capture",
+          "Smart speaker barge-in"
+        ],
+        "configuration_tips": [
+          "Increase Tail Length for large rooms.",
+          "Use ERLE Target to tune convergence quality."
+        ],
+        "validation": [
+          "Monitor residual echo on output probe.",
+          "Compare RMS In/Out and ERLE during far-end playback."
+        ]
+      }
     },
     {
       "type_id": "builtin.beamformer",
@@ -398,8 +628,62 @@
           "apply": {
             "mode": "safe_point"
           }
+        },
+        {
+          "param_id": "look_direction_deg",
+          "param_name": "Look Direction",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 26529,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "deg",
+          "range": {
+            "min": -90,
+            "max": 90,
+            "step": 5
+          }
+        },
+        {
+          "param_id": "dereverb_enable",
+          "param_name": "Dereverb",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 25728,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
         }
-      ]
+      ],
+      "description": "Multi-microphone beamformer enhances speech from a preferred direction.",
+      "notes": {
+        "summary": "Multi-microphone beamformer enhances speech from a preferred direction.",
+        "use_cases": [
+          "Voice pickup in noisy cabin",
+          "Far-field smart speaker input"
+        ],
+        "configuration_tips": [
+          "Set Mode to full adaptive for dynamic scenes.",
+          "Tune Look Direction when microphone geometry is known."
+        ]
+      }
     },
     {
       "type_id": "builtin.noise_suppression",
@@ -473,8 +757,60 @@
             "max": 3,
             "step": 1
           }
+        },
+        {
+          "param_id": "aggressiveness",
+          "param_name": "Aggressiveness",
+          "value_type": "uint8",
+          "default": 2,
+          "tlv": {
+            "type": 25482,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "speech_protect",
+          "param_name": "Speech Protect",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 25474,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
         }
-      ]
+      ],
+      "description": "Noise Suppression reduces stationary and slowly varying background noise.",
+      "notes": {
+        "summary": "Noise Suppression reduces stationary and slowly varying background noise.",
+        "use_cases": [
+          "Voice uplink cleanup",
+          "Pre-ASR enhancement"
+        ],
+        "configuration_tips": [
+          "Higher aggressiveness removes more noise but may affect speech naturalness."
+        ]
+      }
     },
     {
       "type_id": "builtin.agc",
@@ -549,8 +885,116 @@
             "max": -3,
             "step": 1
           }
+        },
+        {
+          "param_id": "target_level_dbfs",
+          "param_name": "Target Level",
+          "value_type": "int16",
+          "default": -16,
+          "tlv": {
+            "type": 26147,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": -36,
+            "max": 0,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "max_gain_db",
+          "param_name": "Max Gain",
+          "value_type": "uint8",
+          "default": 20,
+          "tlv": {
+            "type": 25269,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": 0,
+            "max": 36,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "attack_ms",
+          "param_name": "Attack",
+          "value_type": "uint16",
+          "default": 10,
+          "tlv": {
+            "type": 25892,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "ms",
+          "range": {
+            "min": 1,
+            "max": 100,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "release_ms",
+          "param_name": "Release",
+          "value_type": "uint16",
+          "default": 150,
+          "tlv": {
+            "type": 25366,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "ms",
+          "range": {
+            "min": 20,
+            "max": 500,
+            "step": 5
+          }
         }
-      ]
+      ],
+      "description": "Automatic Gain Control keeps speech level stable for downstream modules.",
+      "notes": {
+        "summary": "Automatic Gain Control keeps speech level stable for downstream modules.",
+        "use_cases": [
+          "Voice capture normalization",
+          "ASR/KWS input leveling"
+        ],
+        "configuration_tips": [
+          "Short attack catches sudden loud speech.",
+          "Longer release avoids pumping artifacts."
+        ]
+      }
     },
     {
       "type_id": "builtin.vad",
@@ -624,8 +1068,67 @@
             "max": 10,
             "step": 1
           }
+        },
+        {
+          "param_id": "threshold_dbfs",
+          "param_name": "Threshold",
+          "value_type": "int16",
+          "default": -42,
+          "tlv": {
+            "type": 26268,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dBFS",
+          "range": {
+            "min": -70,
+            "max": -10,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "hangover_ms",
+          "param_name": "Hangover",
+          "value_type": "uint16",
+          "default": 240,
+          "tlv": {
+            "type": 24912,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 20
+          }
         }
-      ]
+      ],
+      "description": "Voice Activity Detection reports whether speech is present.",
+      "notes": {
+        "summary": "Voice Activity Detection reports whether speech is present.",
+        "use_cases": [
+          "Low-power wake pipeline",
+          "Gate ASR processing"
+        ],
+        "configuration_tips": [
+          "Increase Hangover to prevent choppy speech segments."
+        ]
+      }
     },
     {
       "type_id": "builtin.kws",
@@ -699,8 +1202,66 @@
             "max": 100,
             "step": 1
           }
+        },
+        {
+          "param_id": "wake_word",
+          "param_name": "Wake Word",
+          "value_type": "enum",
+          "default": "Hey VASS",
+          "tlv": {
+            "type": 26382,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "safe_point"
+          },
+          "enum": [
+            "Hey VASS",
+            "Hi Car",
+            "Computer",
+            "Custom"
+          ]
+        },
+        {
+          "param_id": "sensitivity",
+          "param_name": "Sensitivity",
+          "value_type": "uint8",
+          "default": 65,
+          "tlv": {
+            "type": 26343,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          }
         }
-      ]
+      ],
+      "description": "Keyword Spotting detects configured wake words from voice features.",
+      "notes": {
+        "summary": "Keyword Spotting detects configured wake words from voice features.",
+        "use_cases": [
+          "Always-on voice trigger",
+          "Demo wake pipeline"
+        ],
+        "configuration_tips": [
+          "Higher sensitivity improves recall but may increase false accepts."
+        ]
+      }
     },
     {
       "type_id": "builtin.eq",
@@ -775,6 +1336,103 @@
             "max": 24,
             "step": 1
           }
+        },
+        {
+          "param_id": "preset",
+          "param_name": "Preset",
+          "value_type": "enum",
+          "default": "Flat",
+          "tlv": {
+            "type": 25134,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "enum": [
+            "Flat",
+            "Voice",
+            "Music",
+            "Bass Boost",
+            "Treble Boost"
+          ]
+        },
+        {
+          "param_id": "low_gain_db",
+          "param_name": "Low Gain",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 25540,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "mid_gain_db",
+          "param_name": "Mid Gain",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 25453,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 1
+          }
+        },
+        {
+          "param_id": "high_gain_db",
+          "param_name": "High Gain",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 26414,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 1
+          }
         }
       ],
       "static_schema": {
@@ -785,6 +1443,17 @@
             "type": "uint8",
             "default": 10
           }
+        ]
+      },
+      "description": "Equalizer shapes playback or voice frequency response.",
+      "notes": {
+        "summary": "Equalizer shapes playback or voice frequency response.",
+        "use_cases": [
+          "Playback tuning",
+          "Voice tonal correction"
+        ],
+        "configuration_tips": [
+          "Use Preset as coarse mode, then adjust band gains."
         ]
       }
     },
@@ -861,8 +1530,66 @@
             "max": 0,
             "step": 1
           }
+        },
+        {
+          "param_id": "ratio",
+          "param_name": "Ratio",
+          "value_type": "float",
+          "default": 3.0,
+          "tlv": {
+            "type": 25923,
+            "length_bytes": 4
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "range": {
+            "min": 1.0,
+            "max": 10.0,
+            "step": 0.5
+          }
+        },
+        {
+          "param_id": "makeup_gain_db",
+          "param_name": "Makeup Gain",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 25726,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": 0,
+            "max": 18,
+            "step": 1
+          }
         }
-      ]
+      ],
+      "description": "Dynamic Range Compression controls loudness and protects downstream output.",
+      "notes": {
+        "summary": "Dynamic Range Compression controls loudness and protects downstream output.",
+        "use_cases": [
+          "Playback loudness control",
+          "Speaker protection"
+        ],
+        "configuration_tips": [
+          "Lower threshold and higher ratio increase compression strength."
+        ]
+      }
     },
     {
       "type_id": "builtin.mixer",
@@ -949,6 +1676,47 @@
             "max": 12,
             "step": 1
           }
+        },
+        {
+          "param_id": "normalize",
+          "param_name": "Normalize Mix",
+          "value_type": "bool",
+          "default": true,
+          "tlv": {
+            "type": 24604,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "active_inputs",
+          "param_name": "Active Inputs",
+          "value_type": "uint8",
+          "default": 2,
+          "tlv": {
+            "type": 25602,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "range": {
+            "min": 1,
+            "max": 8,
+            "step": 1
+          }
         }
       ],
       "static_schema": {
@@ -959,6 +1727,17 @@
             "type": "uint8",
             "default": 2
           }
+        ]
+      },
+      "description": "Mixer combines multiple streams into one output bus.",
+      "notes": {
+        "summary": "Mixer combines multiple streams into one output bus.",
+        "use_cases": [
+          "Radio source selection",
+          "Voice prompt plus media mixing"
+        ],
+        "configuration_tips": [
+          "Enable Normalize Mix when summing multiple full-scale sources."
         ]
       }
     },
@@ -1053,8 +1832,43 @@
           "apply": {
             "mode": "immediate"
           }
+        },
+        {
+          "param_id": "volume_db",
+          "param_name": "Volume",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 24592,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "dB",
+          "range": {
+            "min": -90,
+            "max": 12,
+            "step": 1
+          }
         }
-      ]
+      ],
+      "description": "Volume applies runtime gain and mute control.",
+      "notes": {
+        "summary": "Volume applies runtime gain and mute control.",
+        "use_cases": [
+          "Final playback gain",
+          "Per-branch attenuation"
+        ],
+        "configuration_tips": [
+          "Use Mute for safe A/B testing without deleting connections."
+        ]
+      }
     },
     {
       "type_id": "builtin.src",
@@ -1129,8 +1943,60 @@
           "apply": {
             "mode": "safe_point"
           }
+        },
+        {
+          "param_id": "quality",
+          "param_name": "Quality",
+          "value_type": "enum",
+          "default": "High",
+          "tlv": {
+            "type": 25424,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "enum": [
+            "Low Latency",
+            "Balanced",
+            "High"
+          ]
+        },
+        {
+          "param_id": "dither",
+          "param_name": "Dither",
+          "value_type": "bool",
+          "default": false,
+          "tlv": {
+            "type": 25656,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "switch",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          }
         }
-      ]
+      ],
+      "description": "Sample Rate Converter changes stream sample rate between clock domains.",
+      "notes": {
+        "summary": "Sample Rate Converter changes stream sample rate between clock domains.",
+        "use_cases": [
+          "48 kHz to 96 kHz playback",
+          "File source adaptation"
+        ],
+        "configuration_tips": [
+          "Use High quality for offline playback; Low Latency for tight real-time paths."
+        ]
+      }
     },
     {
       "type_id": "builtin.asrc",
@@ -1203,8 +2069,65 @@
           "apply": {
             "mode": "safe_point"
           }
+        },
+        {
+          "param_id": "drift_ppm",
+          "param_name": "Clock Drift",
+          "value_type": "int16",
+          "default": 0,
+          "tlv": {
+            "type": 26144,
+            "length_bytes": 2
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "ppm",
+          "range": {
+            "min": -500,
+            "max": 500,
+            "step": 10
+          }
+        },
+        {
+          "param_id": "tracking",
+          "param_name": "Tracking",
+          "value_type": "enum",
+          "default": "Adaptive",
+          "tlv": {
+            "type": 26318,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "enum": [
+            "Fixed",
+            "Adaptive"
+          ]
         }
-      ]
+      ],
+      "description": "Asynchronous SRC compensates independent clock domains.",
+      "notes": {
+        "summary": "Asynchronous SRC compensates independent clock domains.",
+        "use_cases": [
+          "TDM/A2B/PCIe clock mismatch handling",
+          "Long-running playback stability"
+        ],
+        "configuration_tips": [
+          "Use Adaptive tracking when source and sink clocks are not locked."
+        ]
+      }
     },
     {
       "type_id": "builtin.delay",
@@ -1279,8 +2202,67 @@
             "max": 500,
             "step": 1
           }
+        },
+        {
+          "param_id": "feedback_percent",
+          "param_name": "Feedback",
+          "value_type": "uint8",
+          "default": 0,
+          "tlv": {
+            "type": 24803,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "%",
+          "range": {
+            "min": 0,
+            "max": 95,
+            "step": 5
+          }
+        },
+        {
+          "param_id": "mix_percent",
+          "param_name": "Wet Mix",
+          "value_type": "uint8",
+          "default": 50,
+          "tlv": {
+            "type": 25922,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "%",
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 5
+          }
         }
-      ]
+      ],
+      "description": "Delay provides sample-accurate time offset or simple echo effect.",
+      "notes": {
+        "summary": "Delay provides sample-accurate time offset or simple echo effect.",
+        "use_cases": [
+          "Latency alignment",
+          "Speaker distance compensation"
+        ],
+        "configuration_tips": [
+          "Keep Feedback at 0 for pure alignment delay."
+        ]
+      }
     },
     {
       "type_id": "builtin.neural_denoiser",
@@ -1353,8 +2335,66 @@
           "apply": {
             "mode": "safe_point"
           }
+        },
+        {
+          "param_id": "strength",
+          "param_name": "Strength",
+          "value_type": "uint8",
+          "default": 60,
+          "tlv": {
+            "type": 25053,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "value",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "next_frame"
+          },
+          "unit": "%",
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 5
+          }
+        },
+        {
+          "param_id": "npu_delegate",
+          "param_name": "NPU Delegate",
+          "value_type": "enum",
+          "default": "Auto",
+          "tlv": {
+            "type": 25590,
+            "length_bytes": 1
+          },
+          "kcontrol": {
+            "kind": "enum",
+            "scope": "instance",
+            "category": "Runtime"
+          },
+          "apply": {
+            "mode": "safe_point"
+          },
+          "enum": [
+            "Auto",
+            "CPU",
+            "NPU"
+          ]
         }
-      ]
+      ],
+      "description": "Neural denoiser uses model-based enhancement for difficult acoustic scenes.",
+      "notes": {
+        "summary": "Neural denoiser uses model-based enhancement for difficult acoustic scenes.",
+        "use_cases": [
+          "AI voice cleanup",
+          "Premium noise suppression demo"
+        ],
+        "configuration_tips": [
+          "Use NPU Delegate Auto for product demos; CPU mode is useful for debugging."
+        ]
+      }
     }
   ]
 }
