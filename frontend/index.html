@@ -80,9 +80,8 @@
     .minimap{position:absolute;right:16px;left:auto;bottom:16px;width:210px;height:124px;border:1px solid #24405e;background:rgba(3,9,17,.82);border-radius:10px;z-index:3;padding:8px}.minimap-inner{height:76px;border:1px solid #18314b;background:rgba(0,216,255,.05);position:relative;overflow:hidden}.mini-node{position:absolute;background:rgba(0,216,255,.22);border:1px solid rgba(0,216,255,.35);border-radius:2px}.zoom{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px}.zoom button{background:#091626;border:1px solid #24415f;border-radius:5px;width:30px;height:26px;font-weight:900}.zoom span{font-size:12px;color:#c9dbf5}
     .right-panel{grid-column:3; grid-row:2/4; background:rgba(5,12,23,.78); padding:10px; overflow:hidden; display:flex; flex-direction:column; gap:10px;}
     .inspector{flex:1; min-height:0; border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); display:flex;flex-direction:column;overflow:hidden;}
-    .inspector-body{padding:12px; overflow:auto}.selected-card{display:flex;gap:10px;align-items:center;border-bottom:1px solid #172941;padding-bottom:10px}.sel-icon{width:46px;height:46px;border-radius:10px;border:1px solid rgba(0,216,255,.45);display:grid;place-items:center;color:var(--cyan);font-size:22px;background:rgba(0,216,255,.1)}.sel-meta b{font-size:16px}.sel-meta small{display:block;color:var(--muted);font-size:11px}.active-label{margin-left:auto;color:#6dff83;font-size:12px;font-weight:900}.tabs{display:flex;gap:14px;margin:12px 0;border-bottom:1px solid #15283e}.tabs button{background:transparent;border:0;color:#8fa5c2;padding:0 0 8px;font-size:12px;font-weight:900}.tabs button.active{color:var(--cyan);border-bottom:2px solid var(--cyan)}.kv{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:12px;margin:6px 0}.kv span{color:#95a8c1}.barline{height:8px;width:96px;background:#13223a;border-radius:8px;overflow:hidden;display:inline-block}.barline i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#22a5ff)}
-    .param-row{display:grid;grid-template-columns:100px 1fr 70px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.param-row label{color:#b8c8df}.param-row input[type=range]{width:100%; accent-color:#2e8bff}.value-box{border:1px solid #253d59;background:#06101c;border-radius:5px;padding:4px 6px;text-align:right;color:#cde5ff}.toggle{width:36px;height:20px;border-radius:10px;background:#12253d;position:relative;border:1px solid #284766}.toggle:before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#5885ff;right:2px;top:1px;box-shadow:0 0 12px rgba(88,133,255,.5)}
-    .canvas-small{width:100%;height:92px;border:1px solid #19324d;background:#05101d;border-radius:8px;margin:8px 0}.audio-file{height:178px;border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:12px}.transport{display:flex;align-items:center;gap:10px;margin:12px 0}.round{width:32px;height:32px;border-radius:50%;border:1px solid #2a4d6e;background:#0c1d31;display:grid;place-items:center}.round.play{background:#1a74ff;border-color:#4095ff}.timebar{height:5px;background:#172940;border-radius:8px;overflow:hidden;flex:1}.timebar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),#366dff);width:28%}
+    .inspector-body{padding:12px; overflow:auto;scroll-behavior:smooth}.selected-card{display:flex;gap:10px;align-items:center;border-bottom:1px solid #172941;padding-bottom:10px}.sel-icon{width:46px;height:46px;border-radius:10px;border:1px solid rgba(0,216,255,.45);display:grid;place-items:center;color:var(--cyan);font-size:22px;background:rgba(0,216,255,.1)}.sel-meta b{font-size:16px}.sel-meta small{display:block;color:var(--muted);font-size:11px}.active-label{margin-left:auto;color:#6dff83;font-size:12px;font-weight:900}.tabs{position:sticky;top:-12px;z-index:6;display:flex;gap:14px;margin:12px 0;border-bottom:1px solid #15283e;background:linear-gradient(180deg,rgba(8,17,31,.98),rgba(8,17,31,.92));backdrop-filter:blur(8px);padding-top:6px}.tabs button{background:transparent;border:0;color:#8fa5c2;padding:0 0 8px;font-size:12px;font-weight:900}.tabs button.active{color:var(--cyan);border-bottom:2px solid var(--cyan)}.inspector-section{scroll-margin-top:54px;padding-top:2px}.inspector-section+.inspector-section{border-top:1px solid rgba(21,40,62,.72);margin-top:14px;padding-top:12px}.kv{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:12px;margin:6px 0}.kv span{color:#95a8c1}.barline{height:8px;width:96px;background:#13223a;border-radius:8px;overflow:hidden;display:inline-block}.barline i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#22a5ff)}
+    .param-list{min-height:44px}.param-row{display:grid;grid-template-columns:100px 1fr 70px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.param-row label{color:#b8c8df}.param-row input[type=range]{width:100%; accent-color:#2e8bff}.param-row input[type=text],.param-row input[type=number],.param-row select{width:100%;min-width:0;border:1px solid #253d59;background:#06101c;border-radius:5px;padding:5px 7px;color:#cde5ff;outline:none}.value-box{border:1px solid #253d59;background:#06101c;border-radius:5px;padding:4px 6px;text-align:right;color:#cde5ff;white-space:nowrap}.toggle{width:36px;height:20px;border-radius:10px;background:#12253d;position:relative;border:1px solid #284766}.toggle:before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#5885ff;right:2px;top:1px;box-shadow:0 0 12px rgba(88,133,255,.5)}.param-toggle{appearance:none;cursor:pointer}.param-toggle:not(.on):before{left:2px;right:auto;background:#53677f;box-shadow:none}.param-row.param-string{grid-template-columns:100px 1fr}.param-row.param-string .value-box{display:none}.param-meta{grid-column:2/4;margin-top:-6px;color:#6f829d;font-size:10px}.empty-state{color:#7e8da7;font-size:12px;padding:10px 0}.probe-port-card{border:1px solid rgba(35,64,93,.9);border-radius:10px;background:rgba(6,15,28,.48);padding:9px;margin:10px 0}.probe-port-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#cfe5ff;font-weight:900;letter-spacing:.04em}.probe-port-head small{color:#8ea2bf;font-weight:700}.note-card{border:1px solid rgba(35,64,93,.9);border-radius:10px;background:rgba(6,15,28,.48);padding:10px;margin:8px 0;color:#b9cae1;font-size:12px;line-height:1.45}.note-card b{display:block;color:#e4f1ff;font-size:12px;margin-bottom:5px}.note-card ul{margin:6px 0 0 18px;padding:0}.note-card li{margin:4px 0}.note-chip{display:inline-flex;margin:4px 6px 0 0;padding:4px 7px;border:1px solid #23405d;border-radius:999px;background:#071426;color:#cde5ff;font-size:10px}.canvas-small{width:100%;height:92px;border:1px solid #19324d;background:#05101d;border-radius:8px;margin:8px 0}.audio-file{height:178px;border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:12px}.transport{display:flex;align-items:center;gap:10px;margin:12px 0}.round{width:32px;height:32px;border-radius:50%;border:1px solid #2a4d6e;background:#0c1d31;display:grid;place-items:center}.round.play{background:#1a74ff;border-color:#4095ff}.timebar{height:5px;background:#172940;border-radius:8px;overflow:hidden;flex:1}.timebar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),#366dff);width:28%}
     .bottom{grid-column:2; grid-row:3; border-right:1px solid var(--line); border-top:1px solid var(--line); background:rgba(5,12,23,.78); padding:10px; display:grid; grid-template-columns:1fr 260px 1.25fr 260px 170px; gap:10px; min-width:0;}
     .card{border:1px solid var(--line); border-radius:var(--radius); background:rgba(8,17,31,.85); padding:10px; min-width:0; min-height:0; overflow:hidden; box-shadow:var(--shadow)}.card-head{height:24px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:900;letter-spacing:.04em;color:#d8eaff;margin-bottom:6px}.card-head small{font-weight:600;color:var(--muted);letter-spacing:0}.close{border:0;background:transparent;color:#7891ad;font-size:16px;line-height:1}.table{width:100%;border-collapse:collapse;font-size:11px}.table th{color:#8fa5c2;text-align:left;font-weight:800;border-bottom:1px solid #17304a;padding:4px}.table td{padding:4px;border-bottom:1px solid rgba(32,52,78,.45)}.cpu-bar{height:8px;background:#132642;border-radius:5px;overflow:hidden}.cpu-bar i{display:block;height:100%;background:linear-gradient(90deg,#28e85d,#ffd24a)}
     .core-row{display:grid;grid-template-columns:54px 1fr 54px;gap:8px;align-items:center;margin:10px 0;font-size:12px}.loadbar{height:10px;border-radius:10px;background:#12243a;overflow:hidden}.loadbar i{display:block;height:100%;background:linear-gradient(90deg,#1c83ff,#00f6d2)}.core-extra{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:9px}.total{margin-top:12px;border-top:1px solid #172b42;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px}.total b{color:var(--cyan);font-size:18px}.probe canvas{height:170px}.probe-controls{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#9bb0c9}.selectish{border:1px solid #213a56;background:#071320;border-radius:6px;padding:6px 8px}.health-row{display:grid;grid-template-columns:1fr auto; gap:8px; margin:8px 0; font-size:12px}.health-row span{color:#a8bad3}.health-progress{height:6px;background:#14243b;border-radius:5px;overflow:hidden;margin-top:3px}.health-progress i{display:block;height:100%;background:linear-gradient(90deg,#54ff73,#00d8ff)}.meters{display:flex;gap:16px;align-items:end;justify-content:center;height:210px}.meter-wrap{text-align:center;font-size:10px;color:#9fb0ca}.meter{width:28px;height:160px;border:1px solid #263e5c;border-radius:5px;background:linear-gradient(180deg,#14213a,#07101c);display:flex;align-items:end;overflow:hidden;margin-bottom:5px}.meter i{display:block;width:100%;background:linear-gradient(180deg,#ff5151 0%,#ffcc45 32%,#31f26b 58%,#148ef7 100%)}
@@ -173,24 +172,36 @@
             <div class="sel-meta"><b id="selName">AGC</b><small id="selSub">1ch · 48kHz · Core 1</small></div>
             <div class="active-label">● Active</div>
           </div>
-          <div class="tabs"><button>PARAMETERS</button><button class="active">PROBE</button><button>MAPPING</button><button>NOTES</button></div>
-          <div class="kv"><span>Input</span><b id="ioIn">1 ch · 48 kHz · 16-bit</b></div>
-          <div class="kv"><span>Output</span><b id="ioOut">1 ch · 48 kHz · 16-bit</b></div>
-          <div class="kv"><span>RMS In</span><b id="rmsIn">-23.4 dBFS</b></div>
-          <div class="kv"><span>Peak Out</span><span><b id="peakOut">-1.8 dBFS</b> <span class="barline"><i id="peakBar" style="width:66%"></i></span></span></div>
-          <div class="kv"><span>Frame Size</span><b>256 samples / 5.33 ms</b></div>
+          <div class="tabs" id="inspectorTabs">
+            <button class="active" data-inspector-tab="general">GENERAL</button>
+            <button data-inspector-tab="parameters">PARAMETERS</button>
+            <button data-inspector-tab="probe">PROBE</button>
+            <button data-inspector-tab="notes">NOTES</button>
+          </div>
+          <div class="inspector-tab-content" id="inspectorTabContent">
+            <section class="inspector-section" id="inspectorGeneral" data-inspector-section="general">
+              <div class="kv"><span>Input</span><b id="ioIn">1 ch · 48 kHz · 16-bit</b></div>
+              <div class="kv"><span>Output</span><b id="ioOut">1 ch · 48 kHz · 16-bit</b></div>
+              <div class="kv"><span>RMS In</span><b id="rmsIn">-23.4 dBFS</b></div>
+              <div class="kv"><span>Peak Out</span><span><b id="peakOut">-1.8 dBFS</b> <span class="barline"><i id="peakBar" style="width:66%"></i></span></span></div>
+              <div class="kv"><span>Frame Size</span><b id="frameSizeInfo">256 samples / 5.33 ms</b></div>
+            </section>
 
-          <div class="panel-head" style="padding:12px 0 2px"><span>PARAMETERS</span><span>⚙</span></div>
-          <div class="param-row"><label>Enable</label><div class="toggle"></div><span></span></div>
-          <div class="param-row"><label>Target Level</label><input type="range" min="-36" max="0" value="-16" id="targetLevel"><div class="value-box" id="targetValue">-16 dB</div></div>
-          <div class="param-row"><label>Max Gain</label><input type="range" min="0" max="36" value="20" id="maxGain"><div class="value-box" id="gainValue">20 dB</div></div>
-          <div class="param-row"><label>Attack</label><input type="range" min="1" max="100" value="10" id="attack"><div class="value-box" id="attackValue">10 ms</div></div>
-          <div class="param-row"><label>Release</label><input type="range" min="20" max="500" value="150" id="release"><div class="value-box" id="releaseValue">150 ms</div></div>
+            <section class="inspector-section" id="inspectorParameters" data-inspector-section="parameters">
+              <div class="panel-head" style="padding:12px 0 2px"><span>PARAMETERS</span><span>⚙</span></div>
+              <div class="param-list" id="inspectorParamList"></div>
+            </section>
 
-          <div class="panel-head" style="padding:14px 0 0"><span>LIVE WAVEFORM</span><small>current node</small></div>
-          <canvas class="canvas-small" id="inspectorWave"></canvas>
-          <div class="panel-head" style="padding:8px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
-          <canvas class="canvas-small" id="inspectorSpectrum"></canvas>
+            <section class="inspector-section" id="inspectorProbe" data-inspector-section="probe">
+              <div class="panel-head" style="padding:14px 0 0"><span>PROBE</span><small id="probePortCount">current node</small></div>
+              <div id="inspectorProbeList"></div>
+            </section>
+
+            <section class="inspector-section" id="inspectorNotes" data-inspector-section="notes">
+              <div class="panel-head" style="padding:14px 0 0"><span>NOTES</span><small id="notesSource">module json</small></div>
+              <div id="inspectorNotesBody"></div>
+            </section>
+          </div>
         </div>
       </section>
       <section class="audio-file">
@@ -420,6 +431,9 @@
     let safariGestureStartZoom = 1;
     let defaultViewportZoomApplied = false;
     let selectedNodeId = 'agc_1';
+    let inspectorActiveTab = 'general';
+    let inspectorRenderKey = '';
+    let inspectorScrollLock = false;
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -613,6 +627,8 @@
         lat,
         staticSchema: mt.static_schema || null,
         runtimeParams: mt.runtime_params || [],
+        description: ui.description || mt.description || mt.notes?.summary || '',
+        notes: mt.notes || ui.notes || null,
         rawModuleType: mt
       };
     }
@@ -697,7 +713,7 @@
       const h=Math.max(142, 108 + Math.max(inPorts.length,outPorts.length,1)*18);
       const name=c.name || id;
       const core = name==='KWS'||name==='VAD'?2:(name==='EQ'||name==='DRC'||name==='Volume'||name==='NS'||name==='AGC'?1:0);
-      return {id,name,type:c.type||'util',icon:c.icon||'≋',x,y,w:128,h,cpu:c.cpu||0.8,mem:c.mem||Math.round(96+maxCh*24),lat:c.lat||0.2,core,rms:-rnd(10,30),peak:-rnd(1,10),selected:false,ch:c.ch||(maxCh===1?'1ch':`${maxCh}ch`),moduleTypeId:c.moduleTypeId||'',inPorts,outPorts,portsFlipped:false};
+      return {id,name,type:c.type||'util',icon:c.icon||'≋',x,y,w:128,h,cpu:c.cpu||0.8,mem:c.mem||Math.round(96+maxCh*24),lat:c.lat||0.2,core,rms:-rnd(10,30),peak:-rnd(1,10),selected:false,ch:c.ch||(maxCh===1?'1ch':`${maxCh}ch`),moduleTypeId:c.moduleTypeId||'',inPorts,outPorts,runtimeParams:c.runtimeParams||[],staticSchema:c.staticSchema||null,description:c.description||'',notes:c.notes||null,rawModuleType:c.rawModuleType||null,paramValues:{},portsFlipped:false};
     }
     function pipelineLayoutKey(pipeId, projectFile=currentProjectFile) {
       return `${projectFile || 'A2.json'}::PIPE::${pipeId || 'ALL'}`;
@@ -1134,7 +1150,7 @@
       const inPorts=normalizePortsForComponent(c,'in');
       const outPorts=normalizePortsForComponent(c,'out');
       const h=Math.max(142, 108 + Math.max(inPorts.length,outPorts.length,1)*18);
-      return {id,name,type,icon,x,y,w:128,h,cpu:c.cpu||rnd(.2,5), mem:c.mem||Math.round(rnd(64,512)), lat:c.lat||rnd(.1,2.2), core, rms:-rnd(10,30), peak:-rnd(1,10), selected:false, ch:c.ch||'2ch', moduleTypeId:c.moduleTypeId||'', inPorts, outPorts, portsFlipped:false};
+      return {id,name,type,icon,x,y,w:128,h,cpu:c.cpu||rnd(.2,5), mem:c.mem||Math.round(rnd(64,512)), lat:c.lat||rnd(.1,2.2), core, rms:-rnd(10,30), peak:-rnd(1,10), selected:false, ch:c.ch||'2ch', moduleTypeId:c.moduleTypeId||'', inPorts, outPorts, runtimeParams:c.runtimeParams||[],staticSchema:c.staticSchema||null,description:c.description||'',notes:c.notes||null,rawModuleType:c.rawModuleType||null,paramValues:{}, portsFlipped:false};
     }
     function toast(msg){const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600)}
     function addLog(kind,msg,sub=''){
@@ -1573,11 +1589,233 @@
       if(selectedNodeId===id) selectedNodeId=state.nodes[0]?.id || '';
       renderAll(true); addLog('warn','Node deleted',n.name); backendEdit('node_removed',{node_id:id,node_name:n.name}); toast('Node deleted');
     }
+    function escapeHtml(v=''){
+      return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    function slugId(v=''){
+      return String(v || '').replace(/[^A-Za-z0-9_\-]+/g,'_');
+    }
+    function componentForNode(n){
+      if(!n) return null;
+      return components.find(c=>c.moduleTypeId && c.moduleTypeId===n.moduleTypeId) || components.find(c=>c.name===n.name) || null;
+    }
+    function nodeRuntimeParams(n){
+      const c=componentForNode(n);
+      return (Array.isArray(n?.runtimeParams) && n.runtimeParams.length ? n.runtimeParams : (c?.runtimeParams || []));
+    }
+    function nodeDescription(n){
+      const c=componentForNode(n);
+      return n?.description || c?.description || n?.rawModuleType?.description || c?.rawModuleType?.description || '';
+    }
+    function nodeNotes(n){
+      const c=componentForNode(n);
+      return n?.notes || c?.notes || n?.rawModuleType?.notes || c?.rawModuleType?.notes || null;
+    }
+    function paramId(p){ return p.param_id || p.id || p.key || p.name || 'param'; }
+    function paramName(p){ return p.param_name || p.name || p.key || paramId(p); }
+    function paramType(p){ return String(p.value_type || p.type || (Array.isArray(p.enum)?'enum':'string')).toLowerCase(); }
+    function paramDefault(p){
+      if(p.default !== undefined) return p.default;
+      const t=paramType(p);
+      if(t==='bool' || t==='boolean') return false;
+      if(t.includes('int') || t.includes('float') || t==='number') return p.range?.min ?? 0;
+      if(Array.isArray(p.enum) && p.enum.length) return p.enum[0];
+      return '';
+    }
+    function nodeParamValue(n,p){
+      if(!n.paramValues) n.paramValues={};
+      const id=paramId(p);
+      if(n.paramValues[id] === undefined) n.paramValues[id]=paramDefault(p);
+      return n.paramValues[id];
+    }
+    function formatParamValue(p,v){
+      const unit=p.unit ? ` ${p.unit}` : '';
+      const t=paramType(p);
+      if(t==='bool' || t==='boolean') return v ? 'On' : 'Off';
+      if(t==='enum') return String(v);
+      if(t.includes('float')) return `${Number(v).toFixed(2)}${unit}`;
+      return `${v}${unit}`;
+    }
+    function renderParamControl(n,p){
+      const id=paramId(p), t=paramType(p), name=escapeHtml(paramName(p));
+      const value=nodeParamValue(n,p);
+      const meta = p.apply?.mode || p.kcontrol?.kind || p.tlv?.type ? `<div class="param-meta">${escapeHtml(p.apply?.mode || 'runtime')} · ${escapeHtml(p.kcontrol?.kind || t)}${p.tlv?.type!==undefined?' · TLV '+escapeHtml(p.tlv.type):''}</div>` : '';
+      if(t==='bool' || t==='boolean'){
+        return `<div class="param-row"><label>${name}</label><button class="toggle param-toggle ${value?'on':''}" data-param-id="${escapeHtml(id)}" data-param-type="bool" title="${name}"></button><div class="value-box" data-param-value="${escapeHtml(id)}">${formatParamValue(p,value)}</div>${meta}</div>`;
+      }
+      if(t==='enum' || Array.isArray(p.enum)){
+        const opts=(p.enum || []).map(x=>`<option value="${escapeHtml(x)}" ${String(x)===String(value)?'selected':''}>${escapeHtml(x)}</option>`).join('');
+        return `<div class="param-row"><label>${name}</label><select data-param-id="${escapeHtml(id)}" data-param-type="enum">${opts}</select><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(value)}</div>${meta}</div>`;
+      }
+      if(t==='string'){
+        return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="string" placeholder="${name}">${meta}</div>`;
+      }
+      const isNumber=t.includes('int') || t.includes('float') || t==='number' || t==='double';
+      if(isNumber && p.range){
+        const min=p.range.min ?? 0, max=p.range.max ?? 100, step=p.range.step ?? (t.includes('float') ? .1 : 1);
+        return `<div class="param-row"><label>${name}</label><input type="range" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number"><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p,value))}</div>${meta}</div>`;
+      }
+      if(isNumber){
+        return `<div class="param-row"><label>${name}</label><input type="number" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number"><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p,value))}</div>${meta}</div>`;
+      }
+      return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="${escapeHtml(t)}">${meta}</div>`;
+    }
+    function renderInspectorParameters(n){
+      const params=nodeRuntimeParams(n);
+      const list=$('#inspectorParamList');
+      if(!list) return;
+      if(!params.length){
+        list.innerHTML='<div class="empty-state">No runtime parameters described by this module JSON.</div>';
+        return;
+      }
+      list.innerHTML=params.map(p=>renderParamControl(n,p)).join('');
+      list.querySelectorAll('[data-param-id]').forEach(ctrl=>{
+        const id=ctrl.dataset.paramId;
+        const p=params.find(x=>paramId(x)===id);
+        const applyValue=(raw)=>{
+          if(!n.paramValues) n.paramValues={};
+          let value=raw;
+          const t=paramType(p);
+          if(t==='bool' || t==='boolean') value=!!raw;
+          else if(t.includes('int') || t.includes('float') || t==='number' || t==='double') value=Number(raw);
+          n.paramValues[id]=value;
+          const box=list.querySelector(`[data-param-value="${CSS.escape(id)}"]`);
+          if(box) box.textContent=formatParamValue(p,value);
+          if(ctrl.classList.contains('param-toggle')) ctrl.classList.toggle('on',!!value);
+          apiPost('/api/param/update',{session_id:API_SESSION_ID,node_id:n.id,node_name:n.name,module_type:n.moduleTypeId,param_id:id,value});
+          backendEdit('runtime_param_updated',{node_id:n.id,node_name:n.name,module_type:n.moduleTypeId,param_id:id,value});
+          addLog('info','Runtime parameter updated',`${n.name}: ${paramName(p)} = ${formatParamValue(p,value)}`);
+        };
+        if(ctrl.classList.contains('param-toggle')){
+          ctrl.addEventListener('click',()=>applyValue(!ctrl.classList.contains('on')));
+        } else {
+          ctrl.addEventListener('input',()=>applyValue(ctrl.value));
+          ctrl.addEventListener('change',()=>applyValue(ctrl.value));
+        }
+      });
+    }
+    function portSignalLabel(n,dir,p,idx){
+      const ch=Number(p.max_ch || String(n.ch||'2').replace(/\D/g,'') || 2);
+      return `${ch}ch · 48 kHz · 16-bit`;
+    }
+    function renderInspectorProbe(n){
+      const list=$('#inspectorProbeList');
+      if(!list) return;
+      const ports=[
+        ...nodePortList(n,'in').map((p,i)=>({dir:'in',idx:i,p})),
+        ...nodePortList(n,'out').map((p,i)=>({dir:'out',idx:i,p}))
+      ];
+      const count=$('#probePortCount');
+      if(count) count.textContent=`${ports.length} port(s)`;
+      if(!ports.length){
+        list.innerHTML='<div class="empty-state">This module has no input/output ports to probe.</div>';
+        return;
+      }
+      list.innerHTML=ports.map(item=>{
+        const name=item.p.name || `${item.dir}${item.idx}`;
+        const sid=`${slugId(n.id)}_${item.dir}_${slugId(name)}_${item.idx}`;
+        const title=`${item.dir.toUpperCase()} · ${escapeHtml(name)}`;
+        return `<div class="probe-port-card">
+          <div class="probe-port-head"><span>${title}</span><small>${portSignalLabel(n,item.dir,item.p,item.idx)}</small></div>
+          <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>${item.dir} port</small></div>
+          <canvas class="canvas-small inspector-probe-wave" id="wave_${sid}"></canvas>
+          <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
+          <canvas class="canvas-small inspector-probe-spectrum" id="spec_${sid}"></canvas>
+        </div>`;
+      }).join('');
+      drawInspectorProbeCanvases();
+    }
+    function renderNotesValue(title,value){
+      if(value===undefined || value===null || value==='') return '';
+      if(Array.isArray(value)){
+        return `<div class="note-card"><b>${escapeHtml(title)}</b><ul>${value.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`;
+      }
+      if(typeof value==='object'){
+        const chips=Object.entries(value).map(([k,v])=>`<span class="note-chip">${escapeHtml(k)}: ${escapeHtml(Array.isArray(v)?v.join(', '):v)}</span>`).join('');
+        return `<div class="note-card"><b>${escapeHtml(title)}</b>${chips}</div>`;
+      }
+      return `<div class="note-card"><b>${escapeHtml(title)}</b>${escapeHtml(value)}</div>`;
+    }
+    function renderInspectorNotes(n){
+      const body=$('#inspectorNotesBody');
+      if(!body) return;
+      const notes=nodeNotes(n);
+      const desc=nodeDescription(n);
+      let html='';
+      if(desc) html+=renderNotesValue('Description',desc);
+      if(notes){
+        if(typeof notes==='string') html+=renderNotesValue('Notes',notes);
+        else {
+          const preferred=['summary','use_cases','configuration_tips','ports','limitations','validation','backend_hooks'];
+          preferred.forEach(k=>{ if(notes[k]!==undefined) html+=renderNotesValue(k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),notes[k]); });
+          Object.keys(notes).filter(k=>!preferred.includes(k)).forEach(k=>{ html+=renderNotesValue(k,notes[k]); });
+        }
+      }
+      if(!html) html='<div class="empty-state">No description or notes are provided by this module JSON.</div>';
+      body.innerHTML=html;
+    }
+    function setInspectorTab(tab,scroll=true){
+      inspectorActiveTab=tab || 'general';
+      $$('#inspectorTabs button').forEach(b=>b.classList.toggle('active',b.dataset.inspectorTab===inspectorActiveTab));
+      if(scroll){
+        const sec=$(`[data-inspector-section="${inspectorActiveTab}"]`);
+        const body=$('.inspector-body');
+        if(sec && body){
+          inspectorScrollLock=true;
+          sec.scrollIntoView({behavior:'smooth',block:'start'});
+          setTimeout(()=>{inspectorScrollLock=false; updateInspectorTabFromScroll(false);},420);
+        }
+      }
+    }
+    function updateInspectorTabFromScroll(scroll=false){
+      if(inspectorScrollLock && !scroll) return;
+      const body=$('.inspector-body');
+      if(!body) return;
+      const br=body.getBoundingClientRect();
+      let best='general', bestScore=Infinity;
+      $$('.inspector-section').forEach(sec=>{
+        const r=sec.getBoundingClientRect();
+        const score=Math.abs(r.top - br.top - 54);
+        if(r.top <= br.bottom && r.bottom >= br.top && score < bestScore){
+          bestScore=score; best=sec.dataset.inspectorSection || best;
+        }
+      });
+      if(best!==inspectorActiveTab) setInspectorTab(best,false);
+    }
+    function setupInspectorTabs(){
+      $$('#inspectorTabs button').forEach(btn=>{
+        btn.addEventListener('click',()=>setInspectorTab(btn.dataset.inspectorTab,true));
+      });
+      const body=$('.inspector-body');
+      if(body){
+        let ticking=false;
+        body.addEventListener('scroll',()=>{
+          if(ticking) return;
+          ticking=true;
+          requestAnimationFrame(()=>{ticking=false; updateInspectorTabFromScroll(false);});
+        },{passive:true});
+      }
+      setInspectorTab(inspectorActiveTab,false);
+    }
+    function drawInspectorProbeCanvases(){
+      $$('.inspector-probe-wave').forEach((c,i)=>drawWave(c,i%2?'#6ee7ff':'#00d8ff',i%2?'#8b5cff':'#b65cff'));
+      $$('.inspector-probe-spectrum').forEach(c=>drawSpectrum(c));
+    }
     function renderInspector(){
       const n=nodeById(selectedNodeId)||state.nodes[0]; if(!n) return;
       $('#selIcon').textContent=n.icon; $('#selName').textContent=n.name; $('#selSub').textContent=`${n.ch} · 48kHz · Core ${n.core}`; $('#probeName').textContent=`(${n.name} Output)`;
       $('#ioIn').textContent=`${n.ch} · 48 kHz · 16-bit`; $('#ioOut').textContent=`${n.ch} · 48 kHz · 16-bit`;
       $('#rmsIn').textContent=`${n.rms.toFixed(1)} dBFS`; $('#peakOut').textContent=`${n.peak.toFixed(1)} dBFS`; $('#peakBar').style.width=clamp((60+n.peak)/60*100,5,100)+'%';
+      const params=nodeRuntimeParams(n);
+      const ports=[...nodePortList(n,'in'),...nodePortList(n,'out')];
+      const renderKey=`${n.id}|${n.moduleTypeId}|${params.map(paramId).join(',')}|${ports.map(p=>p.name).join(',')}|${JSON.stringify(nodeNotes(n)||{})}|${nodeDescription(n)}`;
+      if(renderKey!==inspectorRenderKey){
+        inspectorRenderKey=renderKey;
+        renderInspectorParameters(n);
+        renderInspectorProbe(n);
+        renderInspectorNotes(n);
+        setInspectorTab(inspectorActiveTab,false);
+      }
     }
     function renderCostTable(){
       const sorted=[...state.nodes].sort((a,b)=>b.cpu-a.cpu).slice(0,10);
@@ -1626,7 +1864,7 @@
     function drawSpectrum(canvas){
       resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h); const bars=96; const bw=w/bars; for(let i=0;i<bars;i++){ const val=(Math.sin(i*.16+t*.02)+1)*.25 + Math.random()*.18 + (1-i/bars)*.35; const bh=clamp(val*h,4,h*.92); const g=ctx.createLinearGradient(0,h-bh,0,h); g.addColorStop(0,'#b65cff'); g.addColorStop(1,'#00d8ff'); ctx.fillStyle=g; ctx.fillRect(i*bw+1,h-bh,bw-2,bh); }
     }
-    function animate(){ if(running){ t+=2; drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); } requestAnimationFrame(animate); }
+    function animate(){ if(running){ t+=2; drawWave($('#mainWave')); drawInspectorProbeCanvases(); } requestAnimationFrame(animate); }
     function inferNodePipelineId(n){
       if(n.pipelineId) return n.pipelineId;
       const s=String(n.id||'');
@@ -1966,7 +2204,7 @@
     }
     function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
     function init(){
-      pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawWave($('#inspectorWave')); drawSpectrum($('#inspectorSpectrum')); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
+      pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); setupInspectorTabs(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawInspectorProbeCanvases(); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));
       $('#projectSelect').addEventListener('change', e=>{ saveCurrentLayout('before_project_switch'); loadPlatformConfig(e.target.value); });
       const wrap=$('#canvasWrap');
@@ -2040,7 +2278,7 @@
       $('#exportBtn').addEventListener('click',exportJson);
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
       $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]){$('#fileName').textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
-      ['targetLevel','maxGain','attack','release'].forEach(id=>$('#'+id).addEventListener('input',()=>{ $('#targetValue').textContent=$('#targetLevel').value+' dB'; $('#gainValue').textContent=$('#maxGain').value+' dB'; $('#attackValue').textContent=$('#attack').value+' ms'; $('#releaseValue').textContent=$('#release').value+' ms'; apiPost('/api/param/update',{session_id:API_SESSION_ID,node_id:selectedNodeId,param_id:id,value:$('#'+id).value}); addLog('info','Runtime parameter updated',`${nodeById(selectedNodeId)?.name||'Node'} parameters`); }));
+      // Inspector parameters are now generated dynamically from module JSON runtime_params.
       setInterval(updateRandom,600); animate();
     }
     window.addEventListener('resize',()=>{updateWorldBounds(); if(!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true);});
