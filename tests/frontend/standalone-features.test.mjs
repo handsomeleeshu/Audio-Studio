@@ -54,4 +54,37 @@ assert.ok(
   'v42 Auto Arrange override should be installed after v41c'
 );
 
+
+
+assert.ok(
+  html.includes('__audioStudioClipboardV43Installed'),
+  'missing v43 clipboard/multi-select override'
+);
+for (const token of [
+  'copySelectionV43',
+  'cutSelectionV43',
+  'pasteSelectionV43',
+  'toggleNodeSelectionV43',
+  'toggleEdgeSelectionV43',
+  'collectClipboardPayloadV43',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('e.key.toLowerCase()') && html.includes("key==='c'") && html.includes('copySelectionV43()'),
+  'missing Ctrl/Cmd+C copy shortcut handling'
+);
+assert.ok(
+  html.includes("key==='x'") && html.includes('cutSelectionV43()'),
+  'missing Ctrl/Cmd+X cut shortcut handling'
+);
+assert.ok(
+  html.includes("key==='v'") && html.includes('pasteSelectionV43()'),
+  'missing Ctrl/Cmd+V paste shortcut handling'
+);
+assert.ok(
+  html.includes('multiSelectKeyV43') && html.includes('ctrlKey || e.metaKey'),
+  'missing Ctrl/Cmd multi-select handling'
+);
+
 console.log('standalone-features.test passed');
