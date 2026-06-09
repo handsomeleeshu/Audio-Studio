@@ -967,20 +967,37 @@
       return null;
     }
     function staticConfigPaths(file='A2.json') {
-      const safe = encodeURIComponent(file || 'A2.json');
-      // First path works for server root. Second path is useful when the HTML is
-      // opened from a subdirectory or static hosting rewrites absolute paths.
-      return [`/config/${safe}`, `config/${safe}`];
+      const safe = String(file || 'A2.json').split('/').map(encodeURIComponent).join('/');
+      const paths = [];
+
+      // GitHub Pages project site case:
+      //   /Audio-Studio/frontend/  -> /Audio-Studio/config/<file>
+      const pathname = window.location?.pathname || '';
+      const frontendIdx = pathname.indexOf('/frontend/');
+      if(frontendIdx >= 0) {
+        const projectBase = pathname.slice(0, frontendIdx);
+        if(projectBase) paths.push(`${projectBase}/config/${safe}`);
+      }
+
+      // Static paths for other hosting modes.  ../config is the important one
+      // when the page is served from frontend/index.html.
+      paths.push(`../config/${safe}`);
+      paths.push(`./config/${safe}`);
+      paths.push(`config/${safe}`);
+      paths.push(`/config/${safe}`);
+
+      // De-duplicate while preserving priority order.
+      return [...new Set(paths)];
     }
     async function loadStaticProjectManifest() {
-      const manifest = await apiGetFirstJson(['/config/projects.json','config/projects.json']);
+      const manifest = await apiGetFirstJson(staticConfigPaths('projects.json'));
       if(Array.isArray(manifest?.projects) && manifest.projects.length) return manifest.projects;
       return null;
     }
     async function loadBuiltInAlgorithms() {
-      const cfg = await apiGetFirstJson(['/config/built-in-algorithm.json','config/built-in-algorithm.json']);
+      const cfg = await apiGetFirstJson(staticConfigPaths('built-in-algorithm.json'));
       if(!cfg || !Array.isArray(cfg.module_types)) {
-        addLog('warn','Built-in algorithms not loaded','Missing config/built-in-algorithm.json');
+        addLog('warn','Built-in algorithms not loaded','Tried static config paths for built-in-algorithm.json');
         builtInComponents = [];
         mergeLibraryComponents();
         renderLibrary($('#searchInput')?.value || '');
