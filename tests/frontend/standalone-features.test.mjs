@@ -87,4 +87,26 @@ assert.ok(
   'missing Ctrl/Cmd multi-select handling'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioWorkingPipelineListV44Installed'),
+  'missing v44 working pipeline group list override'
+);
+for (const token of [
+  'connectedWorkingGroupsV44',
+  'renderWorkingPipelineSelectV44',
+  'focusWorkingGroupV44',
+  'Saved',
+  'Modified',
+  'New',
+  'Unsaved split',
+  'Unsaved merge',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('working_groups_v44') && html.includes('current connected components'),
+  'pipeline list should be rendered from working connected components'
+);
+
 console.log('standalone-features.test passed');
