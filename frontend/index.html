@@ -436,6 +436,7 @@
     let inspectorScrollLock = false;
     let inspectorBackendContextKey = '';
     let inspectorLiveState = {running:false,general:null,ports:[],node_id:''};
+    let inspectorBackendLiveFallbackLogged = false;
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -1843,16 +1844,81 @@
       const ports=inspectorBackendPorts(n).map(p=>`${queryToken(p.dir)}:${queryToken(p.name)}:${Number(p.max_ch||1)}`).join(',');
       return `/api/inspector/live?node_id=${queryToken(n.id)}&node_name=${queryToken(n.name)}&module_type=${queryToken(n.moduleTypeId||'')}&running=${running?1:0}&ports=${ports}`;
     }
+    function fallbackInspectorWave(portIndex=0, active=false){
+      const phase=Date.now()*0.006 + portIndex*.87;
+      return Array.from({length:96},(_,i)=>{
+        if(!active) return 0;
+        const v=Math.sin(i*.13+phase)*.62 + Math.sin(i*.37+phase*.5)*.18 + Math.sin(i*.071+phase*1.7)*.07;
+        return clamp(v,-1,1);
+      });
+    }
+    function fallbackInspectorSpectrum(portIndex=0, active=false){
+      const phase=Date.now()*0.004 + portIndex*.63;
+      return Array.from({length:64},(_,i)=>{
+        if(!active) return 0;
+        const v=(Math.sin(i*.19+phase)+1)*.28 + (1-i/72)*.38 + (Math.sin(i*.41+phase*.8)+1)*.06;
+        return clamp(v,0,1);
+      });
+    }
+    function makeFrontendFallbackInspectorLiveData(n){
+      const runActive=!!running;
+      const ports=inspectorBackendPorts(n);
+      let inCh=0,outCh=0;
+      ports.forEach(p=>{ if(p.dir==='out') outCh+=Number(p.max_ch||1); else inCh+=Number(p.max_ch||1); });
+      if(inCh<=0) inCh=1;
+      if(outCh<=0) outCh=inCh;
+      return {
+        ok:true,
+        mode:'frontend_fallback',
+        running:runActive,
+        timestamp_ms:Date.now(),
+        node_id:n.id,
+        node_name:n.name,
+        general: runActive ? {
+          input:`${inCh}ch · 48 kHz · 16-bit`,
+          output:`${outCh}ch · 48 kHz · 16-bit`,
+          rmsIn:-rnd(12,34),
+          peakOut:-rnd(1.2,10),
+          frameSizeSamples:256,
+          frameMs:5.333
+        } : {
+          input:'N/A',
+          output:'N/A',
+          rmsIn:null,
+          peakOut:null,
+          frameSizeSamples:null,
+          frameMs:null
+        },
+        ports: ports.map((p,i)=>({
+          key:`${p.dir}:${p.name}`,
+          dir:p.dir,
+          name:p.name,
+          channels:Number(p.max_ch||1),
+          sampleRate:48000,
+          bitDepth:16,
+          rms:runActive?-rnd(10,35):null,
+          peak:runActive?-rnd(.8,12):null,
+          waveform:fallbackInspectorWave(i,runActive),
+          spectrum:fallbackInspectorSpectrum(i,runActive)
+        }))
+      };
+    }
     async function refreshInspectorBackend(){
       const n=nodeById(selectedNodeId)||state.nodes[0];
       if(!n) return false;
       syncInspectorBackendContext(n);
       const data=await apiGet(inspectorLiveQuery(n));
       if(!data || data.ok===false) {
-        inspectorLiveState={running:false,general:null,ports:[],node_id:n.id};
+        inspectorLiveState=makeFrontendFallbackInspectorLiveData(n);
+        if(running && !inspectorBackendLiveFallbackLogged){
+          inspectorBackendLiveFallbackLogged=true;
+          addLog('warn','Inspector backend fallback','GET /api/inspector/live unavailable; using frontend fake live data');
+        }
         applyInspectorLiveDataToUi(n);
+        drawInspectorProbeCanvases();
         return false;
       }
+      inspectorBackendLiveFallbackLogged=false;
       inspectorLiveState=data;
       applyInspectorLiveDataToUi(n);
       drawInspectorProbeCanvases();
