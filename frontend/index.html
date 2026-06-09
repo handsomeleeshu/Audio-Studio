@@ -4977,6 +4977,142 @@
       };
     }
 
+
+    // v42: disconnected-component Auto Arrange fix.
+    // Each unconnected subgraph is arranged in its own vertical band, even when
+    // the subgraphs belong to the same pipeline after manual splitting.
+    if(!window.__audioStudioAutoArrangeV42Installed){
+      window.__audioStudioAutoArrangeV42Installed=true;
+
+      function buildDisconnectedLayoutGroupsV42(){
+        const nodes=[...state.nodes];
+        const nodeBy=new Map(nodes.map(n=>[n.id,n]));
+        const nodeOrder=new Map(nodes.map((n,i)=>[n.id,i]));
+        const order=(currentProjectConfig?.pipelines||[]).map(p=>p.pipe_id);
+        const parent=new Map(nodes.map(n=>[n.id,n.id]));
+
+        function find(x){
+          const p=parent.get(x)||x;
+          if(p!==x) parent.set(x,find(p));
+          return parent.get(x)||x;
+        }
+        function union(a,b){
+          const ra=find(a), rb=find(b);
+          if(ra!==rb) parent.set(rb,ra);
+        }
+        function pipelineSortKey(pid){
+          const i=order.indexOf(pid);
+          return i<0 ? 9999 : i;
+        }
+
+        const visibleEdges=[];
+        state.edges.forEach(e=>{
+          const p=edgeParts(e);
+          if(!nodeBy.has(p.from)||!nodeBy.has(p.to)) return;
+          visibleEdges.push(e);
+          if(p.from!==p.to) union(p.from,p.to);
+        });
+
+        const groups=new Map();
+        nodes.forEach(n=>{
+          const root=find(n.id);
+          if(!groups.has(root)) {
+            groups.set(root,{root,id:'',name:'',pipelineIds:new Set(),nodes:[],edges:[],minX:Infinity,minY:Infinity,firstIndex:Infinity,orderIndex:9999});
+          }
+          const g=groups.get(root);
+          const pid=(currentPipelineId==='ALL') ? inferNodePipelineId(n) : (currentPipelineId || inferNodePipelineId(n));
+          g.nodes.push(n);
+          g.pipelineIds.add(pid || 'MANUAL');
+          g.minX=Math.min(g.minX,Number(n.x)||0);
+          g.minY=Math.min(g.minY,Number(n.y)||0);
+          g.firstIndex=Math.min(g.firstIndex,nodeOrder.get(n.id) ?? 999999);
+          g.orderIndex=Math.min(g.orderIndex,pipelineSortKey(pid));
+        });
+
+        visibleEdges.forEach(e=>{
+          const p=edgeParts(e);
+          const root=find(p.from);
+          if(root===find(p.to) && groups.has(root)) groups.get(root).edges.push(e);
+        });
+
+        const byPrimaryPipeline=new Map();
+        const result=[...groups.values()].map(g=>{
+          const ids=[...g.pipelineIds].sort((a,b)=>pipelineSortKey(a)-pipelineSortKey(b) || String(a).localeCompare(String(b)));
+          const primary=ids[0] || 'MANUAL';
+          const count=(byPrimaryPipeline.get(primary)||0)+1;
+          byPrimaryPipeline.set(primary,count);
+          g.id=`${ids.join('+')}::component_${count}`;
+          g.name=ids.map(inferNodePipelineName).join(' + ');
+          g.pipelineIds=ids;
+          return g;
+        }).sort((a,b)=>
+          (a.orderIndex||9999)-(b.orderIndex||9999) ||
+          (a.minY||0)-(b.minY||0) ||
+          (a.minX||0)-(b.minX||0) ||
+          (a.firstIndex||0)-(b.firstIndex||0) ||
+          String(a.name).localeCompare(String(b.name))
+        );
+
+        const totalByPipeline=new Map();
+        result.forEach(g=>{
+          const primary=g.pipelineIds[0] || 'MANUAL';
+          totalByPipeline.set(primary,(totalByPipeline.get(primary)||0)+1);
+        });
+        const seenByPipeline=new Map();
+        result.forEach(g=>{
+          const primary=g.pipelineIds[0] || 'MANUAL';
+          const next=(seenByPipeline.get(primary)||0)+1;
+          seenByPipeline.set(primary,next);
+          if((totalByPipeline.get(primary)||0)>1 && g.pipelineIds.length===1){
+            g.name=`${g.name} / Part ${next}`;
+          }
+        });
+
+        return result;
+      }
+
+      autoArrange=function(opts={}){
+        if(opts && typeof opts.preventDefault === 'function') opts={};
+        const silent=!!opts.silent;
+        const keepHistory=opts.history!==false;
+        if(running){toast('Run 状态下不能自动布局，请先 Stop'); return;}
+        if(!state.nodes.length){toast('No nodes to arrange'); return;}
+        if(keepHistory) pushHistory('Auto arrange');
+
+        const arrangedGroups=buildDisconnectedLayoutGroupsV42();
+        let maxW=0;
+        let yCursor=80;
+        const bandGap=112;
+        const stats=[];
+
+        arrangedGroups.forEach(g=>{
+          const r=arrangePipelineBand(g.nodes,g.edges,yCursor,g.name);
+          maxW=Math.max(maxW,r.width || 0);
+          yCursor+=Math.max(260,r.height || 260)+bandGap;
+          stats.push({
+            id:g.id,
+            name:g.name,
+            nodes:g.nodes.length,
+            edges:g.edges.length,
+            pipelines:g.pipelineIds,
+            component:true,
+            layers:r.layers,
+            lanes:r.lanes
+          });
+        });
+
+        state.world.w=Math.max(2200,Math.ceil(maxW+240));
+        state.world.h=Math.max(1050,Math.ceil(yCursor+160));
+        renderAll(true);
+        redrawEdgesAfterLayout();
+        saveCurrentLayout(opts.reason||'auto_arrange');
+        backendTool('auto_arrange',{nodes:state.nodes.length,pipelines:stats,layout:'disconnected_components_pipeline_bands_v42',silent});
+        backendEdit('auto_arrange',{layout:'disconnected_components_pipeline_bands_v42',pipeline_id:currentPipelineId,groups:arrangedGroups.length,silent});
+        if(!silent) toast('Auto layout finished');
+        addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Disconnected components: ${arrangedGroups.length} band(s), ${state.nodes.length} node(s)`);
+      };
+    }
+
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
