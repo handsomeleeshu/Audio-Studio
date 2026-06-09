@@ -68,6 +68,54 @@ public:
   virtual std::string updateParameter(const std::string& request_json) = 0;
 };
 
+
+struct InspectorPortInfo {
+  std::string direction;  // "in" or "out"
+  std::string name;
+  int channels = 1;
+};
+
+struct InspectorNodeInfo {
+  std::string node_id;
+  std::string node_name;
+  std::string module_type;
+  std::string pipeline_id;
+  std::vector<InspectorPortInfo> ports;
+};
+
+struct InspectorLiveFrame {
+  bool running = false;
+  std::string node_id;
+  std::int64_t timestamp_ms = 0;
+  double rms_in_dbfs = -120.0;
+  double peak_out_dbfs = -120.0;
+  int frame_size_samples = 256;
+  double frame_ms = 5.33;
+};
+
+class IInspectorController {
+public:
+  virtual ~IInspectorController() = default;
+  virtual std::string inspectNode(const std::string& request_json) = 0;
+  virtual std::string liveData(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeInspectorController final : public IInspectorController {
+public:
+  FakeInspectorController();
+  std::string inspectNode(const std::string& request_json) override;
+  std::string liveData(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::string current_node_id_;
+  std::string current_node_name_;
+  std::string current_module_type_;
+  std::string last_request_json_;
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
 class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
@@ -93,7 +141,8 @@ class HttpServer {
 public:
   HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
              std::shared_ptr<INodeController> node_controller,
-             std::shared_ptr<IParameterController> parameter_controller);
+             std::shared_ptr<IParameterController> parameter_controller,
+             std::shared_ptr<IInspectorController> inspector_controller = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -102,6 +151,7 @@ private:
   std::shared_ptr<IRuntimeEngine> runtime_;
   std::shared_ptr<INodeController> node_controller_;
   std::shared_ptr<IParameterController> parameter_controller_;
+  std::shared_ptr<IInspectorController> inspector_controller_;
   HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 

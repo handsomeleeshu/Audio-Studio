@@ -434,6 +434,8 @@
     let inspectorActiveTab = 'general';
     let inspectorRenderKey = '';
     let inspectorScrollLock = false;
+    let inspectorBackendContextKey = '';
+    let inspectorLiveState = {running:false,general:null,ports:[],node_id:''};
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -1595,6 +1597,9 @@
     function slugId(v=''){
       return String(v || '').replace(/[^A-Za-z0-9_\-]+/g,'_');
     }
+    function queryToken(v=''){
+      return String(v ?? '').replace(/[^A-Za-z0-9_.-]+/g,'_');
+    }
     function componentForNode(n){
       if(!n) return null;
       return components.find(c=>c.moduleTypeId && c.moduleTypeId===n.moduleTypeId) || components.find(c=>c.name===n.name) || null;
@@ -1698,13 +1703,19 @@
       const ch=Number(p.max_ch || String(n.ch||'2').replace(/\D/g,'') || 2);
       return `${ch}ch · 48 kHz · 16-bit`;
     }
-    function renderInspectorProbe(n){
-      const list=$('#inspectorProbeList');
-      if(!list) return;
-      const ports=[
+    function inspectorPortItems(n){
+      return [
         ...nodePortList(n,'in').map((p,i)=>({dir:'in',idx:i,p})),
         ...nodePortList(n,'out').map((p,i)=>({dir:'out',idx:i,p}))
       ];
+    }
+    function inspectorPortKey(dir,name){
+      return `${dir}:${name || (dir==='out'?'out':'in')}`;
+    }
+    function renderInspectorProbe(n){
+      const list=$('#inspectorProbeList');
+      if(!list) return;
+      const ports=inspectorPortItems(n);
       const count=$('#probePortCount');
       if(count) count.textContent=`${ports.length} port(s)`;
       if(!ports.length){
@@ -1714,13 +1725,14 @@
       list.innerHTML=ports.map(item=>{
         const name=item.p.name || `${item.dir}${item.idx}`;
         const sid=`${slugId(n.id)}_${item.dir}_${slugId(name)}_${item.idx}`;
+        const key=inspectorPortKey(item.dir,name);
         const title=`${item.dir.toUpperCase()} · ${escapeHtml(name)}`;
-        return `<div class="probe-port-card">
-          <div class="probe-port-head"><span>${title}</span><small>${portSignalLabel(n,item.dir,item.p,item.idx)}</small></div>
+        return `<div class="probe-port-card" data-probe-card="${escapeHtml(key)}">
+          <div class="probe-port-head"><span>${title}</span><small data-probe-meta="${escapeHtml(key)}">${portSignalLabel(n,item.dir,item.p,item.idx)}</small></div>
           <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>${item.dir} port</small></div>
-          <canvas class="canvas-small inspector-probe-wave" id="wave_${sid}"></canvas>
+          <canvas class="canvas-small inspector-probe-wave" id="wave_${sid}" data-probe-key="${escapeHtml(key)}"></canvas>
           <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
-          <canvas class="canvas-small inspector-probe-spectrum" id="spec_${sid}"></canvas>
+          <canvas class="canvas-small inspector-probe-spectrum" id="spec_${sid}" data-probe-key="${escapeHtml(key)}"></canvas>
         </div>`;
       }).join('');
       drawInspectorProbeCanvases();
@@ -1797,15 +1809,119 @@
       }
       setInspectorTab(inspectorActiveTab,false);
     }
+    function inspectorBackendPorts(n){
+      return inspectorPortItems(n).map(item=>{
+        const name=item.p.name || `${item.dir}${item.idx}`;
+        return {dir:item.dir,name,max_ch:Number(item.p.max_ch || String(n.ch||'2').replace(/\D/g,'') || 2)};
+      });
+    }
+    function inspectorBackendContext(n){
+      return {
+        session_id:API_SESSION_ID,
+        project:currentProjectFile,
+        pipeline_id:currentPipelineId,
+        running,
+        node_id:n.id,
+        node_name:n.name,
+        module_type:n.moduleTypeId || '',
+        core:n.core,
+        channels:n.ch,
+        in_ports:nodePortList(n,'in'),
+        out_ports:nodePortList(n,'out'),
+        runtime_params:nodeRuntimeParams(n).map(p=>({param_id:paramId(p),param_name:paramName(p),value_type:paramType(p)}))
+      };
+    }
+    function syncInspectorBackendContext(n){
+      const ctx=inspectorBackendContext(n);
+      const key=JSON.stringify({node_id:ctx.node_id,module_type:ctx.module_type,in_ports:ctx.in_ports?.map(p=>p.name),out_ports:ctx.out_ports?.map(p=>p.name),pipeline_id:ctx.pipeline_id});
+      if(key===inspectorBackendContextKey) return;
+      inspectorBackendContextKey=key;
+      apiPost('/api/inspector/inspect',ctx);
+      backendNodeAction(n,'inspect',{module_type:ctx.module_type,ports:inspectorBackendPorts(n)});
+    }
+    function inspectorLiveQuery(n){
+      const ports=inspectorBackendPorts(n).map(p=>`${queryToken(p.dir)}:${queryToken(p.name)}:${Number(p.max_ch||1)}`).join(',');
+      return `/api/inspector/live?node_id=${queryToken(n.id)}&node_name=${queryToken(n.name)}&module_type=${queryToken(n.moduleTypeId||'')}&running=${running?1:0}&ports=${ports}`;
+    }
+    async function refreshInspectorBackend(){
+      const n=nodeById(selectedNodeId)||state.nodes[0];
+      if(!n) return false;
+      syncInspectorBackendContext(n);
+      const data=await apiGet(inspectorLiveQuery(n));
+      if(!data || data.ok===false) {
+        inspectorLiveState={running:false,general:null,ports:[],node_id:n.id};
+        applyInspectorLiveDataToUi(n);
+        return false;
+      }
+      inspectorLiveState=data;
+      applyInspectorLiveDataToUi(n);
+      drawInspectorProbeCanvases();
+      return true;
+    }
+    function dbText(v){
+      return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)} dBFS` : 'N/A';
+    }
+    function applyInspectorLiveDataToUi(n){
+      const live=inspectorLiveState || {};
+      const isLive=!!(running && live.running && (!live.node_id || live.node_id===n.id));
+      const g=live.general || {};
+      const ioIn=$('#ioIn'), ioOut=$('#ioOut'), rmsIn=$('#rmsIn'), peakOut=$('#peakOut'), peakBar=$('#peakBar'), frame=$('#frameSizeInfo');
+      if(ioIn) ioIn.textContent=isLive ? (g.input || 'N/A') : 'N/A';
+      if(ioOut) ioOut.textContent=isLive ? (g.output || 'N/A') : 'N/A';
+      if(rmsIn) rmsIn.textContent=isLive ? dbText(g.rmsIn) : 'N/A';
+      if(peakOut) peakOut.textContent=isLive ? dbText(g.peakOut) : 'N/A';
+      if(peakBar) peakBar.style.width=isLive && Number.isFinite(Number(g.peakOut)) ? clamp((60+Number(g.peakOut))/60*100,5,100)+'%' : '0%';
+      if(frame) frame.textContent=isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs||0).toFixed(2)} ms` : 'N/A';
+    }
+    function drawGridCanvas(canvas){
+      resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight;
+      ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h);
+      ctx.strokeStyle='rgba(90,126,170,.25)'; ctx.lineWidth=1;
+      for(let x=0;x<w;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+      for(let y=0;y<h;y+=28){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+      return {ctx,w,h};
+    }
+    function drawWaveData(canvas,data=[],active=false,colorA='#00d8ff',colorB='#b65cff'){
+      const {ctx,w,h}=drawGridCanvas(canvas);
+      const samples=Array.isArray(data)&&data.length?data:[0,0,0,0,0,0,0,0];
+      ctx.beginPath(); ctx.strokeStyle=active?colorA:'rgba(107,132,164,.55)'; ctx.lineWidth=1.5;
+      for(let x=0;x<w;x++){
+        const idx=Math.floor(x/w*samples.length);
+        const v=active?Number(samples[idx]||0):0;
+        const y=h/2 - v*h*.38;
+        if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      ctx.beginPath(); ctx.strokeStyle=active?colorB:'rgba(107,132,164,.35)'; ctx.globalAlpha=.65;
+      for(let x=0;x<w;x++){ const y=h*.62 + (active?Math.sin((x+t)*.035)*h*.08:0); if(x===0)ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+    function drawSpectrumData(canvas,data=[],active=false){
+      const {ctx,w,h}=drawGridCanvas(canvas);
+      const bars=Array.isArray(data)&&data.length?data:new Array(64).fill(0);
+      const bw=w/bars.length;
+      bars.forEach((raw,i)=>{
+        const val=active?clamp(Number(raw||0),0,1):0;
+        const bh=clamp(val*h,active?3:1,h*.92);
+        const g=ctx.createLinearGradient(0,h-bh,0,h); g.addColorStop(0,active?'#b65cff':'#394d68'); g.addColorStop(1,active?'#00d8ff':'#26394f');
+        ctx.fillStyle=g; ctx.fillRect(i*bw+1,h-bh,Math.max(1,bw-2),bh);
+      });
+    }
     function drawInspectorProbeCanvases(){
-      $$('.inspector-probe-wave').forEach((c,i)=>drawWave(c,i%2?'#6ee7ff':'#00d8ff',i%2?'#8b5cff':'#b65cff'));
-      $$('.inspector-probe-spectrum').forEach(c=>drawSpectrum(c));
+      const active=!!(running && inspectorLiveState?.running);
+      const portMap=new Map((inspectorLiveState?.ports||[]).map(p=>[p.key,p]));
+      $$('.inspector-probe-wave').forEach((c,i)=>{
+        const p=portMap.get(c.dataset.probeKey);
+        drawWaveData(c,p?.waveform||[],active && !!p,i%2?'#6ee7ff':'#00d8ff',i%2?'#8b5cff':'#b65cff');
+      });
+      $$('.inspector-probe-spectrum').forEach(c=>{
+        const p=portMap.get(c.dataset.probeKey);
+        drawSpectrumData(c,p?.spectrum||[],active && !!p);
+      });
     }
     function renderInspector(){
       const n=nodeById(selectedNodeId)||state.nodes[0]; if(!n) return;
       $('#selIcon').textContent=n.icon; $('#selName').textContent=n.name; $('#selSub').textContent=`${n.ch} · 48kHz · Core ${n.core}`; $('#probeName').textContent=`(${n.name} Output)`;
-      $('#ioIn').textContent=`${n.ch} · 48 kHz · 16-bit`; $('#ioOut').textContent=`${n.ch} · 48 kHz · 16-bit`;
-      $('#rmsIn').textContent=`${n.rms.toFixed(1)} dBFS`; $('#peakOut').textContent=`${n.peak.toFixed(1)} dBFS`; $('#peakBar').style.width=clamp((60+n.peak)/60*100,5,100)+'%';
       const params=nodeRuntimeParams(n);
       const ports=[...nodePortList(n,'in'),...nodePortList(n,'out')];
       const renderKey=`${n.id}|${n.moduleTypeId}|${params.map(paramId).join(',')}|${ports.map(p=>p.name).join(',')}|${JSON.stringify(nodeNotes(n)||{})}|${nodeDescription(n)}`;
@@ -1815,7 +1931,10 @@
         renderInspectorProbe(n);
         renderInspectorNotes(n);
         setInspectorTab(inspectorActiveTab,false);
+        inspectorBackendContextKey='';
       }
+      syncInspectorBackendContext(n);
+      applyInspectorLiveDataToUi(n);
     }
     function renderCostTable(){
       const sorted=[...state.nodes].sort((a,b)=>b.cpu-a.cpu).slice(0,10);
@@ -1864,7 +1983,7 @@
     function drawSpectrum(canvas){
       resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h); const bars=96; const bw=w/bars; for(let i=0;i<bars;i++){ const val=(Math.sin(i*.16+t*.02)+1)*.25 + Math.random()*.18 + (1-i/bars)*.35; const bh=clamp(val*h,4,h*.92); const g=ctx.createLinearGradient(0,h-bh,0,h); g.addColorStop(0,'#b65cff'); g.addColorStop(1,'#00d8ff'); ctx.fillStyle=g; ctx.fillRect(i*bw+1,h-bh,bw-2,bh); }
     }
-    function animate(){ if(running){ t+=2; drawWave($('#mainWave')); drawInspectorProbeCanvases(); } requestAnimationFrame(animate); }
+    function animate(){ if(running){ t+=2; drawWave($('#mainWave')); } drawInspectorProbeCanvases(); requestAnimationFrame(animate); }
     function inferNodePipelineId(n){
       if(n.pipelineId) return n.pipelineId;
       const s=String(n.id||'');
@@ -2266,8 +2385,8 @@
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
       $('#validateBtn').addEventListener('click',async ()=>{ const res=await apiPost('/api/pipeline/validate',pipelineSnapshot()); const warnings=res?.warnings||[]; const errors=res?.errors||[]; $('#warnCount').textContent=String(warnings.length); $('#errCount').textContent=String(errors.length); addLog(errors.length?'warn':'ok','Pipeline validated','Backend callback: /api/pipeline/validate'); toast(errors.length?'Validate failed':'Validate success');});
       $('#buildBtn').addEventListener('click',async ()=>{ buildState='building'; running=false; $('#playBtn').textContent='▶'; $('.badge.ok').textContent='◌ BUILDING'; toast('Building...'); addLog('info','Build started','Calling /api/pipeline/build'); const res=await apiPost('/api/pipeline/build',pipelineSnapshot()); setTimeout(()=>{buildState=res?.ok===false?'failed':'success'; $('.badge.ok').textContent=buildState==='success'?'● BUILD SUCCESS':'● BUILD FAILED'; if(res?.core_map){/* reserved for real DSP mapping */} else state.nodes.forEach(n=>n.core=Math.floor(Math.random()*4)); renderAll(true); addLog(buildState==='success'?'ok':'warn',buildState==='success'?'Build successful':'Build failed','Backend callback: /api/pipeline/build'); toast(buildState==='success'?'Build success':'Build failed');},300);});
-      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
-      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
+      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; inspectorBackendContextKey=''; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); refreshInspectorBackend(); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
+      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; inspectorBackendContextKey=''; $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); refreshInspectorBackend(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn')?.addEventListener('click',undoEdit);
       $('#redoBtn')?.addEventListener('click',redoEdit);
@@ -2279,7 +2398,7 @@
       $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
       $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]){$('#fileName').textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
       // Inspector parameters are now generated dynamically from module JSON runtime_params.
-      setInterval(updateRandom,600); animate();
+      setInterval(updateRandom,600); setInterval(refreshInspectorBackend,350); refreshInspectorBackend(); animate();
     }
     window.addEventListener('resize',()=>{updateWorldBounds(); if(!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true);});
     init();
