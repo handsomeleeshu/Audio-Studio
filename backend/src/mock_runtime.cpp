@@ -217,6 +217,158 @@ std::string FakeInspectorController::liveData(const std::map<std::string, std::s
   return os.str();
 }
 
+static int queryInt(const std::map<std::string, std::string>& q, const std::string& key, int fallback) {
+  try {
+    const auto v = queryGet(q, key);
+    return v.empty() ? fallback : std::stoi(v);
+  } catch (...) {
+    return fallback;
+  }
+}
+
+std::string FakeInspectorController::inspectBuffer(const std::string& request_json) {
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    current_buffer_key_ = simpleJsonField(request_json, "edge_key");
+    current_buffer_from_ = simpleJsonField(request_json, "from");
+    current_buffer_to_ = simpleJsonField(request_json, "to");
+    last_request_json_ = request_json;
+  }
+
+  printIntegrationTodo("IInspectorController::inspectBuffer", request_json,
+    "bind Inspector backend context to a runtime buffer between two modules; real product can map edge_key/from/to to a DSP ringbuffer or shared memory handle.");
+
+  std::ostringstream os;
+  os << "{\"ok\":true,\"callback\":\"IInspectorController::inspectBuffer\""
+     << ",\"edge_key\":\"" << jsonEscape(simpleJsonField(request_json, "edge_key")) << "\""
+     << ",\"mode\":\"fake\"}";
+  return os.str();
+}
+
+std::string FakeInspectorController::bufferLiveData(const std::map<std::string, std::string>& query) {
+  static std::atomic<int> buffer_live_count{0};
+  static std::atomic<long long> sine_sample_cursor{0};
+  const int count = ++buffer_live_count;
+
+  const bool run = queryBool(query, "running");
+  const int channels = std::max(1, queryInt(query, "channels", 2));
+  const int sample_rate = std::max(8000, queryInt(query, "sample_rate", 48000));
+  // The fake dump stream is PCM16. Keep format.bits aligned with pcm16 so the
+  // frontend WAV writer can write a correct file without conversion ambiguity.
+  const int bits = 16;
+  const int frame_samples = std::max(64, std::min(2048, queryInt(query, "frame_samples", 256)));
+  std::string edge_key = queryGet(query, "edge_key");
+  std::string from = queryGet(query, "from");
+  std::string to = queryGet(query, "to");
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (edge_key.empty()) edge_key = current_buffer_key_;
+    if (from.empty()) from = current_buffer_from_;
+    if (to.empty()) to = current_buffer_to_;
+  }
+
+  if (count == 1 || count % 25 == 0) {
+    std::cout << "\n[AudioStudio Backend CALLBACK] IInspectorController::bufferLiveData"
+              << "\n  Fake buffer live data: 1kHz sine PCM16. request_count=" << count
+              << " running=" << (run ? "true" : "false")
+              << " edge_key=" << edge_key
+              << " channels=" << channels
+              << " sample_rate=" << sample_rate
+              << " frame_samples=" << frame_samples << "\n" << std::flush;
+  }
+
+  const auto now_ms = static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+
+  constexpr double kPi = 3.1415926535897932384626433832795;
+  constexpr double kToneHz = 1000.0;
+  constexpr double kAmp = 0.60;
+
+  const long long start_sample = run ? sine_sample_cursor.fetch_add(frame_samples) : sine_sample_cursor.load();
+
+  std::vector<double> mono(static_cast<size_t>(frame_samples), 0.0);
+  std::vector<int> pcm;
+  pcm.reserve(static_cast<size_t>(frame_samples * channels));
+
+  double rms_acc = 0.0;
+  double peak_abs = 0.0;
+  for (int i = 0; i < frame_samples; ++i) {
+    double v = 0.0;
+    if (run) {
+      const double phase = 2.0 * kPi * kToneHz * static_cast<double>(start_sample + i) / static_cast<double>(sample_rate);
+      v = std::sin(phase) * kAmp;
+    }
+    mono[static_cast<size_t>(i)] = v;
+    rms_acc += v * v;
+    peak_abs = std::max(peak_abs, std::abs(v));
+    const int s = static_cast<int>(std::max(-32768.0, std::min(32767.0, std::round(v * 32767.0))));
+    for (int ch = 0; ch < channels; ++ch) pcm.push_back(s);
+  }
+
+  std::vector<double> wave(96, 0.0);
+  for (int i = 0; i < 96; ++i) {
+    if (run) {
+      const int src_i = static_cast<int>((static_cast<long long>(i) * frame_samples) / 96);
+      wave[static_cast<size_t>(i)] = mono[static_cast<size_t>(std::min(frame_samples - 1, src_i))];
+    }
+  }
+
+  std::vector<double> spec(64, 0.0);
+  if (run) {
+    // Lightweight fake spectrum with a clear peak around 1 kHz.
+    const double bin_hz = 20000.0 / 64.0;
+    for (int i = 0; i < 64; ++i) {
+      const double hz = (i + 0.5) * bin_hz;
+      const double dist = std::abs(hz - kToneHz);
+      double v = std::exp(-(dist * dist) / (2.0 * 260.0 * 260.0)) * 0.95 + 0.08 * std::exp(-i / 28.0);
+      if (v > 1.0) v = 1.0;
+      if (v < 0.0) v = 0.0;
+      spec[static_cast<size_t>(i)] = v;
+    }
+  }
+
+  const double rms = run ? 20.0 * std::log10(std::max(1e-5, std::sqrt(rms_acc / std::max(1, frame_samples)))) : -120.0;
+  const double peak = run ? 20.0 * std::log10(std::max(1e-5, peak_abs)) : -120.0;
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(3);
+  os << "{\"ok\":true,\"mode\":\"fake_buffer_1khz\",\"buffer\":true,\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now_ms
+     << ",\"edge_key\":\"" << jsonEscape(edge_key) << "\""
+     << ",\"from\":\"" << jsonEscape(from) << "\""
+     << ",\"to\":\"" << jsonEscape(to) << "\""
+     << ",\"toneHz\":1000"
+     << ",\"format\":{\"channels\":" << channels
+     << ",\"sampleRate\":" << sample_rate
+     << ",\"bits\":" << bits
+     << ",\"frameSamples\":" << frame_samples
+     << ",\"label\":\"" << channels << "ch · " << (sample_rate / 1000) << " kHz · " << bits << "-bit\"}"
+     << ",\"general\":{";
+
+  if (run) {
+    os << "\"format\":\"" << channels << "ch · " << (sample_rate / 1000) << " kHz · " << bits << "-bit\","
+       << "\"rms\":" << rms << ",\"peak\":" << peak
+       << ",\"frameSizeSamples\":" << frame_samples
+       << ",\"frameMs\":" << (1000.0 * frame_samples / sample_rate);
+  } else {
+    os << "\"format\":\"N/A\",\"rms\":null,\"peak\":null,\"frameSizeSamples\":null,\"frameMs\":null";
+  }
+
+  os << "},\"ports\":[{\"key\":\"buffer\",\"dir\":\"buffer\",\"name\":\"buffer\",\"channels\":" << channels
+     << ",\"sampleRate\":" << sample_rate << ",\"bitDepth\":" << bits
+     << ",\"rms\":" << (run ? rms : -120.0)
+     << ",\"peak\":" << (run ? peak : -120.0)
+     << ",\"waveform\":[";
+  for (size_t i = 0; i < wave.size(); ++i) { if (i) os << ','; os << wave[i]; }
+  os << "],\"spectrum\":[";
+  for (size_t i = 0; i < spec.size(); ++i) { if (i) os << ','; os << spec[i]; }
+  os << "]}],\"pcm16\":[";
+  for (size_t i = 0; i < pcm.size(); ++i) { if (i) os << ','; os << pcm[i]; }
+  os << "]}";
+  return os.str();
+}
+
 
 MockRuntimeEngine::MockRuntimeEngine() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));

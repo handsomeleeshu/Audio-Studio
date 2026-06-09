@@ -98,6 +98,9 @@ public:
   virtual ~IInspectorController() = default;
   virtual std::string inspectNode(const std::string& request_json) = 0;
   virtual std::string liveData(const std::map<std::string, std::string>& query) = 0;
+  // Buffer Inspector API. A connection line represents a runtime audio buffer.
+  virtual std::string inspectBuffer(const std::string& request_json) = 0;
+  virtual std::string bufferLiveData(const std::map<std::string, std::string>& query) = 0;
 };
 
 class FakeInspectorController final : public IInspectorController {
@@ -105,12 +108,17 @@ public:
   FakeInspectorController();
   std::string inspectNode(const std::string& request_json) override;
   std::string liveData(const std::map<std::string, std::string>& query) override;
+  std::string inspectBuffer(const std::string& request_json) override;
+  std::string bufferLiveData(const std::map<std::string, std::string>& query) override;
 private:
   double rnd(double min, double max);
   int rndi(int min, int max);
   std::string current_node_id_;
   std::string current_node_name_;
   std::string current_module_type_;
+  std::string current_buffer_key_;
+  std::string current_buffer_from_;
+  std::string current_buffer_to_;
   std::string last_request_json_;
   std::mutex mutex_;
   std::mt19937 rng_;

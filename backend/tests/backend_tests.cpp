@@ -31,6 +31,11 @@ int main() {
   auto live = inspector->liveData({{"node_id","eq_1"},{"running","1"},{"ports","in:in:2,out:out:2"}});
   assert(live.find("\"ports\"") != std::string::npos);
   assert(live.find("\"general\"") != std::string::npos);
+  auto inspect_buffer = inspector->inspectBuffer("{\"edge_key\":\"eq_1.out->out_1.in\",\"from\":\"eq_1.out\",\"to\":\"out_1.in\"}");
+  assert(inspect_buffer.find("inspectBuffer") != std::string::npos);
+  auto buffer_live = inspector->bufferLiveData({{"edge_key","eq_1.out->out_1.in"},{"running","1"},{"channels","2"},{"sample_rate","48000"},{"bits","16"}});
+  assert(buffer_live.find("\"buffer\"") != std::string::npos);
+  assert(buffer_live.find("\"pcm16\"") != std::string::npos);
 
   audiostudio::HttpServer server(".", 0, engine, engine, engine, inspector);
   audiostudio::HttpRequest req;
