@@ -2713,6 +2713,1607 @@
       renderBufferDumpUi = renderBufferDumpUiV39g;
     }
 
+
+    // v40: product-mode multi-buffer dump. No frontend local fake PCM.
+    if(!window.__audioStudioBufferDumpV40Installed){
+      window.__audioStudioBufferDumpV40Installed=true;
+
+      const bufferDumpSessionsV40 = new Map();
+
+      function dumpQueryParamV40(v=''){
+        return encodeURIComponent(String(v ?? ''));
+      }
+      function formatDumpBytesV40(bytes=0){
+        const n=Math.max(0,Number(bytes)||0);
+        if(n < 1024) return `${Math.round(n)} B`;
+        if(n < 1024*1024) return `${(n/1024).toFixed(n < 10*1024 ? 1 : 0)} KB`;
+        return `${(n/1024/1024).toFixed(2)} MB`;
+      }
+      function isInspectingBufferV40(){
+        return !!selectedEdgeKey && !selectedNodeId;
+      }
+      function currentInspectedEdgePartsV40(){
+        if(!selectedEdgeKey) return null;
+        const ep=parseEdgeKey(selectedEdgeKey);
+        return state.edges.some(e=>edgeKeyForEdge(e)===selectedEdgeKey) ? ep : null;
+      }
+      function bufferNameV40(ep){
+        return ep ? `${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}` : '';
+      }
+      function edgeBufferFormatV40(ep){
+        if(typeof edgeBufferFormat === 'function') return edgeBufferFormat(ep);
+        const fromNode=nodeById(ep?.from);
+        const toNode=nodeById(ep?.to);
+        const outPort=nodePortList(fromNode||{},'out').find(p=>p.name===ep?.fromPort) || {};
+        const inPort=nodePortList(toNode||{},'in').find(p=>p.name===ep?.toPort) || {};
+        const ch=Number(outPort.max_ch || inPort.max_ch || String(fromNode?.ch||toNode?.ch||'2').replace(/\D/g,'') || 2);
+        return {channels:Math.max(1,ch),sampleRate:48000,bits:16,frameSamples:480,label:`${Math.max(1,ch)}ch · 48 kHz · 16-bit`};
+      }
+      function sessionForEdgeV40(key, ep, create=true){
+        if(!key) return null;
+        let s=bufferDumpSessionsV40.get(key);
+        if(!s && create){
+          s={
+            edgeKey:key,
+            ep:ep || parseEdgeKey(key),
+            active:false,
+            switching:false,
+            fileName:'',
+            handle:null,
+            writable:null,
+            fallback:false,
+            bytes:0,
+            chunks:[],
+            format:ep ? edgeBufferFormatV40(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:480,label:'2ch · 48 kHz · 16-bit'},
+            timer:null,
+            writeChain:Promise.resolve(),
+            pumpBusy:false,
+            lastFrameSeq:0
+          };
+          bufferDumpSessionsV40.set(key,s);
+        }
+        if(s && ep) s.ep=ep;
+        return s;
+      }
+      function selectedSessionV40(ep=currentInspectedEdgePartsV40()){
+        return sessionForEdgeV40(selectedEdgeKey, ep, true);
+      }
+      function isEdgeDumpingV40(key){
+        return !!bufferDumpSessionsV40.get(key)?.active;
+      }
+      function activeDumpCountV40(){
+        let n=0;
+        bufferDumpSessionsV40.forEach(s=>{ if(s.active) n++; });
+        return n;
+      }
+      function setInspectorModeV40(mode){
+        const visible = mode==='buffer' ? new Set(['general','probe','dump']) : new Set(['general','parameters','probe','notes']);
+        $$('#inspectorTabs button').forEach(b=>{ b.style.display=visible.has(b.dataset.inspectorTab)?'':'none'; });
+        $$('.inspector-section').forEach(sec=>{
+          const key=sec.dataset.inspectorSection;
+          sec.style.display=visible.has(key)?'':'none';
+        });
+        if(!visible.has(inspectorActiveTab)) inspectorActiveTab='general';
+        setInspectorTab(inspectorActiveTab,false);
+      }
+      function setGeneralLabelsForBufferV40(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Format';
+        if(rows[1]) rows[1].style.display='none';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function resetGeneralLabelsForNodeV40(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Input';
+        if(rows[1]) rows[1].querySelector('span').textContent='Output';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS In';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak Out';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function bufferLiveQueryV40(ep,key=selectedEdgeKey){
+        const fmt=edgeBufferFormatV40(ep);
+        return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40(key)}&from=${dumpQueryParamV40(ep.from+'.'+ep.fromPort)}&to=${dumpQueryParamV40(ep.to+'.'+ep.toPort)}&running=${running?1:0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples||480}`;
+      }
+      async function fetchBackendBufferFrameV40(ep,key=selectedEdgeKey){
+        const data=await apiGet(bufferLiveQueryV40(ep,key));
+        if(!data || data.ok===false || !Array.isArray(data.pcm16) || (running && !data.pcm16.length)) return null;
+        data.source='backend';
+        data.server_edge_key=data.edge_key || '';
+        data.edge_key=key;
+        return data;
+      }
+      async function fetchBufferProbeFrameV40(ep,key=selectedEdgeKey){
+        const data=await apiGet(bufferLiveQueryV40(ep,key));
+        if(data && data.ok!==false){
+          data.source='backend';
+          data.server_edge_key=data.edge_key || '';
+          data.edge_key=key;
+          return data;
+        }
+        // Probe can still use visual fallback, but Dump must not.
+        const fmt=edgeBufferFormatV40(ep);
+        const runActive=!!running;
+        return {
+          ok:true,mode:'visual_fallback_only',source:'visual_fallback',buffer:true,running:runActive,timestamp_ms:Date.now(),
+          edge_key:key,format:fmt,
+          general:runActive?{format:fmt.label,rms:-rnd(12,34),peak:-rnd(1.2,10),frameSizeSamples:fmt.frameSamples||480,frameMs:(fmt.frameSamples||480)*1000/fmt.sampleRate}:{format:'N/A',rms:null,peak:null,frameSizeSamples:null,frameMs:null},
+          ports:[{key:'buffer',dir:'buffer',name:'buffer',channels:fmt.channels,sampleRate:fmt.sampleRate,bitDepth:fmt.bits,waveform:fallbackInspectorWave(0,runActive),spectrum:fallbackInspectorSpectrum(0,runActive)}],
+          pcm16:[]
+        };
+      }
+      function updateBufferDumpWrittenUiV40(s=selectedSessionV40()){
+        const el=$('#dumpWrittenValue');
+        if(el) el.textContent=formatDumpBytesV40(s?.bytes||0);
+      }
+      function renderBufferProbeV40(ep){
+        const list=$('#inspectorProbeList');
+        if(!list) return;
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const fmt=liveFmt || edgeBufferFormatV40(ep);
+        const label=(running && liveFmt) ? (fmt.label || `${fmt.channels}ch · ${fmt.sampleRate||48000} Hz · ${fmt.bits||16}-bit`) : 'N/A';
+        const count=$('#probePortCount');
+        if(count) count.textContent='1 buffer';
+        list.innerHTML=`<div class="probe-port-card" data-probe-card="buffer">
+          <div class="probe-port-head"><span>BUFFER</span><small>${escapeHtml(label)}</small></div>
+          <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>buffer</small></div>
+          <canvas class="canvas-small inspector-probe-wave" id="wave_buffer" data-probe-key="buffer"></canvas>
+          <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
+          <canvas class="canvas-small inspector-probe-spectrum" id="spec_buffer" data-probe-key="buffer"></canvas>
+        </div>`;
+        drawInspectorProbeCanvases();
+      }
+      function renderBufferDumpUiV40(ep){
+        const body=$('#inspectorDumpBody');
+        if(!body) return;
+        const s=selectedSessionV40(ep);
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const formatText=liveFmt?.label || liveFmt?.format || (s?.active && s.format?.label ? s.format.label : 'N/A');
+        const active=!!s?.active;
+        const busy=!!s?.switching;
+        const toggleClass=active?'red':'green';
+        const toggleText=busy ? (active?'Stopping...':'Starting...') : (active?'Stop Dump':'Start Dump');
+        const chooseDisabled=(active||busy)?'disabled':'';
+        const targetName=s?.fileName || 'Not selected';
+        const activeCount=activeDumpCountV40();
+        body.innerHTML=`<div class="dump-card">
+          <div class="dump-row"><span>Format</span><b>${escapeHtml(formatText)}</b></div>
+          <div class="dump-row"><span>Target File</span><b class="dump-file-name" title="${escapeHtml(targetName)}">${escapeHtml(targetName)}</b></div>
+          <div class="dump-row"><span>Written</span><b id="dumpWrittenValue">${formatDumpBytesV40(s?.bytes||0)}</b></div>
+          <div class="dump-actions">
+            <button class="btn cyan" id="chooseDumpFileBtn" ${chooseDisabled}>Choose WAV File</button>
+            <button class="btn ${toggleClass}" id="bufferDumpToggleBtn" ${busy?'disabled':''}>${toggleText}</button>
+          </div>
+          <div class="dump-status">${active?`<b>Dumping...</b> client wav writer · ${activeCount} buffer(s) active.`:'Start Dump requires pipeline running and backend buffer API.'}</div>
+        </div>`;
+        $('#chooseDumpFileBtn')?.addEventListener('click',()=>{ if(!s?.active && !s?.switching) chooseBufferDumpFileV40(ep,s); });
+        $('#bufferDumpToggleBtn')?.addEventListener('click',()=>{ active ? stopBufferDumpV40(s,'manual') : startBufferDumpV40(ep); });
+        updateBufferDumpWrittenUiV40(s);
+      }
+      function wavHeaderV40(dataBytes,fmt){
+        const channels=fmt.channels||2, sampleRate=fmt.sampleRate||48000, bits=fmt.bits||16;
+        const blockAlign=channels*bits/8, byteRate=sampleRate*blockAlign;
+        const b=new ArrayBuffer(44), v=new DataView(b);
+        const s=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
+        s(0,'RIFF'); v.setUint32(4,36+dataBytes,true); s(8,'WAVE'); s(12,'fmt ');
+        v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,channels,true); v.setUint32(24,sampleRate,true); v.setUint32(28,byteRate,true); v.setUint16(32,blockAlign,true); v.setUint16(34,bits,true);
+        s(36,'data'); v.setUint32(40,dataBytes,true);
+        return b;
+      }
+      function pcm16BytesV40(pcm16=[]){
+        const a=new Int16Array(pcm16.length);
+        pcm16.forEach((v,i)=>a[i]=Math.max(-32768,Math.min(32767,Number(v)||0)));
+        return a.buffer;
+      }
+      async function chooseBufferDumpFileV40(ep=currentInspectedEdgePartsV40(), s=selectedSessionV40(ep)){
+        if(!ep || !s){toast('Please select a buffer first');return false;}
+        const suggested=`${ep.from}_${ep.fromPort}_to_${ep.to}_${ep.toPort}.wav`.replace(/[^A-Za-z0-9_.-]+/g,'_');
+        if(window.showSaveFilePicker){
+          try{
+            // Must be called directly from the click path before backend fetch.
+            s.handle=await window.showSaveFilePicker({suggestedName:suggested,types:[{description:'WAV audio',accept:{'audio/wav':['.wav']}}]});
+            s.fileName=s.handle.name || suggested;
+            s.fallback=false;
+            renderBufferDumpUiV40(ep);
+            return true;
+          }catch(e){
+            if(e?.name==='AbortError') return false;
+            console.warn('showSaveFilePicker failed',e);
+          }
+        }
+        s.handle=null;
+        s.fileName=suggested;
+        s.fallback=true;
+        toast('Browser fallback: WAV will download when Stop Dump is clicked');
+        renderBufferDumpUiV40(ep);
+        return true;
+      }
+      function queueDumpWriteV40(s, bytes){
+        s.writeChain=(s.writeChain||Promise.resolve()).then(async()=>{
+          if(s.writable) await s.writable.write(bytes);
+          else s.chunks.push(bytes);
+        }).catch(e=>{
+          addLog('warn','Buffer dump write failed',e.message||String(e));
+          throw e;
+        });
+        return s.writeChain;
+      }
+      async function appendDumpPcmFrameV40(s,live){
+        if(!s?.active || !live || !running) return false;
+        if(live.source!=='backend' || !Array.isArray(live.pcm16) || !live.pcm16.length) return false;
+        const bytes=pcm16BytesV40(live.pcm16);
+        if(!bytes.byteLength) return false;
+        s.bytes += bytes.byteLength;
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40(s);
+        await queueDumpWriteV40(s,bytes);
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40(s);
+        return true;
+      }
+      async function startBufferDumpV40(ep=currentInspectedEdgePartsV40()){
+        if(!running){toast('Only running pipeline can start buffer dump'); return;}
+        if(!ep){toast('Please select a buffer first'); return;}
+        const key=selectedEdgeKey;
+        const s=sessionForEdgeV40(key,ep,true);
+        if(!s || s.active || s.switching) return;
+
+        if(!s.fileName && !s.handle){
+          const ok=await chooseBufferDumpFileV40(ep,s);
+          if(!ok && window.showSaveFilePicker) return;
+        }
+        if(!s.fileName && !s.handle){
+          const suggested=`${ep.from}_${ep.fromPort}_to_${ep.to}_${ep.toPort}.wav`.replace(/[^A-Za-z0-9_.-]+/g,'_');
+          s.fileName=suggested;
+          s.fallback=true;
+        }
+
+        s.switching=true;
+        s.active=true;
+        s.edgeKey=key;
+        s.ep=ep;
+        s.bytes=0;
+        s.chunks=[];
+        s.format=edgeBufferFormatV40(ep);
+        s.writeChain=Promise.resolve();
+        s.pumpBusy=false;
+        s.lastFrameSeq=0;
+        if(s.timer){ clearInterval(s.timer); s.timer=null; }
+        if(s.writable){ try{ await s.writable.close(); }catch(e){} s.writable=null; }
+        renderBufferDumpUiV40(ep);
+        drawEdges();
+
+        const firstLive=await fetchBackendBufferFrameV40(ep,key);
+        if(!firstLive){
+          s.active=false;
+          s.switching=false;
+          renderBufferDumpUiV40(ep);
+          drawEdges();
+          const msg='Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
+          toast(msg);
+          addLog('warn','Buffer dump blocked',msg);
+          return;
+        }
+
+        s.format=firstLive.format || s.format;
+        inspectorLiveState=firstLive;
+        applyInspectorBufferLiveDataToUiV40(ep);
+        renderBufferProbeV40(ep);
+
+        if(s.handle && !s.fallback){
+          s.writable=await s.handle.createWritable();
+          await s.writable.write(wavHeaderV40(0,s.format));
+        }else{
+          s.chunks.push(wavHeaderV40(0,s.format));
+        }
+
+        apiPost('/api/inspector/buffer/inspect',{session_id:API_SESSION_ID,edge_key:key,from:`${ep.from}.${ep.fromPort}`,to:`${ep.to}.${ep.toPort}`,format:s.format,dump:true});
+        addLog('ok','Buffer dump started',`${bufferNameV40(ep)} · backend PCM`);
+
+        await appendDumpPcmFrameV40(s,firstLive);
+
+        const pump=async()=>{
+          if(!s.active || !running || s.pumpBusy) return;
+          s.pumpBusy=true;
+          try{
+            const live=await fetchBackendBufferFrameV40(s.ep,key);
+            if(!live) return;
+            if(selectedEdgeKey===key){
+              inspectorLiveState=live;
+              applyInspectorBufferLiveDataToUiV40(s.ep);
+              drawInspectorProbeCanvases();
+            }
+            await appendDumpPcmFrameV40(s,live);
+          }finally{
+            s.pumpBusy=false;
+          }
+        };
+        s.timer=setInterval(pump,80);
+        s.switching=false;
+        renderBufferDumpUiV40(ep);
+        drawEdges();
+      }
+      async function stopBufferDumpV40(s=selectedSessionV40(), reason=''){
+        if(!s || s.switching || !s.active) return;
+        const ep=s.ep || parseEdgeKey(s.edgeKey);
+        s.switching=true;
+        if(s.timer){ clearInterval(s.timer); s.timer=null; }
+        const fmt=s.format || {channels:2,sampleRate:48000,bits:16};
+        const fileName=s.fileName || 'buffer_dump.wav';
+
+        // Immediate visual feedback.
+        s.active=false;
+        if(selectedEdgeKey===s.edgeKey) renderBufferDumpUiV40(ep);
+        drawEdges();
+
+        try{
+          if(s.writeChain) await s.writeChain;
+          if(s.writable){
+            await s.writable.write({type:'seek',position:0});
+            await s.writable.write(wavHeaderV40(s.bytes,fmt));
+            await s.writable.close();
+          }else{
+            s.chunks[0]=wavHeaderV40(s.bytes,fmt);
+            const blob=new Blob(s.chunks,{type:'audio/wav'});
+            const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fileName; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+          }
+          addLog('ok','Buffer dump stopped',`${fileName} · ${formatDumpBytesV40(s.bytes)}`);
+        }catch(e){
+          addLog('warn','Buffer dump stop failed',e.message||String(e));
+        }
+        s.writable=null;
+        s.chunks=[];
+        s.timer=null;
+        s.writeChain=Promise.resolve();
+        s.pumpBusy=false;
+        s.switching=false;
+        if(selectedEdgeKey===s.edgeKey) {
+          renderBufferDumpUiV40(ep);
+          updateBufferDumpWrittenUiV40(s);
+        }
+        drawEdges();
+      }
+      async function stopAllBufferDumpsV40(reason=''){
+        const active=[...bufferDumpSessionsV40.values()].filter(s=>s.active);
+        await Promise.all(active.map(s=>stopBufferDumpV40(s,reason)));
+      }
+      function applyInspectorBufferLiveDataToUiV40(ep){
+        const live=inspectorLiveState || {};
+        const isLive=!!(running && live.running && live.buffer);
+        const fmt=live.format || edgeBufferFormatV40(ep);
+        const g=live.general || {};
+        const ioIn=$('#ioIn'), ioOut=$('#ioOut'), rmsIn=$('#rmsIn'), peakOut=$('#peakOut'), peakBar=$('#peakBar'), frame=$('#frameSizeInfo');
+        if(ioIn) ioIn.textContent=isLive ? (fmt.label || g.format || 'N/A') : 'N/A';
+        if(ioOut) ioOut.textContent='';
+        if(rmsIn) rmsIn.textContent=isLive ? dbText(g.rms) : 'N/A';
+        if(peakOut) peakOut.textContent=isLive ? dbText(g.peak) : 'N/A';
+        if(peakBar) peakBar.style.width=isLive && Number.isFinite(Number(g.peak)) ? clamp((60+Number(g.peak))/60*100,5,100)+'%' : '0%';
+        if(frame) frame.textContent=isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs||0).toFixed(2)} ms` : 'N/A';
+      }
+      async function refreshBufferInspectorBackendV40(ep=currentInspectedEdgePartsV40()){
+        if(!ep) return false;
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        const data=await fetchBufferProbeFrameV40(ep,selectedEdgeKey);
+        inspectorLiveState=data;
+        if(data?.source==='backend') inspectorBackendLiveFallbackLogged=false;
+        else if(running && !inspectorBackendLiveFallbackLogged){
+          inspectorBackendLiveFallbackLogged=true;
+          addLog('warn','Buffer Inspector visual fallback','GET /api/inspector/buffer/live unavailable for visual probe');
+        }
+        applyInspectorBufferLiveDataToUiV40(ep);
+        renderBufferProbeV40(ep);
+        renderBufferDumpUiV40(ep);
+        return data?.source==='backend';
+      }
+      function renderBufferInspectorV40(){
+        const ep=currentInspectedEdgePartsV40();
+        if(!ep) return false;
+        setInspectorModeV40('buffer');
+        setGeneralLabelsForBufferV40();
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : edgeBufferFormatV40(ep);
+        $('#selIcon').textContent='▰';
+        $('#selName').textContent='Buffer';
+        $('#selSub').textContent=`${bufferNameV40(ep)} · ${running && liveFmt?.label ? liveFmt.label : edgeBufferFormatV40(ep).label}`;
+        $('#probeName').textContent=`(${ep.from}.${ep.fromPort} Buffer)`;
+        selectedSessionV40(ep);
+        applyInspectorBufferLiveDataToUiV40(ep);
+        renderBufferProbeV40(ep);
+        renderBufferDumpUiV40(ep);
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        return true;
+      }
+
+      // Override drawEdges so selected buffer and multi-buffer dumping are obvious.
+      drawEdges = function(){
+        syncWorldGeometry();
+        const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
+        svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
+        svg.setAttribute('preserveAspectRatio','none');
+        const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+        defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><linearGradient id="dumpGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffcc45"/><stop offset="100%" stop-color="#ffa826"/></linearGradient><linearGradient id="selectedEdgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffffff"/><stop offset="45%" stop-color="#00f5ff"/><stop offset="100%" stop-color="#66fffb"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="12" refX="9.4" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,6 L0,12 Z" fill="#00d8ff"/></marker><marker id="selectedArrow" markerWidth="13" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L13,7.5 L0,15 Z" fill="#ffffff"/></marker>`;
+        svg.appendChild(defs);
+        state.edges.forEach((edge,idx)=>{
+          const ep=edgeParts(edge);
+          const a=nodeById(ep.from), b=nodeById(ep.to); if(!a||!b) return;
+          const d=edgePath(a,b,ep.fromPort,ep.toPort);
+          const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
+          const selected=isEdgeSelectedKey(key);
+          const dumping=isEdgeDumpingV40(key);
+          const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+          let stroke='url(#edgeGrad)', width='3', marker='url(#arrow)';
+          if(dumping){ stroke='url(#dumpGrad)'; width=selected?'8':'6'; marker='url(#selectedArrow)'; }
+          if(selected){ stroke='url(#selectedEdgeGrad)'; width=dumping?'9':'7'; marker='url(#selectedArrow)'; }
+          p.setAttribute('d',d);
+          p.setAttribute('fill','none');
+          p.setAttribute('stroke',stroke);
+          p.setAttribute('stroke-width',width);
+          p.setAttribute('marker-end',marker);
+          p.setAttribute('class',`edge-glow ${selected?'selected selected-buffer':''} ${dumping?'dumping':''}`);
+          p.style.filter = selected
+            ? 'drop-shadow(0 0 16px rgba(255,255,255,.95)) drop-shadow(0 0 26px rgba(0,245,255,.75))'
+            : (dumping ? 'drop-shadow(0 0 16px rgba(255,204,69,.96)) drop-shadow(0 0 24px rgba(255,168,38,.55))' : '');
+          const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+          hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
+          const bindEdgeSelect=(el)=>{
+            el.addEventListener('pointerdown',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('dblclick',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key); deleteSelectedEdge();});
+          };
+          bindEdgeSelect(p);
+          bindEdgeSelect(hit);
+          svg.appendChild(p);
+          svg.appendChild(hit);
+          if(running){
+            const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r',dumping?'4':'3'); dot.setAttribute('class','edge-particle');
+            const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
+          }
+          if(idx%2===0){ const pa=portPoint(a,'out',ep.fromPort), pb=portPoint(b,'in',ep.toPort); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
+        });
+      };
+
+      const __renderInspectorBeforeBufferV40 = renderInspector;
+      renderInspector = function(){
+        if(isInspectingBufferV40() && renderBufferInspectorV40()) return;
+        setInspectorModeV40('node');
+        resetGeneralLabelsForNodeV40();
+        return __renderInspectorBeforeBufferV40();
+      };
+
+      const __refreshInspectorBackendBeforeBufferV40 = refreshInspectorBackend;
+      refreshInspectorBackend = async function(){
+        if(isInspectingBufferV40()) return refreshBufferInspectorBackendV40();
+        return __refreshInspectorBackendBeforeBufferV40();
+      };
+
+      // Keep old public names working, but implement them on the selected session.
+      startBufferDump = startBufferDumpV40;
+      stopBufferDump = async function(reason='manual'){ return stopBufferDumpV40(selectedSessionV40(),reason); };
+      renderBufferDumpUi = renderBufferDumpUiV40;
+
+      // Pipeline Stop must close all active buffer dumps.
+      $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40('pipeline_stop'); }, true);
+    }
+
+
+    // v40b: stable product-mode multi-buffer dump. No frontend fake PCM dump.
+    if(!window.__audioStudioBufferDumpV40bInstalled){
+      window.__audioStudioBufferDumpV40bInstalled=true;
+
+      const bufferDumpSessionsV40b = new Map();
+      let bufferDumpPipelineEpochV40b = 1;
+
+      function dumpQueryParamV40b(v=''){
+        return encodeURIComponent(String(v ?? ''));
+      }
+      function formatDumpBytesV40b(bytes=0){
+        const n=Math.max(0,Number(bytes)||0);
+        if(n < 1024) return `${Math.round(n)} B`;
+        if(n < 1024*1024) return `${(n/1024).toFixed(n < 10*1024 ? 1 : 0)} KB`;
+        return `${(n/1024/1024).toFixed(2)} MB`;
+      }
+      function isInspectingBufferV40b(){
+        return !!selectedEdgeKey && !selectedNodeId;
+      }
+      function currentInspectedEdgePartsV40b(){
+        if(!selectedEdgeKey) return null;
+        const ep=parseEdgeKey(selectedEdgeKey);
+        return state.edges.some(e=>edgeKeyForEdge(e)===selectedEdgeKey) ? ep : null;
+      }
+      function bufferBaseNameV40b(ep){
+        if(!ep) return 'buffer_dump';
+        return `${ep.from}_${ep.fromPort}_to_${ep.to}_${ep.toPort}`.replace(/[^A-Za-z0-9_.-]+/g,'_');
+      }
+      function bufferDefaultFileNameV40b(ep){
+        return `${bufferBaseNameV40b(ep)}.wav`;
+      }
+      function bufferNameV40b(ep){
+        return ep ? `${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}` : '';
+      }
+      function edgeBufferFormatV40b(ep){
+        if(typeof edgeBufferFormat === 'function') return edgeBufferFormat(ep);
+        const fromNode=nodeById(ep?.from);
+        const toNode=nodeById(ep?.to);
+        const outPort=nodePortList(fromNode||{},'out').find(p=>p.name===ep?.fromPort) || {};
+        const inPort=nodePortList(toNode||{},'in').find(p=>p.name===ep?.toPort) || {};
+        const ch=Number(outPort.max_ch || inPort.max_ch || String(fromNode?.ch||toNode?.ch||'2').replace(/\D/g,'') || 2);
+        return {channels:Math.max(1,ch),sampleRate:48000,bits:16,frameSamples:480,label:`${Math.max(1,ch)}ch · 48 kHz · 16-bit`};
+      }
+      function formatSignatureV40b(fmt){
+        return `${Number(fmt?.channels||0)}:${Number(fmt?.sampleRate||0)}:${Number(fmt?.bits||0)}`;
+      }
+      function sessionForEdgeV40b(key, ep, create=true){
+        if(!key) return null;
+        let s=bufferDumpSessionsV40b.get(key);
+        if(!s && create){
+          s={
+            edgeKey:key,
+            ep:ep || parseEdgeKey(key),
+            active:false,
+            switching:false,
+            finalizing:false,
+            fileName:'',
+            explicitFileName:false,
+            handle:null,
+            writable:null,
+            fallback:false,
+            bytes:0,
+            chunks:[],
+            format:ep ? edgeBufferFormatV40b(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:480,label:'2ch · 48 kHz · 16-bit'},
+            formatSig:'',
+            timer:null,
+            writeChain:Promise.resolve(),
+            finalizePromise:Promise.resolve(),
+            pumpBusy:false,
+            pipelineEpoch:bufferDumpPipelineEpochV40b,
+            resetOnNextStart:false
+          };
+          s.formatSig=formatSignatureV40b(s.format);
+          bufferDumpSessionsV40b.set(key,s);
+        }
+        if(s && ep) s.ep=ep;
+        return s;
+      }
+      function selectedSessionV40b(ep=currentInspectedEdgePartsV40b()){
+        return sessionForEdgeV40b(selectedEdgeKey, ep, true);
+      }
+      function displayTargetNameV40b(s, ep){
+        return s?.explicitFileName && s.fileName ? s.fileName : bufferDefaultFileNameV40b(ep || s?.ep);
+      }
+      function isEdgeDumpingV40b(key){
+        return !!bufferDumpSessionsV40b.get(key)?.active;
+      }
+      function activeDumpCountV40b(){
+        let n=0;
+        bufferDumpSessionsV40b.forEach(s=>{ if(s.active) n++; });
+        return n;
+      }
+      function setInspectorModeV40b(mode){
+        const visible = mode==='buffer' ? new Set(['general','probe','dump']) : new Set(['general','parameters','probe','notes']);
+        $$('#inspectorTabs button').forEach(b=>{ b.style.display=visible.has(b.dataset.inspectorTab)?'':'none'; });
+        $$('.inspector-section').forEach(sec=>{
+          const key=sec.dataset.inspectorSection;
+          sec.style.display=visible.has(key)?'':'none';
+        });
+        if(!visible.has(inspectorActiveTab)) inspectorActiveTab='general';
+        setInspectorTab(inspectorActiveTab,false);
+      }
+      function setGeneralLabelsForBufferV40b(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Format';
+        if(rows[1]) rows[1].style.display='none';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function resetGeneralLabelsForNodeV40b(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Input';
+        if(rows[1]) rows[1].querySelector('span').textContent='Output';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS In';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak Out';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function bufferLiveQueryV40b(ep,key=selectedEdgeKey){
+        const fmt=edgeBufferFormatV40b(ep);
+        return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40b(key)}&from=${dumpQueryParamV40b(ep.from+'.'+ep.fromPort)}&to=${dumpQueryParamV40b(ep.to+'.'+ep.toPort)}&running=${running?1:0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples||480}`;
+      }
+      async function fetchBackendBufferFrameV40b(ep,key=selectedEdgeKey){
+        const data=await apiGet(bufferLiveQueryV40b(ep,key));
+        if(!data || data.ok===false || !Array.isArray(data.pcm16) || (running && !data.pcm16.length)) return null;
+        data.source='backend';
+        data.server_edge_key=data.edge_key || '';
+        data.edge_key=key;
+        return data;
+      }
+      async function fetchBufferProbeFrameV40b(ep,key=selectedEdgeKey){
+        const data=await apiGet(bufferLiveQueryV40b(ep,key));
+        if(data && data.ok!==false){
+          data.source='backend';
+          data.server_edge_key=data.edge_key || '';
+          data.edge_key=key;
+          return data;
+        }
+        const fmt=edgeBufferFormatV40b(ep);
+        const runActive=!!running;
+        return {
+          ok:true,mode:'visual_fallback_only',source:'visual_fallback',buffer:true,running:runActive,timestamp_ms:Date.now(),
+          edge_key:key,format:fmt,
+          general:runActive?{format:fmt.label,rms:-rnd(12,34),peak:-rnd(1.2,10),frameSizeSamples:fmt.frameSamples||480,frameMs:(fmt.frameSamples||480)*1000/fmt.sampleRate}:{format:'N/A',rms:null,peak:null,frameSizeSamples:null,frameMs:null},
+          ports:[{key:'buffer',dir:'buffer',name:'buffer',channels:fmt.channels,sampleRate:fmt.sampleRate,bitDepth:fmt.bits,waveform:fallbackInspectorWave(0,runActive),spectrum:fallbackInspectorSpectrum(0,runActive)}],
+          pcm16:[]
+        };
+      }
+      function updateBufferDumpWrittenUiV40b(s=selectedSessionV40b()){
+        const el=$('#dumpWrittenValue');
+        if(el) el.textContent=formatDumpBytesV40b(s?.bytes||0);
+      }
+      function markDumpButtonBusyNowV40b(text='Starting...'){
+        const btn=$('#bufferDumpToggleBtn');
+        if(btn){
+          btn.disabled=true;
+          btn.textContent=text;
+          btn.style.opacity='.48';
+          btn.style.filter='grayscale(.35)';
+        }
+      }
+      function renderBufferProbeV40b(ep){
+        const list=$('#inspectorProbeList');
+        if(!list) return;
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const fmt=liveFmt || edgeBufferFormatV40b(ep);
+        const label=(running && liveFmt) ? (fmt.label || `${fmt.channels}ch · ${fmt.sampleRate||48000} Hz · ${fmt.bits||16}-bit`) : 'N/A';
+        const count=$('#probePortCount');
+        if(count) count.textContent='1 buffer';
+        list.innerHTML=`<div class="probe-port-card" data-probe-card="buffer">
+          <div class="probe-port-head"><span>BUFFER</span><small>${escapeHtml(label)}</small></div>
+          <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>buffer</small></div>
+          <canvas class="canvas-small inspector-probe-wave" id="wave_buffer" data-probe-key="buffer"></canvas>
+          <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
+          <canvas class="canvas-small inspector-probe-spectrum" id="spec_buffer" data-probe-key="buffer"></canvas>
+        </div>`;
+        drawInspectorProbeCanvases();
+      }
+      function renderBufferDumpUiV40b(ep){
+        const body=$('#inspectorDumpBody');
+        if(!body) return;
+        const s=selectedSessionV40b(ep);
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const formatText=liveFmt?.label || liveFmt?.format || (s?.active && s.format?.label ? s.format.label : 'N/A');
+        const active=!!s?.active;
+        const busy=!!(s?.switching || s?.finalizing);
+        const targetName=displayTargetNameV40b(s,ep);
+        const activeCount=activeDumpCountV40b();
+        const toggleClass=active?'red':'green';
+        let toggleText=active?'Stop Dump':'Start Dump';
+        if(s?.switching) toggleText=active?'Stopping...':'Starting...';
+        if(s?.finalizing) toggleText='Finalizing...';
+        const chooseDisabled=(active||busy)?'disabled':'';
+        body.innerHTML=`<div class="dump-card">
+          <div class="dump-row"><span>Format</span><b>${escapeHtml(formatText)}</b></div>
+          <div class="dump-row"><span>Target File</span><b class="dump-file-name" title="${escapeHtml(targetName)}">${escapeHtml(targetName)}</b></div>
+          <div class="dump-row"><span>Written</span><b id="dumpWrittenValue">${formatDumpBytesV40b(s?.bytes||0)}</b></div>
+          <div class="dump-actions">
+            <button class="btn cyan" id="chooseDumpFileBtn" ${chooseDisabled}>Choose WAV File</button>
+            <button class="btn ${toggleClass}" id="bufferDumpToggleBtn" ${busy?'disabled':''}>${toggleText}</button>
+          </div>
+          <div class="dump-status">${active?`<b>Dumping...</b> client wav writer · ${activeCount} buffer(s) active.`:'Start Dump requires pipeline running and backend buffer API.'}</div>
+        </div>`;
+        $('#chooseDumpFileBtn')?.addEventListener('click',()=>{ if(!s?.active && !s?.switching && !s?.finalizing) chooseBufferDumpFileV40b(ep,s); });
+        $('#bufferDumpToggleBtn')?.addEventListener('click',()=>{ active ? stopBufferDumpV40b(s,'manual') : startBufferDumpV40b(ep); });
+        updateBufferDumpWrittenUiV40b(s);
+      }
+      function wavHeaderV40b(dataBytes,fmt){
+        const channels=fmt.channels||2, sampleRate=fmt.sampleRate||48000, bits=fmt.bits||16;
+        const blockAlign=channels*bits/8, byteRate=sampleRate*blockAlign;
+        const b=new ArrayBuffer(44), v=new DataView(b);
+        const s=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
+        s(0,'RIFF'); v.setUint32(4,36+dataBytes,true); s(8,'WAVE'); s(12,'fmt ');
+        v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,channels,true); v.setUint32(24,sampleRate,true); v.setUint32(28,byteRate,true); v.setUint16(32,blockAlign,true); v.setUint16(34,bits,true);
+        s(36,'data'); v.setUint32(40,dataBytes,true);
+        return b;
+      }
+      function pcm16BytesV40b(pcm16=[]){
+        const a=new Int16Array(pcm16.length);
+        pcm16.forEach((v,i)=>a[i]=Math.max(-32768,Math.min(32767,Number(v)||0)));
+        return a.buffer;
+      }
+      async function chooseBufferDumpFileV40b(ep=currentInspectedEdgePartsV40b(), s=selectedSessionV40b(ep)){
+        if(!ep || !s){toast('Please select a buffer first');return false;}
+        const suggested=bufferDefaultFileNameV40b(ep);
+        if(window.showSaveFilePicker){
+          try{
+            s.handle=await window.showSaveFilePicker({suggestedName:suggested,types:[{description:'WAV audio',accept:{'audio/wav':['.wav']}}]});
+            s.fileName=s.handle.name || suggested;
+            s.explicitFileName=true;
+            s.fallback=false;
+            renderBufferDumpUiV40b(ep);
+            return true;
+          }catch(e){
+            if(e?.name==='AbortError') return false;
+            console.warn('showSaveFilePicker failed',e);
+          }
+        }
+        s.handle=null;
+        s.fileName=suggested;
+        s.explicitFileName=true;
+        s.fallback=true;
+        toast('Browser fallback: WAV will download when Stop Dump is clicked');
+        renderBufferDumpUiV40b(ep);
+        return true;
+      }
+      function queueDumpWriteV40b(s, bytes){
+        s.writeChain=(s.writeChain||Promise.resolve()).then(async()=>{
+          if(s.writable) await s.writable.write(bytes);
+          else s.chunks.push(bytes);
+        }).catch(e=>{
+          addLog('warn','Buffer dump write failed',e.message||String(e));
+          throw e;
+        });
+        return s.writeChain;
+      }
+      async function appendDumpPcmFrameV40b(s,live){
+        if(!s?.active || !live || !running) return false;
+        if(live.source!=='backend' || !Array.isArray(live.pcm16) || !live.pcm16.length) return false;
+        const bytes=pcm16BytesV40b(live.pcm16);
+        if(!bytes.byteLength) return false;
+        s.bytes += bytes.byteLength;
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40b(s);
+        await queueDumpWriteV40b(s,bytes);
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40b(s);
+        return true;
+      }
+      function shouldAppendExistingDumpV40b(s, firstLive){
+        if(!s || s.resetOnNextStart || s.pipelineEpoch!==bufferDumpPipelineEpochV40b) return false;
+        if(!s.bytes || s.bytes<=0) return false;
+        const nextSig=formatSignatureV40b(firstLive?.format || s.format);
+        return nextSig && nextSig===s.formatSig;
+      }
+      async function openDumpWriterV40b(s, appendExisting){
+        if(s.handle && !s.fallback){
+          if(appendExisting && s.bytes>0){
+            s.writable=await s.handle.createWritable({keepExistingData:true});
+            await s.writable.seek(44+s.bytes);
+          }else{
+            s.writable=await s.handle.createWritable();
+            await s.writable.write(wavHeaderV40b(0,s.format));
+          }
+        }else{
+          if(appendExisting && s.chunks?.length){
+            s.chunks[0]=wavHeaderV40b(s.bytes,s.format);
+          }else{
+            s.chunks=[wavHeaderV40b(0,s.format)];
+            s.bytes=0;
+          }
+        }
+      }
+      async function startBufferDumpV40b(ep=currentInspectedEdgePartsV40b()){
+        if(!running){toast('Only running pipeline can start buffer dump'); return;}
+        if(!ep){toast('Please select a buffer first'); return;}
+        const key=selectedEdgeKey;
+        const s=sessionForEdgeV40b(key,ep,true);
+        if(!s || s.active || s.switching) return;
+
+        s.switching=true;
+        renderBufferDumpUiV40b(ep);
+        markDumpButtonBusyNowV40b('Choosing...');
+        drawEdges();
+
+        if(!s.explicitFileName && !s.handle){
+          const ok=await chooseBufferDumpFileV40b(ep,s);
+          if(!ok && window.showSaveFilePicker){
+            s.switching=false;
+            renderBufferDumpUiV40b(ep);
+            drawEdges();
+            return;
+          }
+        }
+        if(!s.fileName){
+          s.fileName=bufferDefaultFileNameV40b(ep);
+        }
+
+        s.active=true;
+        s.edgeKey=key;
+        s.ep=ep;
+        s.format=edgeBufferFormatV40b(ep);
+        s.pumpBusy=false;
+        if(s.timer){ clearInterval(s.timer); s.timer=null; }
+        if(s.writable){ try{ await s.writable.close(); }catch(e){} s.writable=null; }
+        renderBufferDumpUiV40b(ep);
+        drawEdges();
+
+        if(s.finalizePromise) {
+          try { await s.finalizePromise; } catch(e) {}
+        }
+
+        const firstLive=await fetchBackendBufferFrameV40b(ep,key);
+        if(!firstLive){
+          s.active=false;
+          s.switching=false;
+          renderBufferDumpUiV40b(ep);
+          drawEdges();
+          const msg='Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
+          toast(msg);
+          addLog('warn','Buffer dump blocked',msg);
+          return;
+        }
+
+        const appendExisting=shouldAppendExistingDumpV40b(s, firstLive);
+        s.format=firstLive.format || s.format;
+        s.formatSig=formatSignatureV40b(s.format);
+        if(!appendExisting){
+          s.bytes=0;
+          s.chunks=[];
+        }
+        s.writeChain=Promise.resolve();
+        s.lastFrameSeq=0;
+        s.resetOnNextStart=false;
+        s.pipelineEpoch=bufferDumpPipelineEpochV40b;
+
+        inspectorLiveState=firstLive;
+        applyInspectorBufferLiveDataToUiV40b(ep);
+        renderBufferProbeV40b(ep);
+
+        await openDumpWriterV40b(s,appendExisting);
+
+        apiPost('/api/inspector/buffer/inspect',{session_id:API_SESSION_ID,edge_key:key,from:`${ep.from}.${ep.fromPort}`,to:`${ep.to}.${ep.toPort}`,format:s.format,dump:true,append:appendExisting});
+        addLog('ok',appendExisting?'Buffer dump resumed':'Buffer dump started',`${bufferNameV40b(ep)} · ${appendExisting?'append':'new'} WAV · backend PCM`);
+
+        await appendDumpPcmFrameV40b(s,firstLive);
+
+        const pump=async()=>{
+          if(!s.active || !running || s.pumpBusy) return;
+          s.pumpBusy=true;
+          try{
+            const live=await fetchBackendBufferFrameV40b(s.ep,key);
+            if(!live) return;
+            if(selectedEdgeKey===key){
+              inspectorLiveState=live;
+              applyInspectorBufferLiveDataToUiV40b(s.ep);
+              drawInspectorProbeCanvases();
+            }
+            await appendDumpPcmFrameV40b(s,live);
+          }finally{
+            s.pumpBusy=false;
+          }
+        };
+        s.timer=setInterval(pump,80);
+        s.switching=false;
+        renderBufferDumpUiV40b(ep);
+        drawEdges();
+      }
+      async function stopBufferDumpV40b(s=selectedSessionV40b(), reason=''){
+        if(!s || s.switching || !s.active) return;
+        const ep=s.ep || parseEdgeKey(s.edgeKey);
+        s.switching=true;
+        if(s.timer){ clearInterval(s.timer); s.timer=null; }
+        const fmt=s.format || {channels:2,sampleRate:48000,bits:16};
+        const fileName=s.fileName || displayTargetNameV40b(s,ep);
+
+        s.active=false;
+        renderBufferDumpUiV40b(ep);
+        drawEdges();
+
+        s.finalizing=true;
+        s.finalizePromise=(async()=>{
+          try{
+            if(s.writeChain) await s.writeChain;
+            if(s.writable){
+              await s.writable.write({type:'seek',position:0});
+              await s.writable.write(wavHeaderV40b(s.bytes,fmt));
+              await s.writable.close();
+            }else{
+              if(!s.chunks?.length) s.chunks=[wavHeaderV40b(0,fmt)];
+              s.chunks[0]=wavHeaderV40b(s.bytes,fmt);
+              const blob=new Blob(s.chunks,{type:'audio/wav'});
+              const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fileName; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+            }
+            addLog('ok','Buffer dump stopped',`${fileName} · ${formatDumpBytesV40b(s.bytes)}`);
+          }catch(e){
+            addLog('warn','Buffer dump stop failed',e.message||String(e));
+          }finally{
+            s.writable=null;
+            s.timer=null;
+            s.writeChain=Promise.resolve();
+            s.pumpBusy=false;
+            s.switching=false;
+            s.finalizing=false;
+            if(selectedEdgeKey===s.edgeKey) {
+              renderBufferDumpUiV40b(ep);
+              updateBufferDumpWrittenUiV40b(s);
+            }
+            drawEdges();
+          }
+        })();
+        return s.finalizePromise;
+      }
+      async function stopAllBufferDumpsV40b(reason=''){
+        const active=[...bufferDumpSessionsV40b.values()].filter(s=>s.active);
+        await Promise.all(active.map(s=>stopBufferDumpV40b(s,reason)));
+      }
+      function markPipelineStoppedForDumpV40b(){
+        bufferDumpPipelineEpochV40b++;
+        bufferDumpSessionsV40b.forEach(s=>{
+          s.resetOnNextStart=true;
+          s.pipelineEpoch=bufferDumpPipelineEpochV40b;
+        });
+      }
+      function applyInspectorBufferLiveDataToUiV40b(ep){
+        const live=inspectorLiveState || {};
+        const isLive=!!(running && live.running && live.buffer);
+        const fmt=live.format || edgeBufferFormatV40b(ep);
+        const g=live.general || {};
+        const ioIn=$('#ioIn'), ioOut=$('#ioOut'), rmsIn=$('#rmsIn'), peakOut=$('#peakOut'), peakBar=$('#peakBar'), frame=$('#frameSizeInfo');
+        if(ioIn) ioIn.textContent=isLive ? (fmt.label || g.format || 'N/A') : 'N/A';
+        if(ioOut) ioOut.textContent='';
+        if(rmsIn) rmsIn.textContent=isLive ? dbText(g.rms) : 'N/A';
+        if(peakOut) peakOut.textContent=isLive ? dbText(g.peak) : 'N/A';
+        if(peakBar) peakBar.style.width=isLive && Number.isFinite(Number(g.peak)) ? clamp((60+Number(g.peak))/60*100,5,100)+'%' : '0%';
+        if(frame) frame.textContent=isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs||0).toFixed(2)} ms` : 'N/A';
+      }
+      async function refreshBufferInspectorBackendV40b(ep=currentInspectedEdgePartsV40b()){
+        if(!ep) return false;
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        const data=await fetchBufferProbeFrameV40b(ep,selectedEdgeKey);
+        inspectorLiveState=data;
+        if(data?.source==='backend') inspectorBackendLiveFallbackLogged=false;
+        else if(running && !inspectorBackendLiveFallbackLogged){
+          inspectorBackendLiveFallbackLogged=true;
+          addLog('warn','Buffer Inspector visual fallback','GET /api/inspector/buffer/live unavailable for visual probe');
+        }
+        applyInspectorBufferLiveDataToUiV40b(ep);
+        renderBufferProbeV40b(ep);
+        renderBufferDumpUiV40b(ep);
+        return data?.source==='backend';
+      }
+      function renderBufferInspectorV40b(){
+        const ep=currentInspectedEdgePartsV40b();
+        if(!ep) return false;
+        setInspectorModeV40b('buffer');
+        setGeneralLabelsForBufferV40b();
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : edgeBufferFormatV40b(ep);
+        $('#selIcon').textContent='▰';
+        $('#selName').textContent='Buffer';
+        $('#selSub').textContent=`${bufferNameV40b(ep)} · ${running && liveFmt?.label ? liveFmt.label : edgeBufferFormatV40b(ep).label}`;
+        $('#probeName').textContent=`(${ep.from}.${ep.fromPort} Buffer)`;
+        selectedSessionV40b(ep);
+        applyInspectorBufferLiveDataToUiV40b(ep);
+        renderBufferProbeV40b(ep);
+        renderBufferDumpUiV40b(ep);
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        return true;
+      }
+
+      drawEdges = function(){
+        syncWorldGeometry();
+        const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
+        svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
+        svg.setAttribute('preserveAspectRatio','none');
+        const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+        defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><linearGradient id="dumpGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffcc45"/><stop offset="100%" stop-color="#ffa826"/></linearGradient><linearGradient id="selectedEdgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffffff"/><stop offset="45%" stop-color="#00f5ff"/><stop offset="100%" stop-color="#66fffb"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="12" refX="9.4" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,6 L0,12 Z" fill="#00d8ff"/></marker><marker id="selectedArrow" markerWidth="13" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L13,7.5 L0,15 Z" fill="#ffffff"/></marker>`;
+        svg.appendChild(defs);
+        state.edges.forEach((edge,idx)=>{
+          const ep=edgeParts(edge);
+          const a=nodeById(ep.from), b=nodeById(ep.to); if(!a||!b) return;
+          const d=edgePath(a,b,ep.fromPort,ep.toPort);
+          const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
+          const selected=isEdgeSelectedKey(key);
+          const dumping=isEdgeDumpingV40b(key);
+          const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+          let stroke='url(#edgeGrad)', width='3', marker='url(#arrow)';
+          if(dumping){ stroke='url(#dumpGrad)'; width=selected?'8':'6'; marker='url(#selectedArrow)'; }
+          if(selected){ stroke='url(#selectedEdgeGrad)'; width=dumping?'9':'7'; marker='url(#selectedArrow)'; }
+          p.setAttribute('d',d);
+          p.setAttribute('fill','none');
+          p.setAttribute('stroke',stroke);
+          p.setAttribute('stroke-width',width);
+          p.setAttribute('marker-end',marker);
+          p.setAttribute('class',`edge-glow ${selected?'selected selected-buffer':''} ${dumping?'dumping':''}`);
+          p.style.filter = selected
+            ? 'drop-shadow(0 0 16px rgba(255,255,255,.95)) drop-shadow(0 0 26px rgba(0,245,255,.75))'
+            : (dumping ? 'drop-shadow(0 0 16px rgba(255,204,69,.96)) drop-shadow(0 0 24px rgba(255,168,38,.55))' : '');
+          const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+          hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
+          const bindEdgeSelect=(el)=>{
+            el.addEventListener('pointerdown',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('dblclick',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key); deleteSelectedEdge();});
+          };
+          bindEdgeSelect(p);
+          bindEdgeSelect(hit);
+          svg.appendChild(p);
+          svg.appendChild(hit);
+          if(running){
+            const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r',dumping?'4':'3'); dot.setAttribute('class','edge-particle');
+            const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
+          }
+          if(idx%2===0){ const pa=portPoint(a,'out',ep.fromPort), pb=portPoint(b,'in',ep.toPort); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
+        });
+      };
+
+      const __renderInspectorBeforeBufferV40b = renderInspector;
+      renderInspector = function(){
+        if(isInspectingBufferV40b() && renderBufferInspectorV40b()) return;
+        setInspectorModeV40b('node');
+        resetGeneralLabelsForNodeV40b();
+        return __renderInspectorBeforeBufferV40b();
+      };
+
+      const __refreshInspectorBackendBeforeBufferV40b = refreshInspectorBackend;
+      refreshInspectorBackend = async function(){
+        if(isInspectingBufferV40b()) return refreshBufferInspectorBackendV40b();
+        return __refreshInspectorBackendBeforeBufferV40b();
+      };
+
+      startBufferDump = startBufferDumpV40b;
+      stopBufferDump = async function(reason='manual'){ return stopBufferDumpV40b(selectedSessionV40b(),reason); };
+      renderBufferDumpUi = renderBufferDumpUiV40b;
+
+      $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40b('pipeline_stop').finally(markPipelineStoppedForDumpV40b); }, true);
+    }
+
+
+    // v40c: stable multi-buffer dump, no auto file-picker, no frontend fake PCM dump.
+    if(!window.__audioStudioBufferDumpV40cInstalled){
+      window.__audioStudioBufferDumpV40cInstalled=true;
+
+      const bufferDumpSessionsV40c = new Map();
+      let bufferDumpPipelineEpochV40c = 1;
+
+      function dumpQueryParamV40c(v=''){ return encodeURIComponent(String(v ?? '')); }
+      function formatDumpBytesV40c(bytes=0){
+        const n=Math.max(0,Number(bytes)||0);
+        if(n < 1024) return `${Math.round(n)} B`;
+        if(n < 1024*1024) return `${(n/1024).toFixed(n < 10*1024 ? 1 : 0)} KB`;
+        return `${(n/1024/1024).toFixed(2)} MB`;
+      }
+      function isInspectingBufferV40c(){ return !!selectedEdgeKey && !selectedNodeId; }
+      function currentInspectedEdgePartsV40c(){
+        if(!selectedEdgeKey) return null;
+        const ep=parseEdgeKey(selectedEdgeKey);
+        return state.edges.some(e=>edgeKeyForEdge(e)===selectedEdgeKey) ? ep : null;
+      }
+      function bufferBaseNameV40c(ep){
+        if(!ep) return 'buffer_dump';
+        return `${ep.from}_${ep.fromPort}_to_${ep.to}_${ep.toPort}`.replace(/[^A-Za-z0-9_.-]+/g,'_');
+      }
+      function bufferDefaultFileNameV40c(ep){ return `${bufferBaseNameV40c(ep)}.wav`; }
+      function bufferNameV40c(ep){ return ep ? `${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}` : ''; }
+      function edgeBufferFormatV40c(ep){
+        if(typeof edgeBufferFormat === 'function') return edgeBufferFormat(ep);
+        const fromNode=nodeById(ep?.from);
+        const toNode=nodeById(ep?.to);
+        const outPort=nodePortList(fromNode||{},'out').find(p=>p.name===ep?.fromPort) || {};
+        const inPort=nodePortList(toNode||{},'in').find(p=>p.name===ep?.toPort) || {};
+        const ch=Number(outPort.max_ch || inPort.max_ch || String(fromNode?.ch||toNode?.ch||'2').replace(/\D/g,'') || 2);
+        return {channels:Math.max(1,ch),sampleRate:48000,bits:16,frameSamples:480,label:`${Math.max(1,ch)}ch · 48 kHz · 16-bit`};
+      }
+      function formatSignatureV40c(fmt){
+        return `${Number(fmt?.channels||0)}:${Number(fmt?.sampleRate||0)}:${Number(fmt?.bits||0)}`;
+      }
+      function sessionForEdgeV40c(key, ep, create=true){
+        if(!key) return null;
+        let s=bufferDumpSessionsV40c.get(key);
+        if(!s && create){
+          const fmt=ep ? edgeBufferFormatV40c(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:480,label:'2ch · 48 kHz · 16-bit'};
+          s={
+            edgeKey:key,
+            ep:ep || parseEdgeKey(key),
+            active:false,
+            starting:false,
+            stopping:false,
+            finalizing:false,
+            fileName:'',
+            explicitFileName:false,
+            handle:null,
+            writable:null,
+            fallback:true,
+            bytes:0,
+            chunks:[],
+            format:fmt,
+            formatSig:formatSignatureV40c(fmt),
+            timer:null,
+            writeChain:Promise.resolve(),
+            finalizePromise:Promise.resolve(),
+            pumpBusy:false,
+            pipelineEpoch:bufferDumpPipelineEpochV40c,
+            resetOnNextStart:false,
+            opToken:0,
+            lastError:''
+          };
+          bufferDumpSessionsV40c.set(key,s);
+        }
+        if(s && ep) s.ep=ep;
+        return s;
+      }
+      function selectedSessionV40c(ep=currentInspectedEdgePartsV40c()){
+        return sessionForEdgeV40c(selectedEdgeKey, ep, true);
+      }
+      function displayTargetNameV40c(s, ep){
+        return s?.explicitFileName && s.fileName ? s.fileName : bufferDefaultFileNameV40c(ep || s?.ep);
+      }
+      function isEdgeDumpingV40c(key){ return !!bufferDumpSessionsV40c.get(key)?.active; }
+      function activeDumpCountV40c(){
+        let n=0;
+        bufferDumpSessionsV40c.forEach(s=>{ if(s.active) n++; });
+        return n;
+      }
+      function setInspectorModeV40c(mode){
+        const visible = mode==='buffer' ? new Set(['general','probe','dump']) : new Set(['general','parameters','probe','notes']);
+        $$('#inspectorTabs button').forEach(b=>{ b.style.display=visible.has(b.dataset.inspectorTab)?'':'none'; });
+        $$('.inspector-section').forEach(sec=>{
+          const key=sec.dataset.inspectorSection;
+          sec.style.display=visible.has(key)?'':'none';
+        });
+        if(!visible.has(inspectorActiveTab)) inspectorActiveTab='general';
+        setInspectorTab(inspectorActiveTab,false);
+      }
+      function setGeneralLabelsForBufferV40c(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Format';
+        if(rows[1]) rows[1].style.display='none';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function resetGeneralLabelsForNodeV40c(){
+        const rows=$$('#inspectorGeneral .kv');
+        rows.forEach(r=>r.style.display='');
+        if(rows[0]) rows[0].querySelector('span').textContent='Input';
+        if(rows[1]) rows[1].querySelector('span').textContent='Output';
+        if(rows[2]) rows[2].querySelector('span').textContent='RMS In';
+        if(rows[3]) rows[3].querySelector('span').textContent='Peak Out';
+        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
+      }
+      function bufferLiveQueryV40c(ep,key=selectedEdgeKey){
+        const fmt=edgeBufferFormatV40c(ep);
+        return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40c(key)}&from=${dumpQueryParamV40c(ep.from+'.'+ep.fromPort)}&to=${dumpQueryParamV40c(ep.to+'.'+ep.toPort)}&running=${running?1:0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples||480}`;
+      }
+      async function fetchBackendBufferFrameV40c(ep,key=selectedEdgeKey){
+        try{
+          const data=await apiGet(bufferLiveQueryV40c(ep,key));
+          if(!data || data.ok===false || !Array.isArray(data.pcm16) || (running && !data.pcm16.length)) return null;
+          data.source='backend';
+          data.server_edge_key=data.edge_key || '';
+          data.edge_key=key;
+          return data;
+        }catch(e){
+          return null;
+        }
+      }
+      async function fetchBufferProbeFrameV40c(ep,key=selectedEdgeKey){
+        try{
+          const data=await apiGet(bufferLiveQueryV40c(ep,key));
+          if(data && data.ok!==false){
+            data.source='backend';
+            data.server_edge_key=data.edge_key || '';
+            data.edge_key=key;
+            return data;
+          }
+        }catch(e){}
+        const fmt=edgeBufferFormatV40c(ep);
+        const runActive=!!running;
+        return {
+          ok:true,mode:'visual_fallback_only',source:'visual_fallback',buffer:true,running:runActive,timestamp_ms:Date.now(),
+          edge_key:key,format:fmt,
+          general:runActive?{format:fmt.label,rms:-rnd(12,34),peak:-rnd(1.2,10),frameSizeSamples:fmt.frameSamples||480,frameMs:(fmt.frameSamples||480)*1000/fmt.sampleRate}:{format:'N/A',rms:null,peak:null,frameSizeSamples:null,frameMs:null},
+          ports:[{key:'buffer',dir:'buffer',name:'buffer',channels:fmt.channels,sampleRate:fmt.sampleRate,bitDepth:fmt.bits,waveform:fallbackInspectorWave(0,runActive),spectrum:fallbackInspectorSpectrum(0,runActive)}],
+          pcm16:[]
+        };
+      }
+      function updateBufferDumpWrittenUiV40c(s=selectedSessionV40c()){
+        const el=$('#dumpWrittenValue');
+        if(el) el.textContent=formatDumpBytesV40c(s?.bytes||0);
+      }
+      function renderBufferProbeV40c(ep){
+        const list=$('#inspectorProbeList');
+        if(!list) return;
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const fmt=liveFmt || edgeBufferFormatV40c(ep);
+        const label=(running && liveFmt) ? (fmt.label || `${fmt.channels}ch · ${fmt.sampleRate||48000} Hz · ${fmt.bits||16}-bit`) : 'N/A';
+        const count=$('#probePortCount');
+        if(count) count.textContent='1 buffer';
+        list.innerHTML=`<div class="probe-port-card" data-probe-card="buffer">
+          <div class="probe-port-head"><span>BUFFER</span><small>${escapeHtml(label)}</small></div>
+          <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>buffer</small></div>
+          <canvas class="canvas-small inspector-probe-wave" id="wave_buffer" data-probe-key="buffer"></canvas>
+          <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
+          <canvas class="canvas-small inspector-probe-spectrum" id="spec_buffer" data-probe-key="buffer"></canvas>
+        </div>`;
+        drawInspectorProbeCanvases();
+      }
+      function renderBufferDumpUiV40c(ep){
+        const body=$('#inspectorDumpBody');
+        if(!body) return;
+        const s=selectedSessionV40c(ep);
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const formatText=liveFmt?.label || liveFmt?.format || (s?.active && s.format?.label ? s.format.label : 'N/A');
+        const active=!!s?.active;
+        const busy=!!(s?.starting || s?.stopping || s?.finalizing);
+        const targetName=displayTargetNameV40c(s,ep);
+        const activeCount=activeDumpCountV40c();
+        const toggleClass=active?'red':'green';
+        let toggleText=active?'Stop Dump':'Start Dump';
+        if(s?.starting) toggleText='Starting...';
+        if(s?.stopping) toggleText='Stopping...';
+        if(s?.finalizing) toggleText='Finalizing...';
+        const chooseDisabled=(active||busy)?'disabled':'';
+        body.innerHTML=`<div class="dump-card">
+          <div class="dump-row"><span>Format</span><b>${escapeHtml(formatText)}</b></div>
+          <div class="dump-row"><span>Target File</span><b class="dump-file-name" title="${escapeHtml(targetName)}">${escapeHtml(targetName)}</b></div>
+          <div class="dump-row"><span>Written</span><b id="dumpWrittenValue">${formatDumpBytesV40c(s?.bytes||0)}</b></div>
+          <div class="dump-actions">
+            <button class="btn cyan" id="chooseDumpFileBtn" ${chooseDisabled}>Choose WAV File</button>
+            <button class="btn ${toggleClass}" id="bufferDumpToggleBtn">${toggleText}</button>
+          </div>
+          <div class="dump-status">${active?`<b>Dumping...</b> client wav writer · ${activeCount} buffer(s) active.`:'Start Dump requires pipeline running and backend buffer API.'}</div>
+        </div>`;
+        $('#chooseDumpFileBtn')?.addEventListener('pointerdown',e=>{
+          e.preventDefault(); e.stopPropagation();
+          if(!s?.active && !s?.starting && !s?.stopping && !s?.finalizing) chooseBufferDumpFileV40c(ep,s);
+        });
+        $('#bufferDumpToggleBtn')?.addEventListener('pointerdown',e=>{
+          e.preventDefault(); e.stopPropagation();
+          const cur=selectedSessionV40c(ep);
+          cur?.active ? stopBufferDumpV40c(cur,'manual') : startBufferDumpV40c(ep);
+        });
+        updateBufferDumpWrittenUiV40c(s);
+      }
+      function wavHeaderV40c(dataBytes,fmt){
+        const channels=fmt.channels||2, sampleRate=fmt.sampleRate||48000, bits=fmt.bits||16;
+        const blockAlign=channels*bits/8, byteRate=sampleRate*blockAlign;
+        const b=new ArrayBuffer(44), v=new DataView(b);
+        const s=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
+        s(0,'RIFF'); v.setUint32(4,36+dataBytes,true); s(8,'WAVE'); s(12,'fmt ');
+        v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,channels,true); v.setUint32(24,sampleRate,true); v.setUint32(28,byteRate,true); v.setUint16(32,blockAlign,true); v.setUint16(34,bits,true);
+        s(36,'data'); v.setUint32(40,dataBytes,true);
+        return b;
+      }
+      function pcm16BytesV40c(pcm16=[]){
+        const a=new Int16Array(pcm16.length);
+        pcm16.forEach((v,i)=>a[i]=Math.max(-32768,Math.min(32767,Number(v)||0)));
+        return a.buffer;
+      }
+      async function chooseBufferDumpFileV40c(ep=currentInspectedEdgePartsV40c(), s=selectedSessionV40c(ep)){
+        if(!ep || !s){toast('Please select a buffer first');return false;}
+        const suggested=bufferDefaultFileNameV40c(ep);
+        if(window.showSaveFilePicker){
+          try{
+            s.handle=await window.showSaveFilePicker({suggestedName:suggested,types:[{description:'WAV audio',accept:{'audio/wav':['.wav']}}]});
+            s.fileName=s.handle.name || suggested;
+            s.explicitFileName=true;
+            s.fallback=false;
+            renderBufferDumpUiV40c(ep);
+            return true;
+          }catch(e){
+            if(e?.name==='AbortError') return false;
+            console.warn('showSaveFilePicker failed',e);
+          }
+        }
+        s.handle=null;
+        s.fileName=suggested;
+        s.explicitFileName=true;
+        s.fallback=true;
+        toast('Browser fallback: WAV will download when Stop Dump is clicked');
+        renderBufferDumpUiV40c(ep);
+        return true;
+      }
+      function queueDumpWriteV40c(s, bytes){
+        s.writeChain=(s.writeChain||Promise.resolve()).then(async()=>{
+          if(s.writable) await s.writable.write(bytes);
+          else s.chunks.push(bytes);
+        }).catch(e=>{
+          addLog('warn','Buffer dump write failed',e.message||String(e));
+          throw e;
+        });
+        return s.writeChain;
+      }
+      async function appendDumpPcmFrameV40c(s,live){
+        if(!s?.active || !live || !running) return false;
+        if(live.source!=='backend' || !Array.isArray(live.pcm16) || !live.pcm16.length) return false;
+        const bytes=pcm16BytesV40c(live.pcm16);
+        if(!bytes.byteLength) return false;
+        s.bytes += bytes.byteLength;
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40c(s);
+        await queueDumpWriteV40c(s,bytes);
+        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40c(s);
+        return true;
+      }
+      function shouldAppendExistingDumpV40c(s, firstLive){
+        if(!s || s.resetOnNextStart || s.pipelineEpoch!==bufferDumpPipelineEpochV40c) return false;
+        if(!s.bytes || s.bytes<=0) return false;
+        const nextSig=formatSignatureV40c(firstLive?.format || s.format);
+        return nextSig && nextSig===s.formatSig;
+      }
+      async function openDumpWriterV40c(s, appendExisting){
+        if(s.handle && !s.fallback){
+          if(appendExisting && s.bytes>0){
+            s.writable=await s.handle.createWritable({keepExistingData:true});
+            await s.writable.seek(44+s.bytes);
+          }else{
+            s.writable=await s.handle.createWritable();
+            await s.writable.write(wavHeaderV40c(0,s.format));
+          }
+        }else{
+          if(appendExisting && s.chunks?.length){
+            s.chunks[0]=wavHeaderV40c(s.bytes,s.format);
+          }else{
+            s.chunks=[wavHeaderV40c(0,s.format)];
+            s.bytes=0;
+          }
+        }
+      }
+      async function startBufferDumpV40c(ep=currentInspectedEdgePartsV40c()){
+        if(!running){toast('Only running pipeline can start buffer dump'); return;}
+        if(!ep){toast('Please select a buffer first'); return;}
+        const key=selectedEdgeKey;
+        const s=sessionForEdgeV40c(key,ep,true);
+        if(!s || s.active || s.starting || s.stopping) return;
+
+        const op=++s.opToken;
+        s.starting=true;
+        s.lastError='';
+        if(!s.fileName) s.fileName=bufferDefaultFileNameV40c(ep);
+        renderBufferDumpUiV40c(ep);
+        drawEdges();
+
+        try{
+          // Do not auto-open file picker here. It causes frequent first-click
+          // loss when switching to a new buffer. Choose WAV File remains explicit.
+          s.edgeKey=key;
+          s.ep=ep;
+          s.format=edgeBufferFormatV40c(ep);
+          s.pumpBusy=false;
+          if(s.timer){ clearInterval(s.timer); s.timer=null; }
+          if(s.writable){ try{ await s.writable.close(); }catch(e){} s.writable=null; }
+
+          if(s.finalizePromise) {
+            try { await s.finalizePromise; } catch(e) {}
+          }
+          if(op!==s.opToken) return;
+
+          const firstLive=await fetchBackendBufferFrameV40c(ep,key);
+          if(op!==s.opToken) return;
+          if(!firstLive){
+            const msg='Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
+            s.lastError=msg;
+            toast(msg);
+            addLog('warn','Buffer dump blocked',msg);
+            return;
+          }
+
+          const appendExisting=shouldAppendExistingDumpV40c(s, firstLive);
+          s.format=firstLive.format || s.format;
+          s.formatSig=formatSignatureV40c(s.format);
+          if(!appendExisting){
+            s.bytes=0;
+            s.chunks=[];
+          }
+          s.writeChain=Promise.resolve();
+          s.resetOnNextStart=false;
+          s.pipelineEpoch=bufferDumpPipelineEpochV40c;
+
+          await openDumpWriterV40c(s,appendExisting);
+          if(op!==s.opToken) return;
+
+          s.active=true;
+          s.starting=false;
+          inspectorLiveState=firstLive;
+          applyInspectorBufferLiveDataToUiV40c(ep);
+          renderBufferProbeV40c(ep);
+          renderBufferDumpUiV40c(ep);
+          drawEdges();
+
+          apiPost('/api/inspector/buffer/inspect',{session_id:API_SESSION_ID,edge_key:key,from:`${ep.from}.${ep.fromPort}`,to:`${ep.to}.${ep.toPort}`,format:s.format,dump:true,append:appendExisting});
+          addLog('ok',appendExisting?'Buffer dump resumed':'Buffer dump started',`${bufferNameV40c(ep)} · ${appendExisting?'append':'new'} WAV · backend PCM`);
+
+          await appendDumpPcmFrameV40c(s,firstLive);
+
+          const pump=async()=>{
+            if(!s.active || !running || s.pumpBusy) return;
+            s.pumpBusy=true;
+            try{
+              const live=await fetchBackendBufferFrameV40c(s.ep,key);
+              if(!live) return;
+              if(selectedEdgeKey===key){
+                inspectorLiveState=live;
+                applyInspectorBufferLiveDataToUiV40c(s.ep);
+                drawInspectorProbeCanvases();
+              }
+              await appendDumpPcmFrameV40c(s,live);
+            }finally{
+              s.pumpBusy=false;
+            }
+          };
+          s.timer=setInterval(pump,80);
+        }catch(e){
+          s.lastError=e?.message||String(e);
+          addLog('warn','Buffer dump start failed',s.lastError);
+          toast('Buffer dump start failed');
+        }finally{
+          if(op===s.opToken){
+            s.starting=false;
+            renderBufferDumpUiV40c(ep);
+            drawEdges();
+          }
+        }
+      }
+      async function stopBufferDumpV40c(s=selectedSessionV40c(), reason=''){
+        if(!s || (!s.active && !s.starting)) return;
+        const ep=s.ep || parseEdgeKey(s.edgeKey);
+        ++s.opToken;
+        s.stopping=true;
+        if(s.timer){ clearInterval(s.timer); s.timer=null; }
+
+        // Immediate visual feedback; stop should never look ignored.
+        s.active=false;
+        s.starting=false;
+        renderBufferDumpUiV40c(ep);
+        drawEdges();
+
+        const fmt=s.format || {channels:2,sampleRate:48000,bits:16};
+        const fileName=s.explicitFileName && s.fileName ? s.fileName : bufferDefaultFileNameV40c(ep);
+        s.finalizing=true;
+        s.finalizePromise=(async()=>{
+          try{
+            if(s.writeChain) await s.writeChain;
+            if(s.writable){
+              await s.writable.write({type:'seek',position:0});
+              await s.writable.write(wavHeaderV40c(s.bytes,fmt));
+              await s.writable.close();
+            }else{
+              if(!s.chunks?.length) s.chunks=[wavHeaderV40c(0,fmt)];
+              s.chunks[0]=wavHeaderV40c(s.bytes,fmt);
+              const blob=new Blob(s.chunks,{type:'audio/wav'});
+              const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fileName; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+            }
+            addLog('ok','Buffer dump stopped',`${fileName} · ${formatDumpBytesV40c(s.bytes)}`);
+          }catch(e){
+            addLog('warn','Buffer dump stop failed',e.message||String(e));
+          }finally{
+            s.writable=null;
+            s.timer=null;
+            s.writeChain=Promise.resolve();
+            s.pumpBusy=false;
+            s.stopping=false;
+            s.finalizing=false;
+            if(selectedEdgeKey===s.edgeKey) {
+              renderBufferDumpUiV40c(ep);
+              updateBufferDumpWrittenUiV40c(s);
+            }
+            drawEdges();
+          }
+        })();
+        return s.finalizePromise;
+      }
+      async function stopAllBufferDumpsV40c(reason=''){
+        const active=[...bufferDumpSessionsV40c.values()].filter(s=>s.active || s.starting);
+        await Promise.all(active.map(s=>stopBufferDumpV40c(s,reason)));
+      }
+      function markPipelineStoppedForDumpV40c(){
+        bufferDumpPipelineEpochV40c++;
+        bufferDumpSessionsV40c.forEach(s=>{
+          s.resetOnNextStart=true;
+          s.pipelineEpoch=bufferDumpPipelineEpochV40c;
+        });
+      }
+      function applyInspectorBufferLiveDataToUiV40c(ep){
+        const live=inspectorLiveState || {};
+        const isLive=!!(running && live.running && live.buffer);
+        const fmt=live.format || edgeBufferFormatV40c(ep);
+        const g=live.general || {};
+        const ioIn=$('#ioIn'), ioOut=$('#ioOut'), rmsIn=$('#rmsIn'), peakOut=$('#peakOut'), peakBar=$('#peakBar'), frame=$('#frameSizeInfo');
+        if(ioIn) ioIn.textContent=isLive ? (fmt.label || g.format || 'N/A') : 'N/A';
+        if(ioOut) ioOut.textContent='';
+        if(rmsIn) rmsIn.textContent=isLive ? dbText(g.rms) : 'N/A';
+        if(peakOut) peakOut.textContent=isLive ? dbText(g.peak) : 'N/A';
+        if(peakBar) peakBar.style.width=isLive && Number.isFinite(Number(g.peak)) ? clamp((60+Number(g.peak))/60*100,5,100)+'%' : '0%';
+        if(frame) frame.textContent=isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs||0).toFixed(2)} ms` : 'N/A';
+      }
+      async function refreshBufferInspectorBackendV40c(ep=currentInspectedEdgePartsV40c()){
+        if(!ep) return false;
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        const data=await fetchBufferProbeFrameV40c(ep,selectedEdgeKey);
+        inspectorLiveState=data;
+        if(data?.source==='backend') inspectorBackendLiveFallbackLogged=false;
+        else if(running && !inspectorBackendLiveFallbackLogged){
+          inspectorBackendLiveFallbackLogged=true;
+          addLog('warn','Buffer Inspector visual fallback','GET /api/inspector/buffer/live unavailable for visual probe');
+        }
+        applyInspectorBufferLiveDataToUiV40c(ep);
+        renderBufferProbeV40c(ep);
+        renderBufferDumpUiV40c(ep);
+        return data?.source==='backend';
+      }
+      function renderBufferInspectorV40c(){
+        const ep=currentInspectedEdgePartsV40c();
+        if(!ep) return false;
+        setInspectorModeV40c('buffer');
+        setGeneralLabelsForBufferV40c();
+        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : edgeBufferFormatV40c(ep);
+        $('#selIcon').textContent='▰';
+        $('#selName').textContent='Buffer';
+        $('#selSub').textContent=`${bufferNameV40c(ep)} · ${running && liveFmt?.label ? liveFmt.label : edgeBufferFormatV40c(ep).label}`;
+        $('#probeName').textContent=`(${ep.from}.${ep.fromPort} Buffer)`;
+        selectedSessionV40c(ep);
+        applyInspectorBufferLiveDataToUiV40c(ep);
+        renderBufferProbeV40c(ep);
+        renderBufferDumpUiV40c(ep);
+        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
+        return true;
+      }
+
+      drawEdges = function(){
+        syncWorldGeometry();
+        const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
+        svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
+        svg.setAttribute('preserveAspectRatio','none');
+        const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+        defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><linearGradient id="dumpGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffcc45"/><stop offset="100%" stop-color="#ffa826"/></linearGradient><linearGradient id="selectedEdgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffffff"/><stop offset="45%" stop-color="#00f5ff"/><stop offset="100%" stop-color="#66fffb"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="12" refX="9.4" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,6 L0,12 Z" fill="#00d8ff"/></marker><marker id="selectedArrow" markerWidth="13" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L13,7.5 L0,15 Z" fill="#ffffff"/></marker>`;
+        svg.appendChild(defs);
+        state.edges.forEach((edge,idx)=>{
+          const ep=edgeParts(edge);
+          const a=nodeById(ep.from), b=nodeById(ep.to); if(!a||!b) return;
+          const d=edgePath(a,b,ep.fromPort,ep.toPort);
+          const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
+          const selected=isEdgeSelectedKey(key);
+          const dumping=isEdgeDumpingV40c(key);
+          const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+          let stroke='url(#edgeGrad)', width='3', marker='url(#arrow)';
+          if(dumping){ stroke='url(#dumpGrad)'; width=selected?'8':'6'; marker='url(#selectedArrow)'; }
+          if(selected){ stroke='url(#selectedEdgeGrad)'; width=dumping?'9':'7'; marker='url(#selectedArrow)'; }
+          p.setAttribute('d',d);
+          p.setAttribute('fill','none');
+          p.setAttribute('stroke',stroke);
+          p.setAttribute('stroke-width',width);
+          p.setAttribute('marker-end',marker);
+          p.setAttribute('class',`edge-glow ${selected?'selected selected-buffer':''} ${dumping?'dumping':''}`);
+          p.style.filter = selected
+            ? 'drop-shadow(0 0 16px rgba(255,255,255,.95)) drop-shadow(0 0 26px rgba(0,245,255,.75))'
+            : (dumping ? 'drop-shadow(0 0 16px rgba(255,204,69,.96)) drop-shadow(0 0 24px rgba(255,168,38,.55))' : '');
+          const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+          hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
+          const bindEdgeSelect=(el)=>{
+            el.addEventListener('pointerdown',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
+            el.addEventListener('dblclick',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key); deleteSelectedEdge();});
+          };
+          bindEdgeSelect(p);
+          bindEdgeSelect(hit);
+          svg.appendChild(p);
+          svg.appendChild(hit);
+          if(running){
+            const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r',dumping?'4':'3'); dot.setAttribute('class','edge-particle');
+            const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
+          }
+          if(idx%2===0){ const pa=portPoint(a,'out',ep.fromPort), pb=portPoint(b,'in',ep.toPort); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
+        });
+      };
+
+      const __renderInspectorBeforeBufferV40c = renderInspector;
+      renderInspector = function(){
+        if(isInspectingBufferV40c() && renderBufferInspectorV40c()) return;
+        setInspectorModeV40c('node');
+        resetGeneralLabelsForNodeV40c();
+        return __renderInspectorBeforeBufferV40c();
+      };
+
+      const __refreshInspectorBackendBeforeBufferV40c = refreshInspectorBackend;
+      refreshInspectorBackend = async function(){
+        if(isInspectingBufferV40c()) return refreshBufferInspectorBackendV40c();
+        return __refreshInspectorBackendBeforeBufferV40c();
+      };
+
+      startBufferDump = startBufferDumpV40c;
+      stopBufferDump = async function(reason='manual'){ return stopBufferDumpV40c(selectedSessionV40c(),reason); };
+      renderBufferDumpUi = renderBufferDumpUiV40c;
+
+      $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40c('pipeline_stop').finally(markPipelineStoppedForDumpV40c); }, true);
+    }
+
     function renderCostTable(){
       const sorted=[...state.nodes].sort((a,b)=>b.cpu-a.cpu).slice(0,10);
       $('#costTable').innerHTML='<tr><th>Name</th><th>CPU%</th><th>MEM</th><th>LAT</th><th>Core</th></tr>'+sorted.map(n=>`<tr><td>${n.name}</td><td><div class="cpu-bar"><i style="width:${clamp(n.cpu*7,4,100)}%"></i></div></td><td>${n.mem} KB</td><td>${n.lat.toFixed(2)}</td><td>${n.core}</td></tr>`).join('')+`<tr><td><b>Total</b></td><td><b>${state.nodes.reduce((s,n)=>s+n.cpu,0).toFixed(1)}%</b></td><td colspan="3"><b>${(state.nodes.reduce((s,n)=>s+n.mem,0)/1024).toFixed(1)} MB</b></td></tr>`;
