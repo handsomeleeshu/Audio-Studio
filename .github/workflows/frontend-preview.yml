@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir p && cp -r frontend/* p/ && mkdir p/config && cp config/A2.json p/config/A2.json
+      - run: rm -rf p && mkdir -p p && cp -R frontend/. p/ && mkdir -p p/config && cp config/*.json p/config/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: p
