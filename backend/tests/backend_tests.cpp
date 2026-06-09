@@ -5,6 +5,7 @@
 
 int main() {
   auto engine = std::make_shared<audiostudio::MockRuntimeEngine>();
+  auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
 
   auto valid = engine->validatePipeline("{\"nodes\":[],\"connections\":[]}");
   assert(valid.find("\"ok\":true") != std::string::npos);
@@ -25,7 +26,13 @@ int main() {
   assert(tel.find("nodeCost") != std::string::npos);
   assert(tel.find("meters") != std::string::npos);
 
-  audiostudio::HttpServer server(".", 0, engine, engine, engine);
+  auto inspect = inspector->inspectNode("{\"node_id\":\"eq_1\",\"node_name\":\"EQ\",\"module_type\":\"builtin.eq\"}");
+  assert(inspect.find("IInspectorController") != std::string::npos);
+  auto live = inspector->liveData({{"node_id","eq_1"},{"running","1"},{"ports","in:in:2,out:out:2"}});
+  assert(live.find("\"ports\"") != std::string::npos);
+  assert(live.find("\"general\"") != std::string::npos);
+
+  audiostudio::HttpServer server(".", 0, engine, engine, engine, inspector);
   audiostudio::HttpRequest req;
   req.method = "POST";
   req.path = "/api/project/save";

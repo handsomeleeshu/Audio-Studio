@@ -1,7 +1,9 @@
 #include "audio_studio.hpp"
 #include <atomic>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 namespace audiostudio {
 
@@ -14,6 +16,207 @@ void printIntegrationTodo(const std::string& callback, const std::string& reques
             << std::flush;
 }
 } // namespace
+
+
+static std::string simpleJsonField(const std::string& json, const std::string& key) {
+  const std::string needle = "\"" + key + "\"";
+  auto pos = json.find(needle);
+  if (pos == std::string::npos) return {};
+  pos = json.find(':', pos + needle.size());
+  if (pos == std::string::npos) return {};
+  pos = json.find('"', pos);
+  if (pos == std::string::npos) return {};
+  auto end = pos + 1;
+  bool esc = false;
+  for (; end < json.size(); ++end) {
+    char c = json[end];
+    if (esc) { esc = false; continue; }
+    if (c == '\\') { esc = true; continue; }
+    if (c == '"') break;
+  }
+  if (end <= pos + 1 || end >= json.size()) return {};
+  return json.substr(pos + 1, end - pos - 1);
+}
+
+struct FakeProbePortSpec {
+  std::string dir;
+  std::string name;
+  int channels = 1;
+};
+
+static std::vector<std::string> splitSimple(const std::string& s, char delim) {
+  std::vector<std::string> out;
+  std::string cur;
+  for (char c : s) {
+    if (c == delim) { out.push_back(cur); cur.clear(); }
+    else cur.push_back(c);
+  }
+  out.push_back(cur);
+  return out;
+}
+
+static std::vector<FakeProbePortSpec> parseInspectorPorts(const std::string& csv) {
+  std::vector<FakeProbePortSpec> ports;
+  for (const auto& token : splitSimple(csv, ',')) {
+    if (token.empty()) continue;
+    auto fields = splitSimple(token, ':');
+    FakeProbePortSpec p;
+    p.dir = fields.size() > 0 && !fields[0].empty() ? fields[0] : "in";
+    p.name = fields.size() > 1 && !fields[1].empty() ? fields[1] : (p.dir == "out" ? "out" : "in");
+    try { p.channels = fields.size() > 2 ? std::max(1, std::stoi(fields[2])) : 1; } catch (...) { p.channels = 1; }
+    ports.push_back(p);
+  }
+  if (ports.empty()) {
+    ports.push_back({"in", "in", 2});
+    ports.push_back({"out", "out", 2});
+  }
+  return ports;
+}
+
+static std::string queryGet(const std::map<std::string, std::string>& q, const std::string& key, const std::string& fallback = {}) {
+  auto it = q.find(key);
+  return it == q.end() ? fallback : it->second;
+}
+
+static bool queryBool(const std::map<std::string, std::string>& q, const std::string& key) {
+  const auto v = queryGet(q, key);
+  return v == "1" || v == "true" || v == "yes" || v == "running";
+}
+
+FakeInspectorController::FakeInspectorController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0x5a17u));
+}
+
+double FakeInspectorController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeInspectorController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeInspectorController::inspectNode(const std::string& request_json) {
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    current_node_id_ = simpleJsonField(request_json, "node_id");
+    current_node_name_ = simpleJsonField(request_json, "node_name");
+    current_module_type_ = simpleJsonField(request_json, "module_type");
+    last_request_json_ = request_json;
+  }
+
+  printIntegrationTodo("IInspectorController::inspectNode", request_json,
+    "bind Inspector backend context to selected node/module/ports; real product can subclass IInspectorController and map node_id to DSP runtime handles.");
+
+  std::ostringstream os;
+  os << "{\"ok\":true,\"callback\":\"IInspectorController::inspectNode\""
+     << ",\"node_id\":\"" << jsonEscape(simpleJsonField(request_json, "node_id")) << "\""
+     << ",\"mode\":\"fake\"}";
+  return os.str();
+}
+
+std::string FakeInspectorController::liveData(const std::map<std::string, std::string>& query) {
+  static std::atomic<int> live_count{0};
+  const int count = ++live_count;
+
+  const bool run = queryBool(query, "running");
+  std::string node_id = queryGet(query, "node_id");
+  std::string node_name = queryGet(query, "node_name");
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (node_id.empty()) node_id = current_node_id_;
+    if (node_name.empty()) node_name = current_node_name_;
+  }
+
+  const auto ports = parseInspectorPorts(queryGet(query, "ports"));
+  int in_ch = 0, out_ch = 0;
+  for (const auto& p : ports) {
+    if (p.dir == "out") out_ch += p.channels;
+    else in_ch += p.channels;
+  }
+  if (in_ch <= 0) in_ch = 1;
+  if (out_ch <= 0) out_ch = in_ch;
+
+  if (count == 1 || count % 25 == 0) {
+    std::cout << "\n[AudioStudio Backend CALLBACK] IInspectorController::liveData"
+              << "\n  Fake live Inspector data. request_count=" << count
+              << " running=" << (run ? "true" : "false")
+              << " node_id=" << node_id
+              << " ports=" << ports.size() << "\n" << std::flush;
+  }
+
+  const auto now_ms = static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(3);
+  os << "{\"ok\":true,\"mode\":\"fake\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now_ms
+     << ",\"node_id\":\"" << jsonEscape(node_id) << "\""
+     << ",\"node_name\":\"" << jsonEscape(node_name) << "\"";
+
+  os << ",\"general\":{";
+  if (run) {
+    const double rms = -rnd(12.0, 34.0);
+    const double peak = -rnd(1.2, 10.0);
+    os << "\"input\":\"" << in_ch << "ch · 48 kHz · 16-bit\","
+       << "\"output\":\"" << out_ch << "ch · 48 kHz · 16-bit\","
+       << "\"rmsIn\":" << rms << ",\"peakOut\":" << peak
+       << ",\"frameSizeSamples\":256,\"frameMs\":5.333";
+  } else {
+    os << "\"input\":\"N/A\",\"output\":\"N/A\",\"rmsIn\":null,\"peakOut\":null,"
+       << "\"frameSizeSamples\":null,\"frameMs\":null";
+  }
+  os << "}";
+
+  os << ",\"ports\":[";
+  const double phase = rnd(0.0, 6.28);
+  for (size_t pi = 0; pi < ports.size(); ++pi) {
+    const auto& p = ports[pi];
+    if (pi) os << ',';
+    const std::string key = p.dir + ":" + p.name;
+    os << "{\"key\":\"" << jsonEscape(key) << "\","
+       << "\"dir\":\"" << jsonEscape(p.dir) << "\","
+       << "\"name\":\"" << jsonEscape(p.name) << "\","
+       << "\"channels\":" << p.channels << ","
+       << "\"sampleRate\":48000,\"bitDepth\":16,";
+    if (run) os << "\"rms\":" << -rnd(10.0, 35.0) << ",\"peak\":" << -rnd(0.8, 12.0) << ",";
+    else os << "\"rms\":null,\"peak\":null,";
+
+    os << "\"waveform\":[";
+    for (int i = 0; i < 96; ++i) {
+      if (i) os << ',';
+      double v = 0.0;
+      if (run) {
+        v = std::sin(i * 0.13 + phase + static_cast<double>(pi)) * 0.62
+          + std::sin(i * 0.37 + phase * 0.5) * 0.18
+          + rnd(-0.06, 0.06);
+        if (v > 1.0) v = 1.0;
+        if (v < -1.0) v = -1.0;
+      }
+      os << v;
+    }
+    os << "],\"spectrum\":[";
+    for (int i = 0; i < 64; ++i) {
+      if (i) os << ',';
+      double v = 0.0;
+      if (run) {
+        v = (std::sin(i * 0.19 + phase + pi * 0.3) + 1.0) * 0.28 + (1.0 - i / 72.0) * 0.38 + rnd(0.0, 0.10);
+        if (v > 1.0) v = 1.0;
+        if (v < 0.0) v = 0.0;
+      }
+      os << v;
+    }
+    os << "]}";
+  }
+  os << "]}";
+  return os.str();
+}
+
 
 MockRuntimeEngine::MockRuntimeEngine() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));

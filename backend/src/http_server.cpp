@@ -122,9 +122,11 @@ static void logApiRequest(const HttpRequest& req) {
 
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
-                       std::shared_ptr<IParameterController> parameter_controller)
+                       std::shared_ptr<IParameterController> parameter_controller,
+                       std::shared_ptr<IInspectorController> inspector_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
-    node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)) {}
+    node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
+    inspector_controller_(std::move(inspector_controller)) {}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -162,6 +164,11 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     auto q = parseQuery(req.query);
     return {200, "application/json", runtime_->telemetry(splitCsv(q["nodes"]))};
   }
+  if (req.method == "GET" && req.path == "/api/inspector/live") {
+    auto q = parseQuery(req.query);
+    if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
+    return {200, "application/json", inspector_controller_->liveData(q)};
+  }
   if (req.method == "POST" && req.path == "/api/pipeline/validate") return {200, "application/json", runtime_->validatePipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
@@ -171,6 +178,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
+  if (req.method == "POST" && req.path == "/api/inspector/inspect") {
+    if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
+    return {200, "application/json", inspector_controller_->inspectNode(req.body)};
+  }
   if (req.method == "POST" && req.path == "/api/node/action") return {200, "application/json", node_controller_->onNodeAction(req.body)};
   return {404, "application/json", "{\"ok\":false,\"error\":\"route not found\"}"};
 }
