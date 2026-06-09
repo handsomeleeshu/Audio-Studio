@@ -143,6 +143,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
   if (req.method == "GET" && (req.path == "/" || req.path == "/index.html" || req.path == "/frontend/" || req.path == "/frontend/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
   if (req.method == "GET" && req.path.rfind("/assets/", 0) == 0) return serveFile("frontend" + req.path, "");
+  if (req.method == "GET" && req.path.rfind("/frontend/config/", 0) == 0 &&
+      req.path.size() >= 23 && req.path.substr(req.path.size() - 5) == ".json") {
+    return serveFile(std::string("frontend/config/") + sanitizeConfigFileName(req.path.substr(17)), "application/json; charset=utf-8");
+  }
   if (req.method == "GET" && req.path == "/api/projects") {
     return {200, "application/json; charset=utf-8", configProjectListJson(root_dir_)};
   }
