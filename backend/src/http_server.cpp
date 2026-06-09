@@ -169,6 +169,11 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
     return {200, "application/json", inspector_controller_->liveData(q)};
   }
+  if (req.method == "GET" && req.path == "/api/inspector/buffer/live") {
+    auto q = parseQuery(req.query);
+    if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
+    return {200, "application/json", inspector_controller_->bufferLiveData(q)};
+  }
   if (req.method == "POST" && req.path == "/api/pipeline/validate") return {200, "application/json", runtime_->validatePipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
@@ -181,6 +186,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/inspector/inspect") {
     if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
     return {200, "application/json", inspector_controller_->inspectNode(req.body)};
+  }
+  if (req.method == "POST" && req.path == "/api/inspector/buffer/inspect") {
+    if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
+    return {200, "application/json", inspector_controller_->inspectBuffer(req.body)};
   }
   if (req.method == "POST" && req.path == "/api/node/action") return {200, "application/json", node_controller_->onNodeAction(req.body)};
   return {404, "application/json", "{\"ok\":false,\"error\":\"route not found\"}"};
