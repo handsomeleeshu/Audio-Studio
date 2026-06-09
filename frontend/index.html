@@ -5113,6 +5113,254 @@
       };
     }
 
+
+
+    // v43: clipboard and Ctrl/Cmd multi-select support for pipeline layout.
+    // Supports Ctrl/Cmd-click multi-select on nodes and connections, plus
+    // Ctrl/Cmd+C, Ctrl/Cmd+X, Ctrl/Cmd+V for selected layout items.
+    if(!window.__audioStudioClipboardV43Installed){
+      window.__audioStudioClipboardV43Installed=true;
+      const clipboardStateV43 = {payload:null,pasteCount:0,clickGuardUntil:0};
+
+      function isEditableTargetV43(target){
+        const tag=target?.tagName?.toLowerCase();
+        return tag==='input' || tag==='textarea' || tag==='select' || target?.isContentEditable;
+      }
+      function multiSelectKeyV43(e){ return !!(e && (e.ctrlKey || e.metaKey)); }
+      function deepCloneV43(v){
+        try{ return structuredClone(v); }catch(e){ return JSON.parse(JSON.stringify(v)); }
+      }
+      function selectedNodeSetV43(){
+        const ids=new Set([...selectedNodeIds].filter(id=>nodeById(id)));
+        if(selectedNodeId && nodeById(selectedNodeId)) ids.add(selectedNodeId);
+        return ids;
+      }
+      function selectedEdgeSetV43(){
+        const keys=new Set([...selectedEdgeKeys]);
+        if(selectedEdgeKey) keys.add(selectedEdgeKey);
+        const valid=new Set(state.edges.map(edgeKeyForEdge));
+        return new Set([...keys].filter(k=>valid.has(k)));
+      }
+      function normalizeSelectionAnchorsV43(){
+        selectedNodeId=[...selectedNodeIds].find(id=>nodeById(id)) || '';
+        selectedEdgeKey=[...selectedEdgeKeys].find(k=>state.edges.some(e=>edgeKeyForEdge(e)===k)) || '';
+      }
+      function selectedSummaryV43(){
+        return `${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s)`;
+      }
+      function toggleNodeSelectionV43(id){
+        if(!nodeById(id)) return false;
+        if(selectedNodeIds.has(id) || selectedNodeId===id){
+          selectedNodeIds.delete(id);
+          if(selectedNodeId===id) selectedNodeId='';
+        }else{
+          selectedNodeIds.add(id);
+          selectedNodeId=id;
+          selectedEdgeKey='';
+        }
+        normalizeSelectionAnchorsV43();
+        inspectorRenderKey='';
+        renderAll(false);
+        drawEdges();
+        backendEdit('selection_ctrl_toggle_node',{node_id:id,selected_nodes:[...selectedNodeIds],selected_edges:[...selectedEdgeKeys]});
+        toast(`Selected: ${selectedSummaryV43()}`);
+        return true;
+      }
+      function toggleEdgeSelectionV43(key, ep){
+        if(!key) return false;
+        if(selectedEdgeKeys.has(key) || selectedEdgeKey===key){
+          selectedEdgeKeys.delete(key);
+          if(selectedEdgeKey===key) selectedEdgeKey='';
+        }else{
+          selectedEdgeKeys.add(key);
+          selectedEdgeKey=key;
+          if(!selectedNodeIds.size) selectedNodeId='';
+        }
+        normalizeSelectionAnchorsV43();
+        inspectorActiveTab='general';
+        inspectorRenderKey='';
+        drawEdges();
+        renderAll(false);
+        backendEdit('selection_ctrl_toggle_edge',{edge_key:key,edge:ep,selected_nodes:[...selectedNodeIds],selected_edges:[...selectedEdgeKeys]});
+        toast(`Selected: ${selectedSummaryV43()}`);
+        return true;
+      }
+      function edgeFromPointerEventV43(e){
+        const target=e.target?.closest?.('.edge-hit,.edge-glow');
+        const svg=$('#edgeSvg');
+        if(!target || !svg || !svg.contains(target)) return null;
+        const d=target.getAttribute('d');
+        if(!d) return null;
+        for(const edge of state.edges){
+          const ep=edgeParts(edge);
+          const a=nodeById(ep.from), b=nodeById(ep.to);
+          if(!a || !b) continue;
+          if(edgePath(a,b,ep.fromPort,ep.toPort)===d){
+            return {ep,key:edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort)};
+          }
+        }
+        return null;
+      }
+      function collectClipboardPayloadV43(){
+        const nodeIds=selectedNodeSetV43();
+        const edgeKeys=selectedEdgeSetV43();
+        const copiedNodes=state.nodes.filter(n=>nodeIds.has(n.id)).map(deepCloneV43);
+        const copiedEdges=[];
+        state.edges.forEach(e=>{
+          const p=edgeParts(e);
+          const k=edgeKeyFromParts(p.from,p.fromPort,p.to,p.toPort);
+          const internal=nodeIds.has(p.from) && nodeIds.has(p.to);
+          const explicitlySelected=edgeKeys.has(k);
+          if(internal || explicitlySelected) copiedEdges.push(deepCloneV43(p));
+        });
+        if(!copiedNodes.length && !copiedEdges.length) return null;
+        return {version:43,project:currentProjectFile,pipelineId:currentPipelineId,copiedAt:Date.now(),nodes:copiedNodes,edges:copiedEdges,nodeIds:[...nodeIds],edgeKeys:[...edgeKeys]};
+      }
+      function copySelectionV43(opts={}){
+        const payload=collectClipboardPayloadV43();
+        if(!payload){ if(!opts.silent) toast('Nothing selected to copy'); return false; }
+        clipboardStateV43.payload=payload;
+        clipboardStateV43.pasteCount=0;
+        if(!opts.silent){
+          addLog('info','Selection copied',`${payload.nodes.length} node(s), ${payload.edges.length} connection(s)`);
+          toast(`Copied ${payload.nodes.length} node(s), ${payload.edges.length} connection(s)`);
+        }
+        backendEdit('selection_copied',{nodes:payload.nodeIds,edges:payload.edgeKeys,node_count:payload.nodes.length,edge_count:payload.edges.length});
+        return true;
+      }
+      function cutSelectionV43(){
+        if(running){toast('Run 状态下不能 Cut，请先 Stop'); return false;}
+        if(!copySelectionV43({silent:true,cut:true})) return false;
+        const payload=clipboardStateV43.payload;
+        const ok=deleteSelection();
+        if(ok){
+          saveCurrentLayout('cut_selection');
+          addLog('warn','Selection cut',`${payload.nodes.length} node(s), ${payload.edges.length} connection(s)`);
+          toast(`Cut ${payload.nodes.length} node(s), ${payload.edges.length} connection(s)`);
+        }
+        return ok;
+      }
+      function uniqueNodeIdV43(sourceId){
+        const base=slugId(String(sourceId || 'node').replace(/_copy_\d+$/,''));
+        let id='';
+        do{ id=`${base}_copy_${++nodeSeq+10}`; }while(nodeById(id));
+        return id;
+      }
+      function pasteOriginV43(payload){
+        const sc=getScrollEl();
+        const z=state.zoom || 1;
+        const offset=clipboardStateV43.pasteCount*34;
+        if(sc) return {x:(sc.scrollLeft + Math.min(sc.clientWidth*0.38,360))/z + offset, y:(sc.scrollTop + Math.min(sc.clientHeight*0.28,220))/z + offset};
+        return {x:160+offset,y:130+offset};
+      }
+      function addExistingEdgePasteV43(ep){
+        if(!nodeById(ep.from) || !nodeById(ep.to)) return false;
+        const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
+        if(state.edges.some(e=>edgeKeyForEdge(e)===key)) return false;
+        state.edges.push(makeEdge(ep.from,ep.fromPort,ep.to,ep.toPort));
+        selectedEdgeKeys.add(key);
+        return true;
+      }
+      function pasteSelectionV43(){
+        if(running){toast('Run 状态下不能 Paste，请先 Stop'); return false;}
+        const payload=clipboardStateV43.payload;
+        if(!payload){ toast('Clipboard is empty'); return false; }
+        pushHistory('Paste selection');
+        clearSelection();
+        let pastedNodes=0;
+        let pastedEdges=0;
+        const idMap=new Map();
+        const origin=pasteOriginV43(payload);
+        if(payload.nodes && payload.nodes.length){
+          const minX=Math.min(...payload.nodes.map(n=>Number(n.x)||0));
+          const minY=Math.min(...payload.nodes.map(n=>Number(n.y)||0));
+          payload.nodes.forEach(src=>{
+            const n=deepCloneV43(src);
+            const oldId=n.id;
+            n.id=uniqueNodeIdV43(oldId);
+            n.x=origin.x + ((Number(src.x)||0)-minX);
+            n.y=origin.y + ((Number(src.y)||0)-minY);
+            n.selected=false;
+            if(Array.isArray(n.inPorts)) n.inPorts=deepCloneV43(n.inPorts);
+            if(Array.isArray(n.outPorts)) n.outPorts=deepCloneV43(n.outPorts);
+            if(n.paramValues) n.paramValues=deepCloneV43(n.paramValues);
+            state.nodes.push(n);
+            idMap.set(oldId,n.id);
+            selectedNodeIds.add(n.id);
+            pastedNodes++;
+          });
+          (payload.edges||[]).forEach(ep=>{
+            if(!idMap.has(ep.from) || !idMap.has(ep.to)) return;
+            const from=idMap.get(ep.from), to=idMap.get(ep.to);
+            const key=edgeKeyFromParts(from,ep.fromPort,to,ep.toPort);
+            state.edges.push(makeEdge(from,ep.fromPort,to,ep.toPort));
+            selectedEdgeKeys.add(key);
+            pastedEdges++;
+          });
+        }else{
+          (payload.edges||[]).forEach(ep=>{ if(addExistingEdgePasteV43(ep)) pastedEdges++; });
+        }
+        if(typeof enforceOneToOneEdges==='function') enforceOneToOneEdges('paste_selection');
+        normalizeSelectionAnchorsV43();
+        clipboardStateV43.pasteCount++;
+        renderAll(true);
+        redrawEdgesAfterLayout();
+        renderMinimap();
+        saveCurrentLayout('paste_selection');
+        backendEdit('selection_pasted',{source_project:payload.project,source_pipeline:payload.pipelineId,nodes:pastedNodes,edges:pastedEdges,selected_nodes:[...selectedNodeIds],selected_edges:[...selectedEdgeKeys]});
+        addLog('info','Selection pasted',`${pastedNodes} node(s), ${pastedEdges} connection(s)`);
+        toast(`Pasted ${pastedNodes} node(s), ${pastedEdges} connection(s)`);
+        return pastedNodes>0 || pastedEdges>0;
+      }
+      function handleNodeCtrlSelectV43(e){
+        if(!multiSelectKeyV43(e) || isEditableTargetV43(e.target)) return;
+        const nodeEl=e.target?.closest?.('.pipeline-node');
+        const layer=$('#nodesLayer');
+        if(!nodeEl || !layer || !layer.contains(nodeEl)) return;
+        if(e.target?.closest?.('.port,.delete-node')) return;
+        const id=nodeEl.dataset.id;
+        if(!id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        clipboardStateV43.clickGuardUntil=Date.now()+350;
+        if(e.type==='pointerdown') toggleNodeSelectionV43(id);
+      }
+      function handleEdgeCtrlSelectV43(e){
+        if(!multiSelectKeyV43(e) || isEditableTargetV43(e.target)) return;
+        const hit=edgeFromPointerEventV43(e);
+        if(!hit) return;
+        e.preventDefault();
+        e.stopPropagation();
+        clipboardStateV43.clickGuardUntil=Date.now()+350;
+        if(e.type==='pointerdown') toggleEdgeSelectionV43(hit.key,hit.ep);
+      }
+      function handleClipboardKeydownV43(e){
+        if(isEditableTargetV43(e.target)) return;
+        if(!(e.ctrlKey || e.metaKey)) return;
+        const key=e.key.toLowerCase();
+        if(key==='c'){ e.preventDefault(); e.stopPropagation(); copySelectionV43(); return; }
+        if(key==='x'){ e.preventDefault(); e.stopPropagation(); cutSelectionV43(); return; }
+        if(key==='v'){ e.preventDefault(); e.stopPropagation(); pasteSelectionV43(); return; }
+      }
+      function installClipboardHandlersV43(){
+        const layer=$('#nodesLayer');
+        const svg=$('#edgeSvg');
+        layer?.addEventListener('pointerdown',handleNodeCtrlSelectV43,true);
+        layer?.addEventListener('click',e=>{
+          if(Date.now()<clipboardStateV43.clickGuardUntil && e.target?.closest?.('.pipeline-node')){ e.preventDefault(); e.stopPropagation(); }
+          else handleNodeCtrlSelectV43(e);
+        },true);
+        svg?.addEventListener('pointerdown',handleEdgeCtrlSelectV43,true);
+        svg?.addEventListener('click',e=>{
+          if(Date.now()<clipboardStateV43.clickGuardUntil && edgeFromPointerEventV43(e)){ e.preventDefault(); e.stopPropagation(); }
+          else handleEdgeCtrlSelectV43(e);
+        },true);
+        window.addEventListener('keydown',handleClipboardKeydownV43,true);
+      }
+      installClipboardHandlersV43();
+      window.audioStudioClipboardV43={copySelectionV43,cutSelectionV43,pasteSelectionV43};
+    }
+
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
