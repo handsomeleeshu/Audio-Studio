@@ -5361,6 +5361,262 @@
       window.audioStudioClipboardV43={copySelectionV43,cutSelectionV43,pasteSelectionV43};
     }
 
+
+    // v44: working pipeline list generated from current connected components.
+    // The dropdown now reflects the live layout groups rather than only the
+    // original saved JSON pipeline list. Save/export will later decide how
+    // New / Split / Merge / Modified groups are named and written back to JSON.
+    if(!window.__audioStudioWorkingPipelineListV44Installed){
+      window.__audioStudioWorkingPipelineListV44Installed=true;
+      const workingGroupPrefixV44='__working_group_v44__:';
+      let currentWorkingGroupIdV44='ALL';
+      let lastWorkingGroupSignatureV44='';
+
+      function savedPipelineMapV44(){
+        const m=new Map();
+        (currentProjectConfig?.pipelines || []).forEach(p=>m.set(p.pipe_id,p));
+        return m;
+      }
+      function hashStringV44(s=''){
+        let h=2166136261;
+        for(let i=0;i<s.length;i++){
+          h^=s.charCodeAt(i);
+          h=Math.imul(h,16777619);
+        }
+        return (h>>>0).toString(36);
+      }
+      function nodeOriginPipelineIdV44(n){
+        const saved=savedPipelineMapV44();
+        if(n?.pipelineId && saved.has(n.pipelineId)) return n.pipelineId;
+        const s=String(n?.id || '');
+        if(s.includes('__')){
+          const prefix=s.split('__')[0];
+          const hit=[...saved.keys()].find(pid=>safeGraphId(pid)===prefix || pid===prefix);
+          if(hit) return hit;
+        }
+        return '';
+      }
+      function nodeLocalIdForPipelineV44(id='',pid=''){
+        const s=String(id || '');
+        const prefix=safeGraphId(pid)+'__';
+        return safeGraphId(s.startsWith(prefix) ? s.slice(prefix.length) : s);
+      }
+      function edgeSignatureV44(from,fromPort,to,toPort){
+        return `${from}:${fromPort || 'out'}->${to}:${toPort || 'in'}`;
+      }
+      function savedStructureSignatureV44(pipe){
+        if(!pipe) return '';
+        const nodes=(pipe.nodes || []).map(n=>safeGraphId(n.node_id)).sort();
+        const edges=(pipe.edges || []).map(e=>{
+          const f=splitEndpoint(e.from), t=splitEndpoint(e.to);
+          return edgeSignatureV44(safeGraphId(f.node), f.port || 'out', safeGraphId(t.node), t.port || 'in');
+        }).sort();
+        return JSON.stringify({nodes,edges});
+      }
+      function groupStructureSignatureV44(group,pid){
+        const ids=new Set(group.nodes.map(n=>n.id));
+        const nodes=group.nodes.map(n=>nodeLocalIdForPipelineV44(n.id,pid)).sort();
+        const edges=[];
+        group.edges.forEach(e=>{
+          const p=edgeParts(e);
+          if(!ids.has(p.from) || !ids.has(p.to)) return;
+          edges.push(edgeSignatureV44(
+            nodeLocalIdForPipelineV44(p.from,pid),
+            p.fromPort || 'out',
+            nodeLocalIdForPipelineV44(p.to,pid),
+            p.toPort || 'in'
+          ));
+        });
+        edges.sort();
+        return JSON.stringify({nodes,edges});
+      }
+      function connectedWorkingGroupsV44(){
+        const nodes=[...state.nodes];
+        const nodeBy=new Map(nodes.map(n=>[n.id,n]));
+        const parent=new Map(nodes.map(n=>[n.id,n.id]));
+        const order=new Map(nodes.map((n,i)=>[n.id,i]));
+        function find(x){
+          if(!parent.has(x)) parent.set(x,x);
+          let r=x;
+          while(parent.get(r)!==r) r=parent.get(r);
+          while(parent.get(x)!==x){ const p=parent.get(x); parent.set(x,r); x=p; }
+          return r;
+        }
+        function union(a,b){
+          const ra=find(a), rb=find(b);
+          if(ra!==rb) parent.set(rb,ra);
+        }
+        const visibleEdges=[];
+        state.edges.forEach(e=>{
+          const p=edgeParts(e);
+          if(!nodeBy.has(p.from) || !nodeBy.has(p.to)) return;
+          visibleEdges.push(e);
+          if(p.from!==p.to) union(p.from,p.to);
+        });
+        const raw=new Map();
+        nodes.forEach(n=>{
+          const root=find(n.id);
+          if(!raw.has(root)) raw.set(root,{root,nodes:[],edges:[],originPipelineIds:new Set(),minX:Infinity,minY:Infinity,firstIndex:Infinity});
+          const g=raw.get(root);
+          g.nodes.push(n);
+          const pid=nodeOriginPipelineIdV44(n);
+          if(pid) g.originPipelineIds.add(pid);
+          g.minX=Math.min(g.minX,Number(n.x)||0);
+          g.minY=Math.min(g.minY,Number(n.y)||0);
+          g.firstIndex=Math.min(g.firstIndex,order.get(n.id) ?? 999999);
+        });
+        visibleEdges.forEach(e=>{
+          const p=edgeParts(e);
+          const root=find(p.from);
+          if(root===find(p.to) && raw.has(root)) raw.get(root).edges.push(e);
+        });
+
+        const saved=savedPipelineMapV44();
+        const groups=[...raw.values()].sort((a,b)=>(a.minY-b.minY)||(a.minX-b.minX)||(a.firstIndex-b.firstIndex));
+        const totalByPid=new Map();
+        groups.forEach(g=>{
+          [...g.originPipelineIds].forEach(pid=>totalByPid.set(pid,(totalByPid.get(pid)||0)+1));
+        });
+        const seenByPid=new Map();
+        let newCount=0;
+        return groups.map((g,idx)=>{
+          const originIds=[...g.originPipelineIds].sort((a,b)=>inferNodePipelineName(a).localeCompare(inferNodePipelineName(b)) || a.localeCompare(b));
+          const nodeSig=g.nodes.map(n=>n.id).sort().join('|');
+          g.id=workingGroupPrefixV44 + hashStringV44(nodeSig || `empty_${idx}`);
+          g.originPipelineIds=originIds;
+          let displayName='Untitled Pipeline';
+          let status='new';
+          let statusLabel='New';
+          if(originIds.length>1){
+            displayName='Merged: ' + originIds.map(inferNodePipelineName).join(' + ');
+            status='unsaved_merge';
+            statusLabel='Unsaved merge';
+          }else if(originIds.length===0){
+            newCount++;
+            displayName=`Untitled Pipeline ${newCount}`;
+            status='new';
+            statusLabel='New';
+          }else{
+            const pid=originIds[0];
+            const baseName=inferNodePipelineName(pid);
+            const splitCount=totalByPid.get(pid)||1;
+            if(splitCount>1){
+              const part=(seenByPid.get(pid)||0)+1;
+              seenByPid.set(pid,part);
+              displayName=`${baseName} / Part ${part}`;
+              status='unsaved_split';
+              statusLabel='Unsaved split';
+            }else{
+              displayName=baseName;
+              const savedSig=savedStructureSignatureV44(saved.get(pid));
+              const groupSig=groupStructureSignatureV44(g,pid);
+              if(savedSig && savedSig===groupSig){
+                status='saved';
+                statusLabel='Saved';
+              }else{
+                status='modified';
+                statusLabel='Modified';
+              }
+            }
+          }
+          g.displayName=displayName;
+          g.status=status;
+          g.statusLabel=statusLabel;
+          return g;
+        });
+      }
+      function currentWorkingGroupsV44(){
+        return connectedWorkingGroupsV44();
+      }
+      function workingGroupLabelV44(g){
+        return `${g.displayName} — ${g.statusLabel} · ${g.nodes.length}N/${g.edges.length}E`;
+      }
+      function renderWorkingPipelineSelectV44(){
+        const select=$('#pipelineSelect');
+        if(!select) return [];
+        const groups=currentWorkingGroupsV44();
+        const sig=JSON.stringify(groups.map(g=>({id:g.id,name:g.displayName,status:g.status,n:g.nodes.length,e:g.edges.length,orig:g.originPipelineIds})));
+        const validIds=new Set(['ALL',...groups.map(g=>g.id)]);
+        if(!validIds.has(currentWorkingGroupIdV44)) currentWorkingGroupIdV44='ALL';
+        if(sig!==lastWorkingGroupSignatureV44 || select.dataset.mode!=='working_groups_v44'){
+          select.innerHTML='';
+          const allOpt=document.createElement('option');
+          allOpt.value='ALL';
+          allOpt.textContent=`All — ${groups.length} group(s)`;
+          select.appendChild(allOpt);
+          groups.forEach(g=>{
+            const opt=document.createElement('option');
+            opt.value=g.id;
+            opt.textContent=workingGroupLabelV44(g);
+            opt.dataset.status=g.status;
+            opt.title=`${g.statusLabel}: ${g.nodes.length} node(s), ${g.edges.length} connection(s)`;
+            select.appendChild(opt);
+          });
+          select.dataset.mode='working_groups_v44';
+          select.title='Working pipeline groups are auto-detected from current connected components.';
+          lastWorkingGroupSignatureV44=sig;
+        }
+        select.value=currentWorkingGroupIdV44;
+        select.onchange=e=>{
+          if(running){
+            toast('Run 状态下不能切换 pipeline group，请先 Stop');
+            e.target.value=currentWorkingGroupIdV44;
+            return;
+          }
+          const value=e.target.value || 'ALL';
+          currentWorkingGroupIdV44=value;
+          if(value==='ALL'){
+            clearSelection();
+            renderAll(false);
+            drawEdges();
+            backendEdit('working_group_selected',{group_id:'ALL'});
+            toast('Showing all working pipeline groups');
+          }else{
+            focusWorkingGroupV44(value);
+          }
+        };
+        return groups;
+      }
+      function focusWorkingGroupV44(groupId){
+        const groups=currentWorkingGroupsV44();
+        const g=groups.find(x=>x.id===groupId);
+        if(!g){
+          currentWorkingGroupIdV44='ALL';
+          renderWorkingPipelineSelectV44();
+          return false;
+        }
+        selectedNodeIds=new Set(g.nodes.map(n=>n.id));
+        selectedEdgeKeys=new Set(g.edges.map(edgeKeyForEdge));
+        selectedNodeId=g.nodes[0]?.id || '';
+        selectedEdgeKey='';
+        inspectorRenderKey='';
+        renderAll(false);
+        drawEdges();
+        const b=boundsOfNodes(g.nodes);
+        const sc=getScrollEl();
+        if(sc){
+          const z=state.zoom || 1;
+          sc.scrollLeft=Math.max(0,(b.x-120)*z);
+          sc.scrollTop=Math.max(0,(b.y-80)*z);
+          renderMinimap();
+        }
+        backendEdit('working_group_selected',{group_id:g.id,name:g.displayName,status:g.status,nodes:g.nodes.map(n=>n.id),edges:g.edges.map(edgeKeyForEdge)});
+        toast(`${g.displayName}: ${g.statusLabel}`);
+        return true;
+      }
+
+      renderPipelineSelect = function(){
+        return renderWorkingPipelineSelectV44();
+      };
+      const __renderAllBeforeWorkingGroupsV44 = renderAll;
+      renderAll = function(rebuildNodes=true){
+        const out=__renderAllBeforeWorkingGroupsV44(rebuildNodes);
+        renderWorkingPipelineSelectV44();
+        return out;
+      };
+      window.audioStudioWorkingPipelineGroupsV44={currentWorkingGroupsV44,renderWorkingPipelineSelectV44,focusWorkingGroupV44};
+    }
+
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
