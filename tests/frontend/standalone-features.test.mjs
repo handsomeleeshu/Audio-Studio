@@ -36,4 +36,22 @@ assert.ok(
 
 assert.ok(html.includes('id="undoBtn"'), 'Undo button should exist');
 assert.ok(html.includes('id="redoBtn"'), 'Redo button should exist');
+
+assert.ok(
+  html.includes('__audioStudioAutoArrangeV42Installed'),
+  'missing v42 disconnected-component Auto Arrange override'
+);
+assert.ok(
+  html.includes('buildDisconnectedLayoutGroupsV42'),
+  'Auto Arrange should group by real graph connected components'
+);
+assert.ok(
+  html.includes('disconnected_components_pipeline_bands_v42'),
+  'Auto Arrange telemetry should report disconnected component band layout'
+);
+assert.ok(
+  html.indexOf('__audioStudioAutoArrangeV42Installed') > html.indexOf('__audioStudioAutoArrangeV41cInstalled'),
+  'v42 Auto Arrange override should be installed after v41c'
+);
+
 console.log('standalone-features.test passed');
