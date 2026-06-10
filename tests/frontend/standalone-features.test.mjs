@@ -145,4 +145,68 @@ assert.ok(
   'Event Log should be part of the dashboard selectable strip'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostV48Installed'),
+  'missing v48 per-algorithm cost frontend support'
+);
+for (const token of [
+  'cost-table-scroll-v48',
+  'refreshAlgorithmCostsV48',
+  '/api/algorithm/cost/live',
+  'centerAndFlashCostNodeV48',
+  'sortCostTableV48',
+  'data-cost-sort',
+  'data-cost-center',
+  'cost-flash-v48'
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('Ctrl/Cmd + click to center and flash this algorithm'),
+  'missing Ctrl/Cmd name-click centering hint'
+);
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostV49BackendOnlyInstalled'),
+  'missing v49 backend-only per-algorithm cost fix'
+);
+for (const token of [
+  'cost-table-v49-backend-only',
+  'cost-cpu-cell-v49',
+  'cost-cpu-value-v49',
+  'cpuColorV49',
+  'refreshAlgorithmCostsV49',
+  'syncTelemetryBackendOnlyV49',
+  'table-layout:fixed'
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  !html.includes('Backend /api/algorithm/cost/live unavailable; using frontend fake runtime cost') && !html.includes('fakeCostItemV49'),
+  'frontend must not synthesize fake algorithm cost data'
+);
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostV50Installed'),
+  'missing v50 per-algorithm cost display fix'
+);
+for (const token of [
+  'cost-table-v50',
+  'cost-col-core-v50',
+  'cost-cpu-cell-v50',
+  'cost-cpu-value-v50',
+  'sortCostTableV50',
+  'pointerdown',
+  'table-layout:fixed!important',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  !html.includes('Backend /api/algorithm/cost/live unavailable; using frontend fake runtime cost') && !html.includes('fakeCostItemV49'),
+  'frontend must not synthesize fake algorithm cost data'
+);
+
 console.log('standalone-features.test passed');

@@ -370,6 +370,65 @@ std::string FakeInspectorController::bufferLiveData(const std::map<std::string, 
 }
 
 
+FakeAlgorithmCostController::FakeAlgorithmCostController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0x48c05u));
+}
+
+double FakeAlgorithmCostController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeAlgorithmCostController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeAlgorithmCostController::liveCosts(const std::map<std::string, std::string>& query) {
+  static std::atomic<int> cost_count{0};
+  const int count = ++cost_count;
+  const bool run = queryBool(query, "running");
+  const auto node_ids = splitSimple(queryGet(query, "nodes"), ',');
+  const auto core_tokens = splitSimple(queryGet(query, "cores"), ',');
+
+  if (count == 1 || count % 10 == 0) {
+    std::cout << "\n[AudioStudio Backend CALLBACK] IAlgorithmCostController::liveCosts"
+              << "\n  Fake per-algorithm runtime cost. request_count=" << count
+              << " running=" << (run ? "true" : "false")
+              << " node_count=" << node_ids.size() << "\n" << std::flush;
+  }
+
+  const auto now_ms = static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(3);
+  os << "{\"ok\":true,\"mode\":\"fake_algorithm_cost\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now_ms << ",\"costs\":[";
+  for (size_t i = 0; i < node_ids.size(); ++i) {
+    if (i) os << ',';
+    int core = 0;
+    try { core = i < core_tokens.size() && !core_tokens[i].empty() ? std::stoi(core_tokens[i]) : rndi(0, 3); }
+    catch (...) { core = rndi(0, 3); }
+    const double cpu = run ? (rnd(0.0, 1.0) > 0.84 ? rnd(62.0, 96.0) : rnd(0.4, 38.0)) : 0.0;
+    os << "{\"node_id\":\"" << jsonEscape(node_ids[i]) << "\",\"cpu\":" << cpu
+       << ",\"core\":" << core;
+    if (run) {
+      os << ",\"mem_kb\":" << rndi(48, 896)
+         << ",\"latency_ms\":" << rnd(0.035, 3.20);
+    } else {
+      os << ",\"mem_kb\":null,\"latency_ms\":null";
+    }
+    os << "}";
+  }
+  os << "]}";
+  return os.str();
+}
+
+
 MockRuntimeEngine::MockRuntimeEngine() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
 }

@@ -44,13 +44,44 @@ std::vector<std::string> splitCsv(const std::string& csv) {
   return out;
 }
 
+static int hexValue(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+static std::string urlDecode(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '+') { out.push_back(' '); continue; }
+    if (s[i] == '%' && i + 2 < s.size()) {
+      const int hi = hexValue(s[i + 1]);
+      const int lo = hexValue(s[i + 2]);
+      if (hi >= 0 && lo >= 0) {
+        out.push_back(static_cast<char>((hi << 4) | lo));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(s[i]);
+  }
+  return out;
+}
+
 std::map<std::string, std::string> parseQuery(const std::string& q) {
   std::map<std::string, std::string> out;
   std::string key, val;
   enum { KEY, VAL } mode = KEY;
   for (size_t i = 0; i <= q.size(); ++i) {
     char c = (i == q.size()) ? '&' : q[i];
-    if (c == '&') { if (!key.empty()) out[key] = val; key.clear(); val.clear(); mode = KEY; }
+    if (c == '&') {
+      if (!key.empty()) out[urlDecode(key)] = urlDecode(val);
+      key.clear();
+      val.clear();
+      mode = KEY;
+    }
     else if (c == '=' && mode == KEY) mode = VAL;
     else if (mode == KEY) key.push_back(c);
     else val.push_back(c);
@@ -123,10 +154,12 @@ static void logApiRequest(const HttpRequest& req) {
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller,
-                       std::shared_ptr<IInspectorController> inspector_controller)
+                       std::shared_ptr<IInspectorController> inspector_controller,
+                       std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
-    inspector_controller_(std::move(inspector_controller)) {}
+    inspector_controller_(std::move(inspector_controller)),
+    algorithm_cost_controller_(std::move(algorithm_cost_controller)) {}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -168,6 +201,11 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     auto q = parseQuery(req.query);
     if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
     return {200, "application/json", inspector_controller_->liveData(q)};
+  }
+  if (req.method == "GET" && req.path == "/api/algorithm/cost/live") {
+    auto q = parseQuery(req.query);
+    if (!algorithm_cost_controller_) return {503, "application/json", R"({"ok":false,"error":"algorithm cost controller not configured"})"};
+    return {200, "application/json", algorithm_cost_controller_->liveCosts(q)};
   }
   if (req.method == "GET" && req.path == "/api/inspector/buffer/live") {
     auto q = parseQuery(req.query);
