@@ -416,4 +416,27 @@ assert.ok(
   'window checkbox list item color should be bound to matching panel title color'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioRemoveAudioFileV67cInstalled'),
+  'missing v67c Audio File visual-removal compatibility marker'
+);
+for (const token of [
+  'audio-file-removed-v67c',
+  '.right-panel.audio-file-removed-v67c .audio-file{display:none!important;}',
+  '.right-panel.audio-file-removed-v67c .inspector',
+  'id="playBtn"',
+  'id="fileInput"',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('panelMenuBtn') && html.includes('autoBtn') && html.includes('__audioStudioDashboardStripV47Installed'),
+  'Auto Arrange, window menu and dashboard strip logic must remain intact after removing Audio File visually'
+);
+assert.ok(
+  !html.includes('__audioStudioRemoveAudioFileV67bInstalled') && !html.includes('__audioStudioRemoveAudioFileV67Installed'),
+  'old broken v67/v67b markers should not remain'
+);
+
 console.log('standalone-features.test passed');
