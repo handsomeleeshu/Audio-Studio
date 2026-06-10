@@ -279,11 +279,60 @@ for (const token of [
   assert.ok(html.includes(token), `missing ${token}`);
 }
 assert.ok(
-  html.includes('width:8%!important') && html.includes('width:16%!important'),
-  'v59 should keep IDX readable and widen Core'
+  html.includes('width:10%!important') && html.includes('width:12%!important'),
+  'v60 should apply requested Per-Algorithm Cost column ratios'
 );
 assert.ok(
   html.includes('display:inline-flex!important') && html.includes('gap:4px!important'),
   'v59 sort arrow should be inline next to the header label'
+);
+
+
+assert.ok(
+  html.includes("__audioStudioPerAlgorithmCostColumnRatioV60='Name 25 / IDX 10 / CPU 26 / MEM 15 / LAT 12 / Core 12'"),
+  'missing v60 per-algorithm cost column ratio marker'
+);
+for (const token of [
+  'cost-col-name-v54{width:25%!important}',
+  'cost-col-idx-v54{width:10%!important}',
+  'cost-col-cpu-v54{width:26%!important}',
+  'cost-col-mem-v54{width:15%!important}',
+  'cost-col-lat-v54{width:12%!important}',
+  'cost-col-core-v54{width:12%!important}',
+]) {
+  assert.ok(html.includes(token), `missing v60 column ratio ${token}`);
+}
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostStoppedIdxV61Installed'),
+  'missing v61 stopped-state IDX guard'
+);
+for (const token of [
+  'cost-table-v61',
+  'cost-idx-cell-v61',
+  'applyCostStoppedIdxV61',
+  'row.cells.length===5',
+  '<span class="cost-num-v50">N/A</span>',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('width:25%!important') && html.includes('width:10%!important') && html.includes('width:26%!important') && html.includes('width:15%!important') && html.includes('width:12%!important'),
+  'v61 should keep requested v60 column ratios'
+);
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostStoppedIdxV62Installed'),
+  'missing v62 stopped-state cost IDX normalizer'
+);
+assert.ok(
+  html.includes('idxTextForNodeV62') && html.includes("return 'N/A'"),
+  'stopped per-algorithm cost IDX should render N/A instead of allowing CPU to occupy IDX'
+);
+assert.ok(
+  html.includes('cost-idx-cell-v62') && html.includes('cost-cpu-cell-td-v62'),
+  'v62 should keep IDX and CPU cells separated in stopped state'
 );
 console.log('standalone-features.test passed');
