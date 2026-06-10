@@ -47,7 +47,7 @@
     .brand-version{display:block;font-size:11px;color:#b7c8df;margin-left:0;margin-top:2px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.brand-copy{min-width:0;flex:0 1 auto}.brand-divider{width:1px;height:34px;margin:0 10px 0 12px;flex:0 0 auto;background:linear-gradient(180deg,transparent,rgba(72,135,198,.92),transparent);box-shadow:0 0 10px rgba(0,216,255,.16)}.company-logo-wrap{display:flex;align-items:center;justify-content:flex-start;flex:0 0 196px;min-width:196px;overflow:hidden}.company-logo{display:block;width:190px;height:52px;object-fit:contain;object-position:left center;filter:drop-shadow(0 0 6px rgba(255,32,32,.08))}
     .top-group{display:flex; align-items:center; gap:7px; flex:1 1 auto; min-width:0; justify-content:flex-start; overflow:visible;}
     .top-field{height:40px; min-width:76px; padding:0; border:0; background:transparent; border-radius:0; display:flex; flex-direction:column; justify-content:center; box-shadow:none;}
-    .top-field small{color:#7f90a9;font-size:9px;margin-bottom:3px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}.top-field b{font-size:13px;white-space:nowrap}.top-field select{height:30px;min-width:96px;border:1px solid #21466e;border-radius:9px;background:#071426;color:#e7f0ff;padding:0 24px 0 10px;font-size:13px;font-weight:750;outline:none;max-width:100%;overflow:hidden;text-overflow:ellipsis}.top-field.project{flex:1 1 240px;min-width:190px;max-width:300px}.top-field.project select{min-width:0;width:100%;}.top-field.small{min-width:64px}.top-field.small select{min-width:64px;width:78px}.top-field.rate select,#rateSelect{min-width:128px;width:136px}.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green); margin-right:5px;}
+    .top-field small{color:#7f90a9;font-size:9px;margin-bottom:3px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}.top-field b{font-size:13px;white-space:nowrap}.top-field select{height:30px;min-width:96px;border:1px solid #21466e;border-radius:9px;background:#071426;color:#e7f0ff;padding:0 24px 0 10px;font-size:13px;font-weight:750;outline:none;max-width:100%;overflow:hidden;text-overflow:ellipsis}.top-field.project{flex:1 1 240px;min-width:190px;max-width:300px}.top-field.project select{min-width:0;width:100%;}.top-field.small{min-width:64px}.top-field.small select{min-width:64px;width:78px}.top-field.rate select,.top-field.frequency select,#rateSelect{min-width:128px;width:136px}.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green); margin-right:5px;}
     .actions{display:flex; gap:6px; align-items:center; justify-content:flex-end; flex:0 0 auto; min-width:max-content;}
     .btn{border:1px solid var(--line);background:#07111f;border-radius:8px;padding:7px 9px;font-weight:700;font-size:11px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);white-space:nowrap;}
     .btn.cyan{border-color:rgba(0,216,255,.6); color:var(--cyan); background:rgba(0,86,130,.18)}
@@ -598,7 +598,7 @@
         <div class="top-field project"><small>Project</small><select id="projectSelect"><option>Loading...</option></select></div>
         <div class="top-field"><small>DSP Target</small><select id="dspSelect"><option>HiFi5s</option><option>ZSP</option><option>Native Mock</option></select></div>
         <div class="top-field small"><small>Cores</small><select id="coreSelect"><option>4</option><option>8</option></select></div>
-        <div class="top-field small"><small>Rate</small><select id="rateSelect"><option>48000</option><option>96000</option></select></div>
+        <div class="top-field small frequency"><small>Frequency</small><select id="rateSelect"><option value="600">600 MHz</option></select></div>
       </div>
       <div class="actions">
         <button class="btn cyan" id="validateBtn">✓ Validate</button>
@@ -862,7 +862,9 @@
           dsp: $('#dspSelect')?.value || 'HiFi5s',
           cores: Number($('#coreSelect')?.value || 4),
           sampleRate: 48000,
-          frameSize: 256
+          frameSize: 256,
+          dspFrequencyMHz: currentDspFrequencyMHzV73(),
+          dspFrequencyHz: currentDspFrequencyMHzV73()*1000000
         },
         running,
         selectedNodeId,
@@ -1430,6 +1432,130 @@
       const raf=window.requestAnimationFrame || (cb=>setTimeout(cb,0));
       raf(()=>{ sc.scrollLeft=s.left||0; sc.scrollTop=s.top||0; renderMinimap(); drawEdges(); });
     }
+
+    // v73: backend-owned topbar target settings and JSON-driven DSP frequency options.
+    // Project JSON provides available DSP main frequencies; the selected target
+    // tuple is persisted through /api/target/config so Validate/Build/Run use
+    // backend-confirmed settings instead of frontend-only select values.
+    if(!window.__audioStudioTopbarTargetBackendV73Installed){
+      window.__audioStudioTopbarTargetBackendV73Installed=true;
+      let targetConfigRevisionV73=0;
+      function normalizeMhzListV73(values){
+        if(!Array.isArray(values)) return [];
+        return [...new Set(values.map(v=>Number(v)).filter(v=>Number.isFinite(v)&&v>0))].sort((a,b)=>a-b);
+      }
+      function dspFrequencySpecV73(){
+        const hints=currentProjectConfig?.hardware_hints || {};
+        return hints.dsp_frequency_mhz || hints.dsp_frequencies_mhz || hints.dsp_frequency_options_mhz || null;
+      }
+      function dspFrequencyOptionsForTargetV73(target=$('#dspSelect')?.value || 'HiFi5s'){
+        const spec=dspFrequencySpecV73();
+        let raw=[];
+        if(Array.isArray(spec)) raw=spec;
+        else if(spec?.by_target?.[target]) raw=spec.by_target[target];
+        else if(spec?.byTarget?.[target]) raw=spec.byTarget[target];
+        else if(Array.isArray(spec?.options)) raw=spec.options;
+        else if(Array.isArray(spec?.values)) raw=spec.values;
+        const list=normalizeMhzListV73(raw);
+        return list.length ? list : [300,400,500,600,800];
+      }
+      function defaultDspFrequencyMHzV73(target=$('#dspSelect')?.value || 'HiFi5s'){
+        const spec=dspFrequencySpecV73();
+        const opts=dspFrequencyOptionsForTargetV73(target);
+        const byTarget=Number(spec?.default_by_target?.[target] ?? spec?.defaultByTarget?.[target]);
+        const def=Number.isFinite(byTarget) ? byTarget : Number(spec?.default ?? 600);
+        if(opts.includes(def)) return def;
+        return opts.includes(600) ? 600 : opts[0];
+      }
+      function renderDspFrequencySelectV73({preserveCurrent=true}={}){
+        const select=$('#rateSelect');
+        if(!select) return;
+        const target=$('#dspSelect')?.value || 'HiFi5s';
+        const current=Number(select.value);
+        const options=dspFrequencyOptionsForTargetV73(target);
+        const selected=preserveCurrent && options.includes(current) ? current : defaultDspFrequencyMHzV73(target);
+        select.innerHTML=options.map(v=>`<option value="${v}" ${v===selected?'selected':''}>${v} MHz</option>`).join('');
+        select.value=String(selected);
+        select.title='DSP main frequency, loaded from project JSON and synchronized to backend';
+        const field=select.closest('.top-field');
+        field?.classList.add('frequency');
+        const label=field?.querySelector('small');
+        if(label) label.textContent='Frequency';
+      }
+      function currentDspFrequencyMHzV73(){
+        const v=Number($('#rateSelect')?.value || defaultDspFrequencyMHzV73());
+        return Number.isFinite(v) && v>0 ? v : 600;
+      }
+      function topbarTargetPayloadV73(reason=''){
+        const freq=currentDspFrequencyMHzV73();
+        return {
+          session_id:API_SESSION_ID,
+          project:currentProjectFile || 'A2.json',
+          project_file:currentProjectFile || 'A2.json',
+          dsp:$('#dspSelect')?.value || 'HiFi5s',
+          cores:String(Number($('#coreSelect')?.value || 4)),
+          dspFrequencyMHz:String(freq),
+          dspFrequencyHz:String(freq*1000000),
+          sampleRate:'48000',
+          frameSize:'256',
+          reason
+        };
+      }
+      function applyBackendTargetV73(target){
+        if(!target) return;
+        const dsp=$('#dspSelect'), core=$('#coreSelect'), freq=$('#rateSelect');
+        if(dsp && target.dsp && [...dsp.options].some(o=>o.value===target.dsp)) dsp.value=target.dsp;
+        renderDspFrequencySelectV73({preserveCurrent:true});
+        if(core && target.cores!==undefined && [...core.options].some(o=>o.value===String(target.cores))) core.value=String(target.cores);
+        if(freq && target.dspFrequencyMHz!==undefined){
+          const mhz=String(target.dspFrequencyMHz);
+          if([...freq.options].some(o=>o.value===mhz)) freq.value=mhz;
+        }
+      }
+      async function refreshTopbarTargetFromBackendV73(reason=''){
+        const data=await apiGet(`/api/target/config?project=${encodeURIComponent(currentProjectFile || 'A2.json')}`);
+        if(data?.ok && data.target){
+          targetConfigRevisionV73=Number(data.revision || targetConfigRevisionV73 || 0);
+          applyBackendTargetV73(data.target);
+          backendEdit('target_config_loaded',{reason,target:data.target,revision:targetConfigRevisionV73});
+          return data.target;
+        }
+        addLog('warn','Target config backend unavailable','GET /api/target/config failed; topbar keeps current UI selection');
+        return null;
+      }
+      async function syncTopbarTargetToBackendV73(reason=''){
+        const payload=topbarTargetPayloadV73(reason);
+        const data=await apiPost('/api/target/config', payload);
+        if(data?.ok && data.target){
+          targetConfigRevisionV73=Number(data.revision || targetConfigRevisionV73 || 0);
+          applyBackendTargetV73(data.target);
+          addLog('info','Target config synced',`${data.target.dsp} · ${data.target.cores} core(s) · ${data.target.dspFrequencyMHz} MHz`);
+          backendEdit('target_config_synced',{reason,target:data.target,revision:targetConfigRevisionV73});
+          return data.target;
+        }
+        addLog('warn','Target config sync failed','POST /api/target/config failed; backend target may be stale');
+        return null;
+      }
+      function installTopbarTargetBackendV73(){
+        const dsp=$('#dspSelect'), core=$('#coreSelect'), freq=$('#rateSelect');
+        if(dsp && !dsp.dataset.targetBackendV73){
+          dsp.dataset.targetBackendV73='1';
+          dsp.addEventListener('change',()=>{renderDspFrequencySelectV73({preserveCurrent:false}); syncTopbarTargetToBackendV73('dsp_changed');});
+        }
+        if(core && !core.dataset.targetBackendV73){
+          core.dataset.targetBackendV73='1';
+          core.addEventListener('change',()=>syncTopbarTargetToBackendV73('cores_changed'));
+        }
+        if(freq && !freq.dataset.targetBackendV73){
+          freq.dataset.targetBackendV73='1';
+          freq.addEventListener('change',()=>syncTopbarTargetToBackendV73('frequency_changed'));
+        }
+      }
+      installTopbarTargetBackendV73();
+      window.audioStudioTargetConfigV73={renderDspFrequencySelectV73,currentDspFrequencyMHzV73,refreshTopbarTargetFromBackendV73,syncTopbarTargetToBackendV73,topbarTargetPayloadV73,installTopbarTargetBackendV73};
+      window.currentDspFrequencyMHzV73=currentDspFrequencyMHzV73;
+    }
+
     function renderPipelineSelect() {
       const select=$('#pipelineSelect');
       if(!select) return;
@@ -1621,6 +1747,10 @@
       defaultViewportZoomApplied=false;
       const projectSelect = $('#projectSelect');
       if(projectSelect) projectSelect.value = currentProjectFile;
+      window.audioStudioTargetConfigV73?.installTopbarTargetBackendV73?.();
+      window.audioStudioTargetConfigV73?.renderDspFrequencySelectV73?.({preserveCurrent:false});
+      await window.audioStudioTargetConfigV73?.refreshTopbarTargetFromBackendV73?.('project_config_loaded');
+      await window.audioStudioTargetConfigV73?.syncTopbarTargetToBackendV73?.('project_config_loaded');
 
       const moduleTypes = Array.isArray(cfg.module_types) ? cfg.module_types : [];
       platformComponents = moduleTypes.map(mt=>({...componentFromModuleType(mt), source:'platform'}));

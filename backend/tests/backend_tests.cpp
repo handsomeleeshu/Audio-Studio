@@ -6,6 +6,7 @@
 int main() {
   auto engine = std::make_shared<audiostudio::MockRuntimeEngine>();
   auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
+  auto target_config = std::make_shared<audiostudio::FakeTargetConfigController>();
 
   auto valid = engine->validatePipeline("{\"nodes\":[],\"connections\":[]}");
   assert(valid.find("\"ok\":true") != std::string::npos);
@@ -37,7 +38,7 @@ int main() {
   assert(buffer_live.find("\"buffer\"") != std::string::npos);
   assert(buffer_live.find("\"pcm16\"") != std::string::npos);
 
-  audiostudio::HttpServer server(".", 0, engine, engine, engine, inspector);
+  audiostudio::HttpServer server(".", 0, engine, engine, engine, target_config, inspector);
   audiostudio::HttpRequest req;
   req.method = "POST";
   req.path = "/api/project/save";

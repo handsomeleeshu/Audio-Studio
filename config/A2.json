@@ -30,6 +30,16 @@
       "core2": { "role": "vass_worker" },
       "core3": { "role": "service_core", "services": ["asrc", "anc_filter"] }
     },
+    "dsp_frequency_mhz": {
+      "unit": "MHz",
+      "default": 600,
+      "description": "DSP main frequency options used by Audio Studio target configuration.",
+      "by_target": {
+        "HiFi5s": [400, 500, 600, 800],
+        "ZSP": [300, 400, 500, 600],
+        "Native Mock": [300, 400, 500, 600, 800]
+      }
+    },
     "audio_ios": {
       "tdm_ports": [
         { "id": "TDM0", "use": "7870_audio", "dir": "bidir", "max_ch": 16, "rates": [48000, 96000] },
