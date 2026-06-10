@@ -156,12 +156,18 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
                        std::shared_ptr<IParameterController> parameter_controller,
                        std::shared_ptr<IInspectorController> inspector_controller,
                        std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller,
-                       std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller)
+                       std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller,
+                        std::shared_ptr<IEventLogController> event_log_controller,
+                        std::shared_ptr<ISystemHealthController> system_health_controller,
+                        std::shared_ptr<IAudioIoController> audio_io_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
     inspector_controller_(std::move(inspector_controller)),
     algorithm_cost_controller_(std::move(algorithm_cost_controller)),
-    dsp_core_loading_controller_(std::move(dsp_core_loading_controller)) {}
+    dsp_core_loading_controller_(std::move(dsp_core_loading_controller)),
+    event_log_controller_(std::move(event_log_controller)),
+    system_health_controller_(std::move(system_health_controller)),
+    audio_io_controller_(std::move(audio_io_controller)) {}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -214,6 +220,21 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     if (!dsp_core_loading_controller_) return {503, "application/json", R"({"ok":false,"error":"dsp core loading controller not configured"})"};
     return {200, "application/json", dsp_core_loading_controller_->liveCoreLoading(q)};
   }
+  if (req.method == "GET" && req.path == "/api/event-log/live") {
+    auto q = parseQuery(req.query);
+    if (!event_log_controller_) return {503, "application/json", R"({"ok":false,"error":"event log controller not configured"})"};
+    return {200, "application/json", event_log_controller_->liveEvents(q)};
+  }
+  if (req.method == "GET" && req.path == "/api/system/health/live") {
+    auto q = parseQuery(req.query);
+    if (!system_health_controller_) return {503, "application/json", R"({"ok":false,"error":"system health controller not configured"})"};
+    return {200, "application/json", system_health_controller_->liveHealth(q)};
+  }
+  if (req.method == "GET" && req.path == "/api/audio/io/live") {
+    auto q = parseQuery(req.query);
+    if (!audio_io_controller_) return {503, "application/json", R"({"ok":false,"error":"audio io controller not configured"})"};
+    return {200, "application/json", audio_io_controller_->liveAudioIo(q)};
+  }
   if (req.method == "GET" && req.path == "/api/inspector/buffer/live") {
     auto q = parseQuery(req.query);
     if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
@@ -223,7 +244,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/tool") return {200, "application/json", runtime_->pipelineToolAction(req.body)};
-  if (req.method == "POST" && req.path == "/api/ui/event") return {200, "application/json", runtime_->pipelineToolAction(req.body)};
+  if (req.method == "POST" && req.path == "/api/ui/event") {
+    if (!event_log_controller_) return {200, "application/json", runtime_->pipelineToolAction(req.body)};
+    return {200, "application/json", event_log_controller_->postEvent(req.body)};
+  }
   if (req.method == "POST" && req.path == "/api/project/save") return {200, "application/json", runtime_->pipelineEditEvent(std::string("{\"action\":\"project_save\",\"payload\":") + req.body + "}")};
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};

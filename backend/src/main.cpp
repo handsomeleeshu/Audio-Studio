@@ -8,7 +8,10 @@ int main(int argc, char** argv) {
   auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
   auto algorithm_cost = std::make_shared<audiostudio::FakeAlgorithmCostController>();
   auto dsp_core_loading = std::make_shared<audiostudio::FakeDspCoreLoadingController>();
-  audiostudio::HttpServer server(root, port, runtime, runtime, runtime, inspector, algorithm_cost, dsp_core_loading);
+  auto event_log = std::make_shared<audiostudio::FakeEventLogController>();
+  auto system_health = std::make_shared<audiostudio::FakeSystemHealthController>();
+  auto audio_io = std::make_shared<audiostudio::FakeAudioIoController>();
+  audiostudio::HttpServer server(root, port, runtime, runtime, runtime, inspector, algorithm_cost, dsp_core_loading, event_log, system_health, audio_io);
   try { return server.run(); }
   catch (const std::exception& e) { std::cerr << "server error: " << e.what() << std::endl; return 1; }
 }
