@@ -532,6 +532,12 @@
       accent-color:var(--window-title-color-v66)!important;
     }
 
+  
+    /* v67c: hide the local Audio File panel visually but keep compatibility DOM so legacy init handlers never abort page startup. */
+    .right-panel.audio-file-removed-v67c{gap:0!important;}
+    .right-panel.audio-file-removed-v67c .audio-file{display:none!important;}
+    .right-panel.audio-file-removed-v67c .inspector{flex:1 1 auto!important;height:100%!important;min-height:0!important;}
+    .right-panel.audio-file-removed-v67c .inspector-body{flex:1 1 auto!important;min-height:0!important;overflow:auto!important;}
   </style>
 </head>
 <body>
@@ -608,7 +614,7 @@
       </div>
     </section>
 
-    <aside class="right-panel" id="rightPanel">
+    <aside class="right-panel audio-file-removed-v67c" id="rightPanel">
       <section class="inspector">
         <div class="panel-head"><span>INSPECTOR</span><button class="close" data-hide="rightPanel">×</button></div>
         <div class="inspector-body scroll">
@@ -655,7 +661,7 @@
           </div>
         </div>
       </section>
-      <section class="audio-file">
+      <section class="audio-file audio-file-removed-v67c" aria-hidden="true">
         <div class="card-head"><span>AUDIO FILE</span><small>local</small></div>
         <input type="file" id="fileInput" accept="audio/*" style="display:none" />
         <b id="fileName">test_speech_48k.wav</b><br><small style="color:var(--muted)">48 kHz · 24-bit · Stereo</small>
@@ -7780,7 +7786,6 @@
       const windowTitleColorsV66=[
         {panel:'leftPanel',  name:'Algorithm Library', title:'#leftPanel > .panel-head',               color:'#00d8ff', glow:'rgba(0,216,255,.40)'},
         {panel:'rightPanel', name:'Inspector',         title:'#rightPanel .inspector > .panel-head',   color:'#b65cff', glow:'rgba(182,92,255,.38)'},
-        {panel:'audioFilePanel', name:'Audio File',    title:'#rightPanel .audio-file .card-head',     color:'#48f0a1', glow:'rgba(72,240,161,.34)'},
         {panel:'costPanel',  name:'Per-Algorithm Cost',title:'#costPanel > .card-head',                color:'#ffcc45', glow:'rgba(255,204,69,.36)'},
         {panel:'corePanel',  name:'DSP Core Loading',  title:'#corePanel > .card-head',                color:'#31f26b', glow:'rgba(49,242,107,.34)'},
         {panel:'probePanel', name:'Signal Probe',      title:'#probePanel > .card-head',               color:'#2e8bff', glow:'rgba(46,139,255,.38)'},
@@ -7816,6 +7821,14 @@
         new MutationObserver(applyWindowTitleColorsV66).observe(panelMenuV66,{childList:true,subtree:true,attributes:true,attributeFilter:['data-panel','checked']});
       }
       window.audioStudioWindowTitleColorsV66={windowTitleColorsV66,applyWindowTitleColorsV66};
+    }
+
+
+    // v67c: Audio File is visually removed while hidden compatibility controls prevent legacy init code from aborting.
+    if(!window.__audioStudioRemoveAudioFileV67cInstalled){
+      window.__audioStudioRemoveAudioFileV67cInstalled=true;
+      document.getElementById('rightPanel')?.classList.add('audio-file-removed-v67c');
+      document.querySelector('#rightPanel .audio-file')?.classList.add('audio-file-removed-v67c');
     }
 
     function exportJson(){
@@ -7896,8 +7909,8 @@
       window.addEventListener('keydown',e=>{ const tag=e.target?.tagName?.toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return; if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault(); deleteSelection(); return;} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); e.shiftKey?redoEdit():undoEdit();} if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault(); redoEdit();} });
       $('#saveBtn').addEventListener('click',async ()=>{saveCurrentLayout('save_button'); localStorage.setItem('audioStudioDemoState',JSON.stringify({nodes:state.nodes,edges:state.edges,layouts:pipelineLayoutCache})); await apiPost('/api/project/save',pipelineSnapshot()); addLog('ok','Layout saved','Backend callback: /api/project/save + browser localStorage'); toast('Saved locally');});
       $('#exportBtn').addEventListener('click',exportJson);
-      $('#changeFileBtn').addEventListener('click',()=>$('#fileInput').click());
-      $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]){$('#fileName').textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
+      $('#changeFileBtn')?.addEventListener('click',()=>$('#fileInput')?.click());
+      $('#fileInput')?.addEventListener('change',e=>{ if(e.target.files[0]){const fileNameEl=$('#fileName'); if(fileNameEl) fileNameEl.textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
       // Inspector parameters are now generated dynamically from module JSON runtime_params.
       setInterval(updateRandom,600); setInterval(refreshInspectorBackend,350); refreshInspectorBackend(); animate();
     }
