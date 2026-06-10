@@ -154,6 +154,7 @@ static void logApiRequest(const HttpRequest& req) {
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller,
+                       std::shared_ptr<ITargetConfigController> target_config_controller,
                        std::shared_ptr<IInspectorController> inspector_controller,
                        std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller,
                        std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller,
@@ -163,6 +164,7 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
                         std::shared_ptr<IRealTimeProbeController> real_time_probe_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
+    target_config_controller_(std::move(target_config_controller)),
     inspector_controller_(std::move(inspector_controller)),
     algorithm_cost_controller_(std::move(algorithm_cost_controller)),
     dsp_core_loading_controller_(std::move(dsp_core_loading_controller)),
@@ -202,6 +204,15 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "GET" && req.path.rfind("/config/", 0) == 0 &&
       req.path.size() >= 12 && req.path.substr(req.path.size() - 5) == ".json") {
     return serveFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(8)), "application/json; charset=utf-8");
+  }
+  if (req.method == "GET" && req.path == "/api/target/config") {
+    auto q = parseQuery(req.query);
+    if (!target_config_controller_) return {503, "application/json", R"({"ok":false,"error":"target config controller not configured"})"};
+    return {200, "application/json", target_config_controller_->targetConfig(q)};
+  }
+  if (req.method == "POST" && req.path == "/api/target/config") {
+    if (!target_config_controller_) return {503, "application/json", R"({"ok":false,"error":"target config controller not configured"})"};
+    return {200, "application/json", target_config_controller_->updateTargetConfig(req.body)};
   }
   if (req.method == "GET" && req.path == "/api/telemetry") {
     auto q = parseQuery(req.query);

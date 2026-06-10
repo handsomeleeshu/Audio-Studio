@@ -86,6 +86,70 @@ static bool queryBool(const std::map<std::string, std::string>& q, const std::st
   return v == "1" || v == "true" || v == "yes" || v == "running";
 }
 
+
+static int simpleJsonIntStringV73(const std::string& json, const std::string& key, int fallback) {
+  const auto s = simpleJsonField(json, key);
+  if (s.empty()) return fallback;
+  try { return std::stoi(s); } catch (...) { return fallback; }
+}
+
+static int clampTargetIntV73(int v, int lo, int hi, int fallback) {
+  if (v < lo || v > hi) return fallback;
+  return v;
+}
+
+FakeTargetConfigController::FakeTargetConfigController() = default;
+
+std::string FakeTargetConfigController::targetJsonLocked(const std::string& mode) const {
+  const long long freq_hz = static_cast<long long>(dsp_frequency_mhz_) * 1000000LL;
+  std::ostringstream os;
+  os << "{\"ok\":true,\"mode\":\"" << jsonEscape(mode) << "\""
+     << ",\"revision\":" << revision_
+     << ",\"target\":{";
+  os << "\"project\":\"" << jsonEscape(project_file_) << "\""
+     << ",\"project_file\":\"" << jsonEscape(project_file_) << "\""
+     << ",\"dsp\":\"" << jsonEscape(dsp_target_) << "\""
+     << ",\"cores\":" << cores_
+     << ",\"dspFrequencyMHz\":" << dsp_frequency_mhz_
+     << ",\"dspFrequencyHz\":" << freq_hz
+     << ",\"sampleRate\":" << sample_rate_
+     << ",\"frameSize\":" << frame_size_
+     << ",\"backendOwned\":true"
+     << "}}";
+  return os.str();
+}
+
+std::string FakeTargetConfigController::targetConfig(const std::map<std::string, std::string>& query) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  auto it = query.find("project");
+  if (it != query.end() && !it->second.empty()) project_file_ = it->second;
+  return targetJsonLocked("fake_target_config");
+}
+
+std::string FakeTargetConfigController::updateTargetConfig(const std::string& request_json) {
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    std::string project = simpleJsonField(request_json, "project_file");
+    if (project.empty()) project = simpleJsonField(request_json, "project");
+    const std::string dsp = simpleJsonField(request_json, "dsp");
+    const int cores = simpleJsonIntStringV73(request_json, "cores", cores_);
+    const int freq = simpleJsonIntStringV73(request_json, "dspFrequencyMHz", dsp_frequency_mhz_);
+    const int sample_rate = simpleJsonIntStringV73(request_json, "sampleRate", sample_rate_);
+    const int frame_size = simpleJsonIntStringV73(request_json, "frameSize", frame_size_);
+    if (!project.empty()) project_file_ = project;
+    if (!dsp.empty()) dsp_target_ = dsp;
+    cores_ = clampTargetIntV73(cores, 1, 64, cores_);
+    dsp_frequency_mhz_ = clampTargetIntV73(freq, 1, 3000, dsp_frequency_mhz_);
+    sample_rate_ = clampTargetIntV73(sample_rate, 8000, 768000, sample_rate_);
+    frame_size_ = clampTargetIntV73(frame_size, 16, 8192, frame_size_);
+    ++revision_;
+  }
+  printIntegrationTodo("ITargetConfigController::updateTargetConfig", request_json,
+    "apply topbar target settings (project/DSP target/core count/DSP main frequency) to the real runtime build and scheduling context.");
+  std::lock_guard<std::mutex> lk(mutex_);
+  return targetJsonLocked("fake_target_config_updated");
+}
+
 FakeInspectorController::FakeInspectorController() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0x5a17u));
 }

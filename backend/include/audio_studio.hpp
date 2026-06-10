@@ -69,6 +69,40 @@ public:
 };
 
 
+
+struct TargetConfigSnapshot {
+  std::string project_file = "A2.json";
+  std::string dsp_target = "HiFi5s";
+  int cores = 4;
+  int dsp_frequency_mhz = 600;
+  int sample_rate = 48000;
+  int frame_size = 256;
+};
+
+class ITargetConfigController {
+public:
+  virtual ~ITargetConfigController() = default;
+  virtual std::string targetConfig(const std::map<std::string, std::string>& query) = 0;
+  virtual std::string updateTargetConfig(const std::string& request_json) = 0;
+};
+
+class FakeTargetConfigController final : public ITargetConfigController {
+public:
+  FakeTargetConfigController();
+  std::string targetConfig(const std::map<std::string, std::string>& query) override;
+  std::string updateTargetConfig(const std::string& request_json) override;
+private:
+  std::string targetJsonLocked(const std::string& mode) const;
+  std::string project_file_ = "A2.json";
+  std::string dsp_target_ = "HiFi5s";
+  int cores_ = 4;
+  int dsp_frequency_mhz_ = 600;
+  int sample_rate_ = 48000;
+  int frame_size_ = 256;
+  int revision_ = 1;
+  std::mutex mutex_;
+};
+
 struct InspectorPortInfo {
   std::string direction;  // "in" or "out"
   std::string name;
@@ -321,6 +355,7 @@ public:
   HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
              std::shared_ptr<INodeController> node_controller,
              std::shared_ptr<IParameterController> parameter_controller,
+              std::shared_ptr<ITargetConfigController> target_config_controller = nullptr,
              std::shared_ptr<IInspectorController> inspector_controller = nullptr,
              std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller = nullptr,
               std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller = nullptr,
@@ -336,6 +371,7 @@ private:
   std::shared_ptr<IRuntimeEngine> runtime_;
   std::shared_ptr<INodeController> node_controller_;
   std::shared_ptr<IParameterController> parameter_controller_;
+  std::shared_ptr<ITargetConfigController> target_config_controller_;
   std::shared_ptr<IInspectorController> inspector_controller_;
   std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller_;
     std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller_;

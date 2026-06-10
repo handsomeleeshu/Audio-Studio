@@ -489,6 +489,27 @@ assert.ok(
   'realtime probe should use upward custom channel menus, not bottom-clipped select elements'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioTopbarTargetBackendV73Installed'),
+  'missing v73 backend-owned topbar target settings integration'
+);
+for (const token of [
+  '/api/target/config',
+  'renderDspFrequencySelectV73',
+  'currentDspFrequencyMHzV73',
+  'syncTopbarTargetToBackendV73',
+  'refreshTopbarTargetFromBackendV73',
+  'dspFrequencyMHz',
+  'dspFrequencyHz',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('<small>Frequency</small>') || html.includes("label.textContent='Frequency'"),
+  'topbar RATE label should become Frequency'
+);
+
 console.log('standalone-features.test passed');
 
 
