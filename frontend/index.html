@@ -173,6 +173,108 @@
       .meters{height:174px}.meter{height:124px}
     }
 
+
+    /* v48: PER-ALGORITHM COST table improvements. */
+    #costPanel{display:flex;flex-direction:column;min-height:0;}
+    #costPanel .card-head{flex:0 0 auto;}
+    .cost-table-scroll-v48{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:4px;scrollbar-color:#24415f #07101d;scrollbar-width:thin;}
+    .cost-table-scroll-v48::-webkit-scrollbar{width:8px;}
+    .cost-table-scroll-v48::-webkit-scrollbar-track{background:#07101d;border-radius:8px;}
+    .cost-table-scroll-v48::-webkit-scrollbar-thumb{background:#24415f;border-radius:8px;border:2px solid #07101d;}
+    #costTable{width:100%;border-collapse:collapse;}
+    #costTable thead th{position:sticky;top:0;z-index:2;background:#09111f;cursor:pointer;user-select:none;}
+    #costTable thead th:hover{color:var(--cyan);}
+    #costTable th.sort-active-v48{color:var(--cyan);text-shadow:0 0 10px rgba(0,216,255,.35);}
+    #costTable .cost-name-v48{cursor:pointer;font-weight:800;}
+    #costTable .cost-name-v48:hover{color:#fff;text-shadow:0 0 10px rgba(0,216,255,.75);}
+    #costTable .cost-na-v48{color:#7e8da7;font-weight:800;}
+    #costTable .cost-total-v48 td{position:sticky;bottom:0;background:#09111f;border-top:1px solid #284766;z-index:1;}
+    .pipeline-node.cost-flash-v48{animation:costFlashV48 900ms ease-out 1;}
+    @keyframes costFlashV48{
+      0%{outline:3px solid #fff;box-shadow:0 0 0 4px rgba(255,255,255,.92),0 0 38px rgba(0,245,255,.95),inset 0 0 0 1px rgba(255,255,255,.15);}
+      45%{outline:3px solid var(--cyan);box-shadow:0 0 0 2px rgba(0,216,255,.75),0 0 32px rgba(0,216,255,.75),inset 0 0 0 1px rgba(255,255,255,.12);}
+      100%{outline:0 solid transparent;}
+    }
+
+
+    /* v49: backend-only PER-ALGORITHM COST display polish. */
+    #costPanel .cost-table-scroll-v48{overflow-y:auto;overflow-x:hidden;min-height:0;}
+    #costTable.cost-table-v49-backend-only{table-layout:fixed;width:100%;border-collapse:collapse;}
+    #costTable.cost-table-v49-backend-only th,
+    #costTable.cost-table-v49-backend-only td{height:22px;padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;box-sizing:border-box;}
+    #costTable.cost-table-v49-backend-only th{font-variant-numeric:tabular-nums;}
+    #costTable.cost-table-v49-backend-only .cost-col-name{width:37%;}
+    #costTable.cost-table-v49-backend-only .cost-col-cpu{width:30%;}
+    #costTable.cost-table-v49-backend-only .cost-col-mem{width:13%;}
+    #costTable.cost-table-v49-backend-only .cost-col-lat{width:12%;}
+    #costTable.cost-table-v49-backend-only .cost-col-core{width:8%;}
+    #costTable.cost-table-v49-backend-only .cost-sort-icon-v49{display:inline-block;width:11px;text-align:center;margin-left:2px;color:var(--cyan);}
+    #costTable.cost-table-v49-backend-only .cost-cpu-cell-v49{display:flex;align-items:center;gap:6px;min-width:0;}
+    #costTable.cost-table-v49-backend-only .cost-cpu-bar-v49{position:relative;flex:1;min-width:42px;height:8px;border-radius:9px;background:#123153;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);}
+    #costTable.cost-table-v49-backend-only .cost-cpu-bar-v49 i{display:block;height:100%;border-radius:9px;box-shadow:0 0 10px currentColor;}
+    #costTable.cost-table-v49-backend-only .cost-cpu-value-v49{flex:0 0 46px;text-align:right;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;color:#dbe8ff;}
+    #costTable.cost-table-v49-backend-only .cost-na-v48{font-size:11px;font-variant-numeric:tabular-nums;}
+    #costTable.cost-table-v49-backend-only .cost-name-v48{display:block;overflow:hidden;text-overflow:ellipsis;}
+    #costTable.cost-table-v49-backend-only tfoot td{height:24px;}
+
+
+    /* v50: stable compact PER-ALGORITHM COST table. */
+    #costPanel .cost-table-scroll-v48,
+    #costPanel .cost-table-scroll-v50{
+      overflow-y:auto;
+      overflow-x:hidden;
+      min-height:0;
+      height:calc(100% - 30px);
+      padding-right:2px;
+    }
+    #costTable.cost-table-v50{
+      table-layout:fixed!important;
+      width:100%!important;
+      border-collapse:collapse;
+      font-size:12px!important;
+      line-height:1.25;
+      font-variant-numeric:tabular-nums;
+    }
+    #costTable.cost-table-v50 col.cost-col-name-v50{width:32%!important;}
+    #costTable.cost-table-v50 col.cost-col-cpu-v50{width:31%!important;}
+    #costTable.cost-table-v50 col.cost-col-mem-v50{width:16%!important;}
+    #costTable.cost-table-v50 col.cost-col-lat-v50{width:11%!important;}
+    #costTable.cost-table-v50 col.cost-col-core-v50{width:10%!important;}
+    #costTable.cost-table-v50 th,
+    #costTable.cost-table-v50 td{
+      height:23px!important;
+      padding:3px 8px!important;
+      box-sizing:border-box;
+      vertical-align:middle;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      font-size:12px!important;
+      font-weight:600!important;
+    }
+    #costTable.cost-table-v50 th{
+      color:#9eb0ca;
+      font-weight:800!important;
+      letter-spacing:.01em;
+      cursor:pointer;
+      user-select:none;
+      border-bottom:1px solid #21466e;
+    }
+    #costTable.cost-table-v50 td{color:#e7f0ff;border-bottom:1px solid rgba(33,70,110,.45);}
+    #costTable.cost-table-v50 .cost-th-inner-v50{display:flex;align-items:center;gap:3px;min-width:0;}
+    #costTable.cost-table-v50 .cost-th-text-v50{overflow:hidden;text-overflow:ellipsis;}
+    #costTable.cost-table-v50 .cost-col-core-head-v50 .cost-th-text-v50{overflow:visible;text-overflow:clip;}
+    #costTable.cost-table-v50 .cost-sort-icon-v50{flex:0 0 10px;width:10px;text-align:center;color:var(--cyan);font-size:10px;line-height:1;}
+    #costTable.cost-table-v50 .cost-name-v50{display:block;overflow:hidden;text-overflow:ellipsis;color:#e7f0ff;font-weight:700;}
+    #costTable.cost-table-v50 .cost-name-v50:hover{color:var(--cyan);text-decoration:underline;text-underline-offset:2px;}
+    #costTable.cost-table-v50 .cost-cpu-cell-v50{display:flex;align-items:center;gap:7px;min-width:0;width:100%;}
+    #costTable.cost-table-v50 .cost-cpu-bar-v50{position:relative;flex:1 1 auto;min-width:56px;height:8px;border-radius:9px;background:#123153;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);}
+    #costTable.cost-table-v50 .cost-cpu-bar-v50 i{display:block;height:100%;border-radius:9px;box-shadow:0 0 10px currentColor;}
+    #costTable.cost-table-v50 .cost-cpu-value-v50{flex:0 0 42px;text-align:right;color:#dbe8ff;font-size:12px!important;font-weight:700!important;font-variant-numeric:tabular-nums;}
+    #costTable.cost-table-v50 .cost-num-v50{font-variant-numeric:tabular-nums;font-weight:600!important;}
+    #costTable.cost-table-v50 .cost-na-v50{color:#8fa2bf;font-weight:600!important;}
+    #costTable.cost-table-v50 tfoot td{height:24px!important;border-bottom:0;font-weight:800!important;}
+
   </style>
 </head>
 <body>
@@ -4404,6 +4506,516 @@
       const sorted=[...state.nodes].sort((a,b)=>b.cpu-a.cpu).slice(0,10);
       $('#costTable').innerHTML='<tr><th>Name</th><th>CPU%</th><th>MEM</th><th>LAT</th><th>Core</th></tr>'+sorted.map(n=>`<tr><td>${n.name}</td><td><div class="cpu-bar"><i style="width:${clamp(n.cpu*7,4,100)}%"></i></div></td><td>${n.mem} KB</td><td>${n.lat.toFixed(2)}</td><td>${n.core}</td></tr>`).join('')+`<tr><td><b>Total</b></td><td><b>${state.nodes.reduce((s,n)=>s+n.cpu,0).toFixed(1)}%</b></td><td colspan="3"><b>${(state.nodes.reduce((s,n)=>s+n.mem,0)/1024).toFixed(1)} MB</b></td></tr>`;
     }
+
+
+    // v48: backend-backed, sortable and scrollable PER-ALGORITHM COST panel.
+    if(!window.__audioStudioPerAlgorithmCostV48Installed){
+      window.__audioStudioPerAlgorithmCostV48Installed=true;
+      const algorithmCostLiveV48={received:false,timestamp:0,items:new Map(),sortKey:'cpu',sortDir:'desc'};
+      const costColumnsV48=[
+        ['name','Name'],['cpu','CPU%'],['mem','MEM'],['lat','LAT'],['core','Core']
+      ];
+
+      function ensureCostTableScrollV48(){
+        const table=$('#costTable');
+        const panel=$('#costPanel');
+        if(!table || !panel) return;
+        if(table.parentElement?.classList?.contains('cost-table-scroll-v48')) return;
+        const wrap=document.createElement('div');
+        wrap.className='cost-table-scroll-v48';
+        panel.insertBefore(wrap,table);
+        wrap.appendChild(table);
+      }
+      function visibleCostNodesV48(){
+        const select=$('#pipelineSelect');
+        const selected=select?.value || 'ALL';
+        const groupsApi=window.audioStudioWorkingPipelineGroupsV44;
+        if(selected!=='ALL' && groupsApi?.currentWorkingGroupsV44){
+          const g=groupsApi.currentWorkingGroupsV44().find(x=>x.id===selected);
+          if(g?.nodes?.length) return [...g.nodes];
+        }
+        return [...state.nodes];
+      }
+      function costItemV48(id){ return algorithmCostLiveV48.items.get(id) || null; }
+      function costMetricV48(n,key){
+        const item=costItemV48(n.id);
+        if(key==='name') return String(n.name || n.id || '').toLowerCase();
+        if(key==='core') return Number(n.core ?? item?.core ?? 0);
+        if(key==='cpu') return Number(item?.cpu ?? 0);
+        if(key==='mem') return Number.isFinite(Number(item?.mem_kb)) ? Number(item.mem_kb) : null;
+        if(key==='lat') return Number.isFinite(Number(item?.latency_ms)) ? Number(item.latency_ms) : null;
+        return 0;
+      }
+      function compareCostNodesV48(a,b){
+        const key=algorithmCostLiveV48.sortKey;
+        const dir=algorithmCostLiveV48.sortDir==='asc' ? 1 : -1;
+        const av=costMetricV48(a,key), bv=costMetricV48(b,key);
+        if(av===null && bv===null) return String(a.name).localeCompare(String(b.name));
+        if(av===null) return 1;
+        if(bv===null) return -1;
+        if(typeof av==='string' || typeof bv==='string') return dir * String(av).localeCompare(String(bv));
+        if(av===bv) return String(a.name).localeCompare(String(b.name));
+        return dir * (av-bv);
+      }
+      function formatCostMemV48(item){ return Number.isFinite(Number(item?.mem_kb)) ? `${Math.round(Number(item.mem_kb))} KB` : '<span class="cost-na-v48">N/A</span>'; }
+      function formatCostLatV48(item){ return Number.isFinite(Number(item?.latency_ms)) ? Number(item.latency_ms).toFixed(2) : '<span class="cost-na-v48">N/A</span>'; }
+      function costHeaderHtmlV48(){
+        return '<thead><tr>' + costColumnsV48.map(([key,label])=>{
+          const active=algorithmCostLiveV48.sortKey===key;
+          const arrow=active ? (algorithmCostLiveV48.sortDir==='desc'?' ▼':' ▲') : '';
+          return `<th data-cost-sort="${key}" class="${active?'sort-active-v48':''}" title="Click to sort ${label}">${label}${arrow}</th>`;
+        }).join('') + '</tr></thead>';
+      }
+      function renderCostTableV48(){
+        ensureCostTableScrollV48();
+        const table=$('#costTable');
+        if(!table) return;
+        const nodes=visibleCostNodesV48().sort(compareCostNodesV48);
+        const rows=nodes.map(n=>{
+          const item=costItemV48(n.id);
+          const cpu=Number(item?.cpu ?? 0);
+          const width=clamp(cpu*8, cpu>0?4:0, 100);
+          return `<tr data-cost-node-id="${escapeHtml(n.id)}">
+            <td class="cost-name-v48" data-cost-center="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name || n.id)}</td>
+            <td><div class="cpu-bar"><i style="width:${width}%"></i></div><small>${cpu.toFixed(1)}%</small></td>
+            <td>${formatCostMemV48(item)}</td>
+            <td>${formatCostLatV48(item)}</td>
+            <td>${escapeHtml(n.core ?? item?.core ?? 0)}</td>
+          </tr>`;
+        }).join('');
+        const totalCpu=nodes.reduce((sum,n)=>sum+Number(costItemV48(n.id)?.cpu ?? 0),0);
+        const memVals=nodes.map(n=>Number(costItemV48(n.id)?.mem_kb)).filter(Number.isFinite);
+        const totalMem=memVals.length ? `${(memVals.reduce((a,b)=>a+b,0)/1024).toFixed(1)} MB` : 'N/A';
+        table.innerHTML=costHeaderHtmlV48()+`<tbody>${rows || '<tr><td colspan="5" class="cost-na-v48">No algorithms in selected pipeline group</td></tr>'}</tbody>`+
+          `<tfoot><tr class="cost-total-v48"><td><b>Total</b></td><td><b>${totalCpu.toFixed(1)}%</b></td><td colspan="3"><b>${escapeHtml(totalMem)}</b></td></tr></tfoot>`;
+      }
+      function sortCostTableV48(key){
+        if(!key) return;
+        if(algorithmCostLiveV48.sortKey===key) algorithmCostLiveV48.sortDir=algorithmCostLiveV48.sortDir==='desc'?'asc':'desc';
+        else { algorithmCostLiveV48.sortKey=key; algorithmCostLiveV48.sortDir='desc'; }
+        renderCostTableV48();
+        backendEdit('algorithm_cost_sort',{key,dir:algorithmCostLiveV48.sortDir});
+      }
+      function centerAndFlashCostNodeV48(nodeId){
+        const n=nodeById(nodeId);
+        if(!n){ toast('Algorithm node not found in current layout'); return false; }
+        clearSelection();
+        selectedNodeId=n.id;
+        selectedNodeIds=new Set([n.id]);
+        selectedEdgeKey='';
+        selectedEdgeKeys=new Set();
+        renderAll(false);
+        const sc=getScrollEl();
+        const z=state.zoom || 1;
+        if(sc){
+          sc.scrollLeft=Math.max(0,(n.x+64)*z - sc.clientWidth/2);
+          sc.scrollTop=Math.max(0,(n.y+60)*z - sc.clientHeight/2);
+          renderMinimap();
+        }
+        requestAnimationFrame(()=>{
+          const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId);
+          if(!el) return;
+          el.classList.remove('cost-flash-v48');
+          void el.offsetWidth;
+          el.classList.add('cost-flash-v48');
+          setTimeout(()=>el.classList.remove('cost-flash-v48'),950);
+        });
+        backendEdit('algorithm_cost_center_node',{node_id:n.id,node_name:n.name});
+        toast(`Centered ${n.name}`);
+        return true;
+      }
+      async function refreshAlgorithmCostsV48(){
+        if(!running){
+          algorithmCostLiveV48.received=false;
+          algorithmCostLiveV48.items.clear();
+          return false;
+        }
+        const nodes=visibleCostNodesV48();
+        const ids=encodeURIComponent(nodes.map(n=>n.id).join(','));
+        const cores=encodeURIComponent(nodes.map(n=>n.core ?? 0).join(','));
+        const data=await apiGet(`/api/algorithm/cost/live?running=${running?1:0}&nodes=${ids}&cores=${cores}`);
+        if(!data || !Array.isArray(data.costs)){
+          algorithmCostLiveV48.received=false;
+          return false;
+        }
+        algorithmCostLiveV48.items.clear();
+        data.costs.forEach(item=>{
+          if(!item?.node_id) return;
+          algorithmCostLiveV48.items.set(item.node_id,{
+            cpu:Number(item.cpu ?? 0),
+            mem_kb:item.mem_kb===null || item.memKb===null ? null : Number(item.mem_kb ?? item.memKb),
+            latency_ms:item.latency_ms===null || item.latencyMs===null ? null : Number(item.latency_ms ?? item.latencyMs),
+            core:Number(item.core ?? 0)
+          });
+        });
+        algorithmCostLiveV48.received=true;
+        algorithmCostLiveV48.timestamp=Number(data.timestamp_ms || Date.now());
+        return true;
+      }
+      const __syncTelemetryFromBackendBeforeCostV48=syncTelemetryFromBackend;
+      syncTelemetryFromBackend=async function(){
+        const telemetryOk=await __syncTelemetryFromBackendBeforeCostV48();
+        await refreshAlgorithmCostsV48();
+        return telemetryOk;
+      };
+      renderCostTable=renderCostTableV48;
+      document.addEventListener('click',e=>{
+        const th=e.target?.closest?.('#costTable th[data-cost-sort]');
+        if(th){ e.preventDefault(); sortCostTableV48(th.dataset.costSort); return; }
+        const name=e.target?.closest?.('#costTable [data-cost-center]');
+        if(name && (e.ctrlKey || e.metaKey)){
+          e.preventDefault();
+          centerAndFlashCostNodeV48(name.dataset.costCenter);
+        }
+      },true);
+      window.audioStudioAlgorithmCostV48={refreshAlgorithmCostsV48,renderCostTableV48,centerAndFlashCostNodeV48,sortCostTableV48};
+    }
+
+
+
+    // v49: backend-only PER-ALGORITHM COST fix.
+    // Do not synthesize frontend fake runtime cost. Missing backend data is shown
+    // as 0% / N/A, while fake numbers are generated only by backend mock APIs.
+    if(!window.__audioStudioPerAlgorithmCostV49BackendOnlyInstalled){
+      window.__audioStudioPerAlgorithmCostV49BackendOnlyInstalled=true;
+      const algorithmCostLiveV49={items:new Map(),sortKey:'cpu',sortDir:'desc',lastClickedKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
+      const costColumnsV49=[['name','Name'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+      function ensureCostTableScrollV49(){
+        const table=$('#costTable'), panel=$('#costPanel');
+        if(!table || !panel) return;
+        if(!table.parentElement?.classList?.contains('cost-table-scroll-v48')){
+          const wrap=document.createElement('div');
+          wrap.className='cost-table-scroll-v48';
+          panel.insertBefore(wrap,table);
+          wrap.appendChild(table);
+        }
+        table.classList.add('cost-table-v49-backend-only');
+        table.classList.remove('cost-table-v49');
+      }
+      function visibleCostNodesV49(){
+        const select=$('#pipelineSelect');
+        const selected=select?.value || 'ALL';
+        const groupsApi=window.audioStudioWorkingPipelineGroupsV44;
+        if(selected!=='ALL' && groupsApi?.currentWorkingGroupsV44){
+          const g=groupsApi.currentWorkingGroupsV44().find(x=>x.id===selected);
+          if(g?.nodes?.length) return [...g.nodes];
+        }
+        return [...state.nodes];
+      }
+      function normalizeCostItemV49(raw,n){
+        if(!raw) return null;
+        const id=raw.node_id || raw.nodeId || n?.id;
+        const cpu=Number(raw.cpu ?? 0);
+        const memRaw=raw.mem_kb ?? raw.memKb;
+        const latRaw=raw.latency_ms ?? raw.latencyMs;
+        return {
+          node_id:id,
+          cpu:Number.isFinite(cpu) ? clamp(cpu,0,100) : 0,
+          mem_kb:memRaw===null || memRaw===undefined || !Number.isFinite(Number(memRaw)) ? null : Number(memRaw),
+          latency_ms:latRaw===null || latRaw===undefined || !Number.isFinite(Number(latRaw)) ? null : Number(latRaw),
+          core:Number(raw.core ?? n?.core ?? 0)
+        };
+      }
+      function cpuColorV49(cpu){
+        const c=clamp(Number(cpu)||0,0,100);
+        const hue=Math.round(125 - c*1.25);
+        return `hsl(${hue}, 92%, 56%)`;
+      }
+      function currentCostV49(n){ return running ? (algorithmCostLiveV49.items.get(n.id) || null) : null; }
+      function costValueV49(n,key){
+        const item=currentCostV49(n);
+        if(key==='name') return String(n.name || n.id || '').toLowerCase();
+        if(key==='core') return Number(n.core ?? item?.core ?? 0);
+        if(key==='cpu') return Number(item?.cpu ?? 0);
+        if(key==='mem') return item?.mem_kb===null || item?.mem_kb===undefined ? null : Number(item.mem_kb);
+        if(key==='lat') return item?.latency_ms===null || item?.latency_ms===undefined ? null : Number(item.latency_ms);
+        return 0;
+      }
+      function compareCostV49(a,b){
+        const key=algorithmCostLiveV49.sortKey, dir=algorithmCostLiveV49.sortDir==='asc'?1:-1;
+        const av=costValueV49(a,key), bv=costValueV49(b,key);
+        if(av===null && bv===null) return String(a.name).localeCompare(String(b.name));
+        if(av===null) return 1;
+        if(bv===null) return -1;
+        if(typeof av==='string' || typeof bv==='string') return dir*String(av).localeCompare(String(bv));
+        if(av===bv) return String(a.name).localeCompare(String(b.name));
+        return dir*(av-bv);
+      }
+      function headerCostV49(){
+        return `<colgroup><col class="cost-col-name"><col class="cost-col-cpu"><col class="cost-col-mem"><col class="cost-col-lat"><col class="cost-col-core"></colgroup><thead><tr>`+
+          costColumnsV49.map(([key,label])=>{
+            const active=algorithmCostLiveV49.sortKey===key;
+            const icon=active ? (algorithmCostLiveV49.sortDir==='desc'?'▼':'▲') : '';
+            return `<th data-cost-sort="${key}" class="${active?'sort-active-v48':''}" title="Click to sort ${label}">${label}<span class="cost-sort-icon-v49">${icon}</span></th>`;
+          }).join('')+'</tr></thead>';
+      }
+      function renderCostTableV49(){
+        ensureCostTableScrollV49();
+        const table=$('#costTable'); if(!table) return;
+        const nodes=visibleCostNodesV49().sort(compareCostV49);
+        const rows=nodes.map(n=>{
+          const item=currentCostV49(n);
+          const cpu=Number(item?.cpu ?? 0);
+          const color=cpuColorV49(cpu);
+          const mem=item?.mem_kb===null||item?.mem_kb===undefined?'<span class="cost-na-v48">N/A</span>':`${Math.round(Number(item.mem_kb))} KB`;
+          const lat=item?.latency_ms===null||item?.latency_ms===undefined?'<span class="cost-na-v48">N/A</span>':Number(item.latency_ms).toFixed(2);
+          const core=Number(n.core ?? item?.core ?? 0);
+          return `<tr data-cost-node-id="${escapeHtml(n.id)}"><td><span class="cost-name-v48" data-cost-center="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name || n.id)}</span></td><td><div class="cost-cpu-cell-v49"><div class="cost-cpu-bar-v49"><i style="width:${clamp(cpu,0,100)}%;background:${color};color:${color}"></i></div><span class="cost-cpu-value-v49">${cpu.toFixed(1)}%</span></div></td><td>${mem}</td><td>${lat}</td><td>${escapeHtml(core)}</td></tr>`;
+        }).join('');
+        const totalCpu=nodes.reduce((s,n)=>s+Number(currentCostV49(n)?.cpu ?? 0),0);
+        const memVals=nodes.map(n=>Number(currentCostV49(n)?.mem_kb)).filter(Number.isFinite);
+        const totalMem=running && memVals.length ? `${(memVals.reduce((a,b)=>a+b,0)/1024).toFixed(1)} MB` : 'N/A';
+        table.innerHTML=headerCostV49()+`<tbody>${rows || '<tr><td colspan="5" class="cost-na-v48">No algorithms in selected pipeline group</td></tr>'}</tbody><tfoot><tr class="cost-total-v48"><td><b>Total</b></td><td><b>${totalCpu.toFixed(1)}%</b></td><td colspan="3"><b>${escapeHtml(totalMem)}</b></td></tr></tfoot>`;
+      }
+      function sortCostTableV49(key){
+        if(!key) return;
+        if(algorithmCostLiveV49.lastClickedKey===key) algorithmCostLiveV49.sortDir=algorithmCostLiveV49.sortDir==='desc'?'asc':'desc';
+        else { algorithmCostLiveV49.sortKey=key; algorithmCostLiveV49.sortDir='desc'; algorithmCostLiveV49.lastClickedKey=key; }
+        renderCostTableV49();
+        backendEdit('algorithm_cost_sort_v49_backend_only',{key,dir:algorithmCostLiveV49.sortDir});
+      }
+      async function fetchBackendCostsV49(nodes){
+        const ids=encodeURIComponent(nodes.map(n=>n.id).join(','));
+        const cores=encodeURIComponent(nodes.map(n=>n.core ?? 0).join(','));
+        const data=await apiGet(`/api/algorithm/cost/live?running=${running?1:0}&nodes=${ids}&cores=${cores}&_=${Date.now()}`);
+        algorithmCostLiveV49.items.clear();
+        if(!data || !Array.isArray(data.costs)) return false;
+        data.costs.forEach(raw=>{
+          const id=raw?.node_id || raw?.nodeId;
+          const n=nodes.find(x=>x.id===id);
+          const item=normalizeCostItemV49(raw,n);
+          if(item?.node_id) algorithmCostLiveV49.items.set(item.node_id,item);
+        });
+        return nodes.length===0 || algorithmCostLiveV49.items.size===nodes.length || algorithmCostLiveV49.items.size>0;
+      }
+      async function refreshAlgorithmCostsV49(){
+        const nodes=visibleCostNodesV49();
+        if(!running){ algorithmCostLiveV49.items.clear(); algorithmCostLiveV49.backendOk=false; algorithmCostLiveV49.lastUpdate=Date.now(); return false; }
+        let ok=false;
+        try{ ok=await fetchBackendCostsV49(nodes); }catch(e){ ok=false; }
+        algorithmCostLiveV49.backendOk=ok;
+        algorithmCostLiveV49.lastUpdate=Date.now();
+        if(!ok && algorithmCostLiveV49.missingLogCount<3){
+          algorithmCostLiveV49.missingLogCount++;
+          addLog('warn','Algorithm cost backend unavailable','GET /api/algorithm/cost/live returned no valid backend data; showing 0% / N/A');
+        }
+        return ok;
+      }
+      async function syncTelemetryBackendOnlyV49(){
+        const ids=encodeURIComponent(state.nodes.map(n=>n.id).join(','));
+        const data=await apiGet('/api/telemetry?nodes=' + ids + '&_=' + Date.now());
+        if(!data || !data.nodeCost) return false;
+        state.nodes.forEach(n=>{
+          const t=data.nodeCost[n.id];
+          if(!t) return;
+          n.rms=Number(t.rms ?? n.rms);
+          n.peak=Number(t.peak ?? n.peak);
+        });
+        if(Array.isArray(data.cores)) state.cores=data.cores.map(c=>Number(c.load ?? 0));
+        if(data.health){
+          healthState.latency=Number(data.health.latencyMs ?? healthState.latency);
+          healthState.buffer=Number(data.health.bufferOccupancy ?? healthState.buffer);
+          healthState.mem=Number(data.health.memoryMb ?? healthState.mem);
+          healthState.throughput=Number(data.health.throughput ?? healthState.throughput);
+          healthState.power=Number(data.health.powerW ?? healthState.power);
+          healthState.xruns=String(data.health.xruns ?? healthState.xruns);
+        }
+        if(data.meters){ ['inL','inR','outL','outR'].forEach(id=>{ if(data.meters[id]!==undefined) meterState[id]=Number(data.meters[id]); }); }
+        return true;
+      }
+      function centerAndFlashCostNodeV49(nodeId){
+        const n=nodeById(nodeId); if(!n){toast('Algorithm node not found in current layout');return false;}
+        clearSelection(); selectedNodeId=n.id; selectedNodeIds=new Set([n.id]); selectedEdgeKey=''; selectedEdgeKeys=new Set(); renderAll(false);
+        const sc=getScrollEl(); const z=state.zoom || 1;
+        if(sc){ sc.scrollLeft=Math.max(0,(n.x+64)*z-sc.clientWidth/2); sc.scrollTop=Math.max(0,(n.y+60)*z-sc.clientHeight/2); renderMinimap(); }
+        requestAnimationFrame(()=>{ const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId); if(!el)return; el.classList.remove('cost-flash-v48'); void el.offsetWidth; el.classList.add('cost-flash-v48'); setTimeout(()=>el.classList.remove('cost-flash-v48'),950); });
+        backendEdit('algorithm_cost_center_node_v49_backend_only',{node_id:n.id,node_name:n.name}); toast(`Centered ${n.name}`); return true;
+      }
+      syncTelemetryFromBackend=async function(){ const telemetryOk=await syncTelemetryBackendOnlyV49(); await refreshAlgorithmCostsV49(); return telemetryOk; };
+      renderCostTable=renderCostTableV49;
+      document.addEventListener('click',e=>{
+        const th=e.target?.closest?.('#costTable th[data-cost-sort]');
+        if(th){ e.preventDefault(); e.stopPropagation(); sortCostTableV49(th.dataset.costSort); return; }
+        const name=e.target?.closest?.('#costTable [data-cost-center]');
+        if(name && (e.ctrlKey || e.metaKey)){ e.preventDefault(); e.stopPropagation(); centerAndFlashCostNodeV49(name.dataset.costCenter); }
+      },true);
+      window.audioStudioAlgorithmCostV49={refreshAlgorithmCostsV49,renderCostTableV49,sortCostTableV49,centerAndFlashCostNodeV49,backendOnly:true};
+    }
+
+
+
+    // v50: stable backend-only PER-ALGORITHM COST display and sorting.
+    // This override keeps backend-only data policy from v49: no frontend fake cost.
+    if(!window.__audioStudioPerAlgorithmCostV50Installed){
+      window.__audioStudioPerAlgorithmCostV50Installed=true;
+      const algorithmCostLiveV50={items:new Map(),sortKey:'cpu',sortDir:'desc',lastUserSortKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
+      const costColumnsV50=[['name','Name'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+      function ensureCostTableScrollV50(){
+        const table=$('#costTable'), panel=$('#costPanel');
+        if(!table || !panel) return;
+        let wrap=table.parentElement;
+        if(!wrap?.classList?.contains('cost-table-scroll-v48') && !wrap?.classList?.contains('cost-table-scroll-v50')){
+          wrap=document.createElement('div');
+          wrap.className='cost-table-scroll-v50';
+          panel.insertBefore(wrap,table);
+          wrap.appendChild(table);
+        }
+        wrap.classList.add('cost-table-scroll-v50');
+        table.classList.remove('cost-table-v49-backend-only','cost-table-v49');
+        table.classList.add('cost-table-v50');
+      }
+      function visibleCostNodesV50(){
+        const select=$('#pipelineSelect');
+        const selected=select?.value || 'ALL';
+        const groupsApi=window.audioStudioWorkingPipelineGroupsV44;
+        if(selected!=='ALL' && groupsApi?.currentWorkingGroupsV44){
+          const g=groupsApi.currentWorkingGroupsV44().find(x=>x.id===selected);
+          if(g?.nodes?.length) return [...g.nodes];
+        }
+        return [...state.nodes];
+      }
+      function normalizeCostItemV50(raw,n){
+        if(!raw) return null;
+        const id=raw.node_id || raw.nodeId || n?.id;
+        const cpu=Number(raw.cpu ?? 0);
+        const memRaw=raw.mem_kb ?? raw.memKb;
+        const latRaw=raw.latency_ms ?? raw.latencyMs;
+        return {
+          node_id:id,
+          cpu:Number.isFinite(cpu)?clamp(cpu,0,100):0,
+          mem_kb:memRaw===null||memRaw===undefined||!Number.isFinite(Number(memRaw))?null:Number(memRaw),
+          latency_ms:latRaw===null||latRaw===undefined||!Number.isFinite(Number(latRaw))?null:Number(latRaw),
+          core:Number(raw.core ?? n?.core ?? 0)
+        };
+      }
+      function cpuColorV50(cpu){
+        const c=clamp(Number(cpu)||0,0,100);
+        const hue=Math.round(125 - c*1.25);
+        return `hsl(${hue}, 92%, 56%)`;
+      }
+      function currentCostV50(n){return running?(algorithmCostLiveV50.items.get(n.id)||null):null;}
+      function costValueV50(n,key){
+        const item=currentCostV50(n);
+        if(key==='name') return String(n.name||n.id||'').toLowerCase();
+        if(key==='core') return Number(n.core ?? item?.core ?? 0);
+        if(key==='cpu') return Number(item?.cpu ?? 0);
+        if(key==='mem') return item?.mem_kb===null||item?.mem_kb===undefined?null:Number(item.mem_kb);
+        if(key==='lat') return item?.latency_ms===null||item?.latency_ms===undefined?null:Number(item.latency_ms);
+        return 0;
+      }
+      function compareCostV50(a,b){
+        const key=algorithmCostLiveV50.sortKey, dir=algorithmCostLiveV50.sortDir==='asc'?1:-1;
+        const av=costValueV50(a,key), bv=costValueV50(b,key);
+        if(av===null && bv===null) return String(a.name||a.id).localeCompare(String(b.name||b.id));
+        if(av===null) return 1;
+        if(bv===null) return -1;
+        if(typeof av==='string'||typeof bv==='string') return dir*String(av).localeCompare(String(bv));
+        if(av===bv) return String(a.name||a.id).localeCompare(String(b.name||b.id));
+        return dir*(av-bv);
+      }
+      function headerCostV50(){
+        return `<colgroup><col class="cost-col-name-v50"><col class="cost-col-cpu-v50"><col class="cost-col-mem-v50"><col class="cost-col-lat-v50"><col class="cost-col-core-v50"></colgroup><thead><tr>`+
+          costColumnsV50.map(([key,label])=>{
+            const active=algorithmCostLiveV50.sortKey===key;
+            const icon=active?(algorithmCostLiveV50.sortDir==='desc'?'▼':'▲'):'';
+            const thClass=key==='core'?'cost-col-core-head-v50':'';
+            return `<th data-cost-sort-v50="${key}" class="${thClass}" title="Click to sort ${label}"><span class="cost-th-inner-v50"><span class="cost-th-text-v50">${label}</span><span class="cost-sort-icon-v50">${icon}</span></span></th>`;
+          }).join('')+'</tr></thead>';
+      }
+      function renderCostTableV50(){
+        ensureCostTableScrollV50();
+        const table=$('#costTable'); if(!table) return;
+        const nodes=visibleCostNodesV50().sort(compareCostV50);
+        const rows=nodes.map(n=>{
+          const item=currentCostV50(n);
+          const cpu=Number(item?.cpu ?? 0);
+          const color=cpuColorV50(cpu);
+          const mem=item?.mem_kb===null||item?.mem_kb===undefined?'<span class="cost-na-v50">N/A</span>':`<span class="cost-num-v50">${Math.round(Number(item.mem_kb))} KB</span>`;
+          const lat=item?.latency_ms===null||item?.latency_ms===undefined?'<span class="cost-na-v50">N/A</span>':`<span class="cost-num-v50">${Number(item.latency_ms).toFixed(2)}</span>`;
+          const core=Number(n.core ?? item?.core ?? 0);
+          return `<tr data-cost-node-id="${escapeHtml(n.id)}"><td><span class="cost-name-v50" data-cost-center-v50="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name||n.id)}</span></td><td><div class="cost-cpu-cell-v50"><div class="cost-cpu-bar-v50"><i style="width:${clamp(cpu,0,100)}%;background:${color};color:${color}"></i></div><span class="cost-cpu-value-v50">${cpu.toFixed(1)}%</span></div></td><td>${mem}</td><td>${lat}</td><td><span class="cost-num-v50">${escapeHtml(core)}</span></td></tr>`;
+        }).join('');
+        const totalCpu=nodes.reduce((s,n)=>s+Number(currentCostV50(n)?.cpu ?? 0),0);
+        const memVals=nodes.map(n=>Number(currentCostV50(n)?.mem_kb)).filter(Number.isFinite);
+        const totalMem=running && memVals.length?`${(memVals.reduce((a,b)=>a+b,0)/1024).toFixed(1)} MB`:'N/A';
+        table.innerHTML=headerCostV50()+`<tbody>${rows || '<tr><td colspan="5" class="cost-na-v50">No algorithms in selected pipeline group</td></tr>'}</tbody><tfoot><tr class="cost-total-v50"><td>Total</td><td>${totalCpu.toFixed(1)}%</td><td colspan="3">${escapeHtml(totalMem)}</td></tr></tfoot>`;
+      }
+      function sortCostTableV50(key){
+        if(!key) return;
+        if(algorithmCostLiveV50.lastUserSortKey===key){
+          algorithmCostLiveV50.sortDir=algorithmCostLiveV50.sortDir==='desc'?'asc':'desc';
+        }else{
+          algorithmCostLiveV50.sortKey=key;
+          algorithmCostLiveV50.sortDir='desc';
+          algorithmCostLiveV50.lastUserSortKey=key;
+        }
+        renderCostTableV50();
+        backendEdit('algorithm_cost_sort_v50',{key,dir:algorithmCostLiveV50.sortDir});
+      }
+      async function fetchBackendCostsV50(nodes){
+        const ids=encodeURIComponent(nodes.map(n=>n.id).join(','));
+        const cores=encodeURIComponent(nodes.map(n=>n.core ?? 0).join(','));
+        const data=await apiGet(`/api/algorithm/cost/live?running=${running?1:0}&nodes=${ids}&cores=${cores}&_=${Date.now()}`);
+        algorithmCostLiveV50.items.clear();
+        if(!data) return false;
+        if(Array.isArray(data.costs)){
+          data.costs.forEach(raw=>{
+            const id=raw?.node_id || raw?.nodeId;
+            const n=nodes.find(x=>x.id===id);
+            const item=normalizeCostItemV50(raw,n);
+            if(item?.node_id) algorithmCostLiveV50.items.set(item.node_id,item);
+          });
+        }else if(data.nodeCost && typeof data.nodeCost==='object'){
+          Object.entries(data.nodeCost).forEach(([id,raw])=>{
+            const n=nodes.find(x=>x.id===id);
+            const item=normalizeCostItemV50({...raw,node_id:id},n);
+            if(item?.node_id) algorithmCostLiveV50.items.set(item.node_id,item);
+          });
+        }
+        return nodes.length===0 || algorithmCostLiveV50.items.size>0;
+      }
+      async function refreshAlgorithmCostsV50(){
+        const nodes=visibleCostNodesV50();
+        if(!running){algorithmCostLiveV50.items.clear();algorithmCostLiveV50.backendOk=false;algorithmCostLiveV50.lastUpdate=Date.now();return false;}
+        let ok=false;
+        try{ok=await fetchBackendCostsV50(nodes);}catch(e){ok=false;}
+        algorithmCostLiveV50.backendOk=ok;
+        algorithmCostLiveV50.lastUpdate=Date.now();
+        if(!ok && algorithmCostLiveV50.missingLogCount<3){
+          algorithmCostLiveV50.missingLogCount++;
+          addLog('warn','Algorithm cost backend unavailable','GET /api/algorithm/cost/live returned no valid backend data; showing 0% / N/A');
+        }
+        return ok;
+      }
+      function centerAndFlashCostNodeV50(nodeId){
+        const n=nodeById(nodeId); if(!n){toast('Algorithm node not found in current layout');return false;}
+        clearSelection(); selectedNodeId=n.id; selectedNodeIds=new Set([n.id]); selectedEdgeKey=''; selectedEdgeKeys=new Set(); renderAll(false);
+        const sc=getScrollEl(), z=state.zoom||1;
+        if(sc){sc.scrollLeft=Math.max(0,(n.x+64)*z-sc.clientWidth/2);sc.scrollTop=Math.max(0,(n.y+60)*z-sc.clientHeight/2);renderMinimap();}
+        requestAnimationFrame(()=>{const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId); if(!el)return; el.classList.remove('cost-flash-v48'); void el.offsetWidth; el.classList.add('cost-flash-v48'); setTimeout(()=>el.classList.remove('cost-flash-v48'),950);});
+        backendEdit('algorithm_cost_center_node_v50',{node_id:n.id,node_name:n.name}); toast(`Centered ${n.name}`); return true;
+      }
+      const __syncTelemetryBeforeCostV50=syncTelemetryFromBackend;
+      syncTelemetryFromBackend=async function(){
+        let ok=false;
+        try{ok=await __syncTelemetryBeforeCostV50();}catch(e){ok=false;}
+        await refreshAlgorithmCostsV50();
+        return ok;
+      };
+      renderCostTable=renderCostTableV50;
+      document.addEventListener('pointerdown',e=>{
+        const th=e.target?.closest?.('#costTable th[data-cost-sort-v50]');
+        if(th){e.preventDefault();e.stopPropagation();sortCostTableV50(th.dataset.costSortV50);return;}
+      },true);
+      document.addEventListener('click',e=>{
+        const th=e.target?.closest?.('#costTable th[data-cost-sort-v50]');
+        if(th){e.preventDefault();e.stopPropagation();return;}
+        const name=e.target?.closest?.('#costTable [data-cost-center-v50]');
+        if(name && (e.ctrlKey||e.metaKey)){e.preventDefault();e.stopPropagation();centerAndFlashCostNodeV50(name.dataset.costCenterV50);}
+      },true);
+      window.audioStudioAlgorithmCostV50={refreshAlgorithmCostsV50,renderCostTableV50,sortCostTableV50,centerAndFlashCostNodeV50,backendOnly:true};
+    }
+
     function renderCoreLoading(){
       $('#coreRows').innerHTML=state.cores.map((v,i)=>`<div class="core-row"><span>Core ${i}</span><div class="loadbar"><i style="width:${v}%"></i></div><b>${Math.round(v)}%</b></div><div class="core-extra"><span>Temp ${Math.round(45+v*.18)}°C</span><span>Power ${(0.35+v/100*1.4).toFixed(2)} W</span></div>`).join('');
       const avg=state.cores.reduce((a,b)=>a+b,0)/state.cores.length; $('#totalLoad').textContent=Math.round(avg)+'%'; $('#headroom').textContent=Math.round(100-avg)+'%';

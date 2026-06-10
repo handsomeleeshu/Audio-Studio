@@ -124,6 +124,32 @@ private:
   std::mt19937 rng_;
 };
 
+
+struct AlgorithmCostEntry {
+  std::string node_id;
+  double cpu = 0.0;
+  int mem_kb = 0;
+  double latency_ms = 0.0;
+  int core = 0;
+};
+
+class IAlgorithmCostController {
+public:
+  virtual ~IAlgorithmCostController() = default;
+  virtual std::string liveCosts(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeAlgorithmCostController final : public IAlgorithmCostController {
+public:
+  FakeAlgorithmCostController();
+  std::string liveCosts(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
 class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
@@ -150,7 +176,8 @@ public:
   HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
              std::shared_ptr<INodeController> node_controller,
              std::shared_ptr<IParameterController> parameter_controller,
-             std::shared_ptr<IInspectorController> inspector_controller = nullptr);
+             std::shared_ptr<IInspectorController> inspector_controller = nullptr,
+             std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -160,6 +187,7 @@ private:
   std::shared_ptr<INodeController> node_controller_;
   std::shared_ptr<IParameterController> parameter_controller_;
   std::shared_ptr<IInspectorController> inspector_controller_;
+  std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller_;
   HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 
