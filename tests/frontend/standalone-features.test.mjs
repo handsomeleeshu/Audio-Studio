@@ -368,4 +368,25 @@ assert.ok(
   'DSP core rows must scroll independently from Total Load / Headroom'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioLibraryFocusV45Installed'),
+  'missing v45 algorithm library focus feature'
+);
+for (const token of [
+  'focusAlgorithmLibraryForNodeV45',
+  'ensureLibraryItemVisibleV45',
+  'scrollLibraryItemToMiddleV45',
+  'flashLibraryItemV45',
+  'collapsedLibraryCategories.delete',
+  'algorithmLibraryFocusPulseV45',
+  'library_focus_for_selected_node',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes("$('#nodesLayer')?.addEventListener('click'") && html.includes('scheduleLibraryFocusForSelectedNodeV45'),
+  'pipeline node selection should trigger Algorithm Library focus'
+);
+
 console.log('standalone-features.test passed');
