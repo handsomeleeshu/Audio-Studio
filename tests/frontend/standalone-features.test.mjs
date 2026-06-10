@@ -245,4 +245,18 @@ assert.ok(
   html.includes('cost-col-lat-v54') && html.includes('cost-col-core-v54') && html.includes('text-overflow:ellipsis'),
   'PER-ALGORITHM COST v54 should reserve LAT/Core width and ellipsize Name'
 );
+
+assert.ok(
+  html.includes('__audioStudioCostTotalFixedV56Installed') && html.includes('cost-total-fixed-v56'),
+  'PER-ALGORITHM COST v56 should render Total in a fixed footer outside the scroll body'
+);
+assert.ok(
+  html.includes('idxSortable:false') && html.includes('removeAttribute(\'data-cost-sort-v50\')'),
+  'PER-ALGORITHM COST IDX column must be display-only and not sortable'
+);
+assert.ok(
+  html.includes('cost-table-scroll-v56') && html.includes('cost-total-table-v56'),
+  'PER-ALGORITHM COST v56 should keep body scroll separate from fixed Total table'
+);
+
 console.log('standalone-features.test passed');
