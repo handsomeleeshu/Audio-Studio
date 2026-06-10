@@ -7582,6 +7582,151 @@
       window.audioStudioDspCoreLoadingV65a={refreshDspCoreLoadingV65a,renderCoreLoadingV65a,dspCoreCountV65a,backendOwned:true,noFrontendFake:true};
     }
 
+
+    // v45: keep Algorithm Library synced with selected pipeline component.
+    // When a node is selected in the pipeline layout, expand its category if
+    // needed, scroll the matching Algorithm Library item to the middle, then
+    // pulse-highlight it briefly.
+    if(!window.__audioStudioLibraryFocusV45Installed){
+      window.__audioStudioLibraryFocusV45Installed=true;
+      let lastLibraryFocusKeyV45='';
+      let libraryFocusTimerV45=null;
+
+      function injectLibraryFocusStyleV45(){
+        if(document.getElementById('algorithmLibraryFocusStyleV45')) return;
+        const style=document.createElement('style');
+        style.id='algorithmLibraryFocusStyleV45';
+        style.textContent=`
+          @keyframes algorithmLibraryFocusPulseV45{
+            0%{box-shadow:0 0 0 rgba(0,216,255,0);transform:translateX(0);}
+            28%{box-shadow:0 0 22px rgba(0,216,255,.65), inset 0 0 0 1px rgba(255,255,255,.12);transform:translateX(3px);}
+            58%{box-shadow:0 0 30px rgba(182,92,255,.48), inset 0 0 0 1px rgba(255,255,255,.10);transform:translateX(-1px);}
+            100%{box-shadow:0 0 0 rgba(0,216,255,0);transform:translateX(0);}
+          }
+          .component.library-focus-v45{
+            border-color:rgba(0,216,255,.95)!important;
+            background:linear-gradient(90deg,rgba(0,216,255,.22),rgba(182,92,255,.12))!important;
+            animation:algorithmLibraryFocusPulseV45 1.05s ease-out 1;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      function normalizeLibraryMatchV45(v){
+        const s=String(v||'').toLowerCase().trim();
+        return s.replace(/[^a-z0-9]+/g,'');
+      }
+      function nodeModuleAliasesV45(node){
+        const raw=node?.rawModuleType || {};
+        return [
+          node?.moduleTypeId,
+          node?.module_type_id,
+          node?.module_type,
+          raw.module_type_id,
+          raw.moduleTypeId,
+          raw.type_id,
+          raw.id,
+          raw.name,
+          node?.type,
+          node?.name,
+        ].filter(Boolean).map(x=>String(x));
+      }
+      function libraryMatchScoreV45(component,node){
+        const aliases=nodeModuleAliasesV45(node);
+        const moduleId=String(component?.moduleTypeId || '');
+        const name=String(component?.name || '');
+        if(moduleId && aliases.some(a=>a===moduleId)) return 100;
+        if(name && aliases.some(a=>a===name)) return 90;
+        const normModule=normalizeLibraryMatchV45(moduleId);
+        const normName=normalizeLibraryMatchV45(name);
+        const normAliases=aliases.map(normalizeLibraryMatchV45);
+        if(normModule && normAliases.includes(normModule)) return 80;
+        if(normName && normAliases.includes(normName)) return 70;
+        if(normName && normalizeLibraryMatchV45(node?.name)===normName) return 60;
+        return 0;
+      }
+      function findLibraryComponentForNodeV45(node){
+        let best=null;
+        let bestScore=0;
+        (components || []).forEach(c=>{
+          const score=libraryMatchScoreV45(c,node);
+          if(score>bestScore){best=c;bestScore=score;}
+        });
+        return bestScore>0 ? best : null;
+      }
+      function libraryComponentElementV45(component){
+        const els=[...$$('.component')];
+        return els.find(el=>{
+          const sameName=el.dataset.name===component.name;
+          const sameCat=el.closest('.cat')?.dataset.cat===component.cat;
+          const title=el.getAttribute('title') || '';
+          const sameModule=!component.moduleTypeId || title===component.moduleTypeId || title.includes(component.moduleTypeId);
+          return sameName && sameCat && sameModule;
+        }) || els.find(el=>el.dataset.name===component.name && el.closest('.cat')?.dataset.cat===component.cat) || null;
+      }
+      function ensureLibraryItemVisibleV45(component){
+        const search=$('#searchInput');
+        const q=String(search?.value || '');
+        let needsRender=false;
+        if(component?.cat && collapsedLibraryCategories.has(component.cat)){
+          collapsedLibraryCategories.delete(component.cat);
+          needsRender=true;
+        }
+        if(q && !String(component?.name || '').toLowerCase().includes(q.toLowerCase())){
+          if(search) search.value='';
+          needsRender=true;
+        }
+        if(needsRender) renderLibrary($('#searchInput')?.value || '');
+        return libraryComponentElementV45(component);
+      }
+      function scrollLibraryItemToMiddleV45(el){
+        const lib=$('#componentLib');
+        if(!lib || !el) return;
+        const target=Math.max(0,el.offsetTop - (lib.clientHeight/2) + (el.offsetHeight/2));
+        try{ lib.scrollTo({top:target,behavior:'smooth'}); }
+        catch(e){ lib.scrollTop=target; }
+      }
+      function flashLibraryItemV45(el){
+        if(!el) return;
+        injectLibraryFocusStyleV45();
+        $$('.component.library-focus-v45').forEach(x=>x.classList.remove('library-focus-v45'));
+        void el.offsetWidth;
+        el.classList.add('library-focus-v45');
+        setTimeout(()=>el.classList.remove('library-focus-v45'),1250);
+      }
+      function focusAlgorithmLibraryForNodeV45(node,reason='select'){
+        if(!node) return false;
+        const component=findLibraryComponentForNodeV45(node);
+        if(!component) return false;
+        const el=ensureLibraryItemVisibleV45(component);
+        if(!el) return false;
+        scrollLibraryItemToMiddleV45(el);
+        flashLibraryItemV45(el);
+        backendEdit('library_focus_for_selected_node',{reason,node_id:node.id,node_name:node.name,module_type_id:node.moduleTypeId||'',library_item:component.name,category:component.cat});
+        return true;
+      }
+      function scheduleLibraryFocusForSelectedNodeV45(reason='render'){
+        const node=nodeById(selectedNodeId);
+        if(!node) return;
+        const key=`${node.id}|${node.moduleTypeId||''}|${node.name||''}|${reason}`;
+        if(key===lastLibraryFocusKeyV45 && reason!=='click') return;
+        lastLibraryFocusKeyV45=key;
+        clearTimeout(libraryFocusTimerV45);
+        libraryFocusTimerV45=setTimeout(()=>focusAlgorithmLibraryForNodeV45(node,reason),40);
+      }
+      const __renderAllBeforeLibraryFocusV45=renderAll;
+      renderAll=function(rebuildNodes=true){
+        const out=__renderAllBeforeLibraryFocusV45(rebuildNodes);
+        scheduleLibraryFocusForSelectedNodeV45('render');
+        return out;
+      };
+      $('#nodesLayer')?.addEventListener('click',e=>{
+        const nodeEl=e.target?.closest?.('.pipeline-node');
+        if(!nodeEl || e.target?.closest?.('.port,.delete-node')) return;
+        setTimeout(()=>scheduleLibraryFocusForSelectedNodeV45('click'),0);
+      },true);
+      window.audioStudioLibraryFocusV45={focusAlgorithmLibraryForNodeV45,scheduleLibraryFocusForSelectedNodeV45,findLibraryComponentForNodeV45};
+    }
+
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
