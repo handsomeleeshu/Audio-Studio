@@ -465,6 +465,18 @@
     #costPanel #costTable.cost-table-v59 td.cost-cpu-cell-td-v62{overflow:hidden!important;}
     #costPanel #costTable.cost-table-v59 td.cost-cpu-cell-td-v62 .cost-cpu-cell-v59{max-width:100%!important;overflow:hidden!important;}
 
+
+    /* v64: recover from v63 and keep IDX header display-only.
+       No MutationObserver, no layout rewrite. Keep v59/v60/v62 table geometry. */
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64,
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 *{cursor:default!important;}
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-sort-icon-v59,
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-sort-icon-v50,
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-sort-icon-v49,
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-sort-icon-v48{display:none!important;visibility:hidden!important;}
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-th-text-v59,
+    #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-th-text-v50{max-width:100%!important;overflow:visible!important;text-overflow:clip!important;}
+
   </style>
 </head>
 <body>
@@ -7384,6 +7396,66 @@
       }
       [0,50,200,500,1000].forEach(ms=>setTimeout(applyCostStoppedIdxFixV62,ms));
       window.audioStudioPerAlgorithmCostStoppedIdxV62={applyCostStoppedIdxFixV62};
+    }
+
+
+    // v64: safe recovery after v63. Keep IDX display-only and normalize after render
+    // without MutationObserver or recursive DOM writes, so the page can open normally.
+    if(!window.__audioStudioPerAlgorithmCostSortHeaderRecoveryV64Installed){
+      window.__audioStudioPerAlgorithmCostSortHeaderRecoveryV64Installed=true;
+      function isIdxHeaderV64(th){
+        if(!th) return false;
+        return th.cellIndex===1 || (th.textContent||'').replace(/[▲▼]/g,'').trim().toUpperCase()==='IDX';
+      }
+      function cleanupIdxSortHeaderV64(){
+        const table=document.querySelector('#costTable');
+        const th=table?.tHead?.rows?.[0]?.cells?.[1];
+        if(!th) return false;
+        th.classList.add('cost-idx-head-v56','cost-idx-head-v59','cost-idx-head-v64');
+        th.removeAttribute('data-cost-sort-v50');
+        th.removeAttribute('data-cost-sort-v59');
+        th.removeAttribute('data-cost-sort');
+        delete th.dataset.costSortV50;
+        delete th.dataset.costSortV59;
+        delete th.dataset.costSort;
+        th.title='Algorithm instance index';
+        const text=th.querySelector('.cost-th-text-v59,.cost-th-text-v50,.cost-th-text-v48');
+        if(text) text.textContent='IDX';
+        th.querySelectorAll('.cost-sort-icon-v59,.cost-sort-icon-v50,.cost-sort-icon-v49,.cost-sort-icon-v48').forEach(icon=>{ icon.textContent=''; });
+        return true;
+      }
+      function applyCostSortHeaderRecoveryV64(){
+        window.audioStudioPerAlgorithmCostStoppedIdxV62?.applyCostStoppedIdxFixV62?.();
+        cleanupIdxSortHeaderV64();
+        return true;
+      }
+      const __renderCostTableBeforeV64=renderCostTable;
+      renderCostTable=function(){
+        const out=__renderCostTableBeforeV64?.();
+        applyCostSortHeaderRecoveryV64();
+        return out;
+      };
+      document.addEventListener('pointerdown',e=>{
+        const th=e.target?.closest?.('#costTable th');
+        if(isIdxHeaderV64(th)){
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          cleanupIdxSortHeaderV64();
+        }
+      },true);
+      document.addEventListener('click',e=>{
+        const th=e.target?.closest?.('#costTable th');
+        if(isIdxHeaderV64(th)){
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          cleanupIdxSortHeaderV64();
+        }
+      },true);
+      window.addEventListener('load',()=>requestAnimationFrame(applyCostSortHeaderRecoveryV64));
+      requestAnimationFrame(applyCostSortHeaderRecoveryV64);
+      window.audioStudioPerAlgorithmCostSortHeaderRecoveryV64={applyCostSortHeaderRecoveryV64,cleanupIdxSortHeaderV64,idxSortable:false};
     }
 
     function exportJson(){

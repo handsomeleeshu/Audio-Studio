@@ -335,4 +335,18 @@ assert.ok(
   html.includes('cost-idx-cell-v62') && html.includes('cost-cpu-cell-td-v62'),
   'v62 should keep IDX and CPU cells separated in stopped state'
 );
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostSortHeaderRecoveryV64Installed'),
+  'missing v64 per-algorithm cost sort header recovery'
+);
+assert.ok(
+  html.includes('cleanupIdxSortHeaderV64') && html.includes('idxSortable:false'),
+  'IDX should remain display-only and non-sortable after v64 recovery'
+);
+assert.ok(
+  !html.includes('__audioStudioPerAlgorithmCostSortHeaderV63Installed'),
+  'broken v63 sort header stabilizer must be removed'
+);
 console.log('standalone-features.test passed');
