@@ -349,4 +349,23 @@ assert.ok(
   !html.includes('__audioStudioPerAlgorithmCostSortHeaderV63Installed'),
   'broken v63 sort header stabilizer must be removed'
 );
+
+assert.ok(
+  html.includes('__audioStudioDspCoreLoadingV65aInstalled'),
+  'missing v65a DSP core loading frontend integration'
+);
+for (const token of [
+  '/api/dsp/core/loading',
+  'audioStudioDspCoreLoadingV65a',
+  'backendOwned:true',
+  'noFrontendFake:true',
+  'GET /api/dsp/core/loading failed; no frontend fake data is generated',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('#coreRows{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important'),
+  'DSP core rows must scroll independently from Total Load / Headroom'
+);
+
 console.log('standalone-features.test passed');

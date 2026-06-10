@@ -150,6 +150,40 @@ private:
   std::mt19937 rng_;
 };
 
+
+struct DspCoreLoadingEntry {
+  int id = 0;
+  double load_percent = 0.0;
+  double temperature_c = 0.0;
+  double power_w = 0.0;
+};
+
+struct DspCoreLoadingFrame {
+  bool running = false;
+  std::int64_t timestamp_ms = 0;
+  int core_count = 0;
+  std::vector<DspCoreLoadingEntry> cores;
+  double total_load_percent = 0.0;
+  double headroom_percent = 100.0;
+};
+
+class IDspCoreLoadingController {
+public:
+  virtual ~IDspCoreLoadingController() = default;
+  virtual std::string liveCoreLoading(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeDspCoreLoadingController final : public IDspCoreLoadingController {
+public:
+  FakeDspCoreLoadingController();
+  std::string liveCoreLoading(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
 class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
@@ -177,7 +211,8 @@ public:
              std::shared_ptr<INodeController> node_controller,
              std::shared_ptr<IParameterController> parameter_controller,
              std::shared_ptr<IInspectorController> inspector_controller = nullptr,
-             std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller = nullptr);
+             std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller = nullptr,
+              std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -188,7 +223,8 @@ private:
   std::shared_ptr<IParameterController> parameter_controller_;
   std::shared_ptr<IInspectorController> inspector_controller_;
   std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller_;
-  HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
+    std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller_;
+HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 
 std::string readFile(const std::string& path);
