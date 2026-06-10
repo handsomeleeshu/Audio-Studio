@@ -477,6 +477,16 @@
     #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-th-text-v59,
     #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-th-text-v50{max-width:100%!important;overflow:visible!important;text-overflow:clip!important;}
 
+
+    /* v65a: DSP CORE LOADING keeps the same visual style, but only the core list scrolls. */
+    #corePanel{display:flex!important;flex-direction:column!important;min-height:0!important;overflow:hidden!important;}
+    #corePanel .card-head{flex:0 0 auto!important;}
+    #coreRows{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;padding-right:4px;scrollbar-color:#24415f #07101d;scrollbar-width:thin;}
+    #coreRows::-webkit-scrollbar{width:8px;}
+    #coreRows::-webkit-scrollbar-track{background:#07101d;border-radius:8px;}
+    #coreRows::-webkit-scrollbar-thumb{background:#24415f;border-radius:8px;border:2px solid #07101d;}
+    #corePanel .total{flex:0 0 auto!important;margin-top:8px!important;}
+
   </style>
 </head>
 <body>
@@ -7456,6 +7466,120 @@
       window.addEventListener('load',()=>requestAnimationFrame(applyCostSortHeaderRecoveryV64));
       requestAnimationFrame(applyCostSortHeaderRecoveryV64);
       window.audioStudioPerAlgorithmCostSortHeaderRecoveryV64={applyCostSortHeaderRecoveryV64,cleanupIdxSortHeaderV64,idxSortable:false};
+    }
+
+
+    // v65a: backend-owned DSP CORE LOADING.
+    // The frontend no longer computes fake core temperature/power or core loads.
+    // It only renders data returned by /api/dsp/core/loading. When the backend is
+    // unavailable, the panel shows N/A placeholders instead of generating fake data.
+    if(!window.__audioStudioDspCoreLoadingV65aInstalled){
+      window.__audioStudioDspCoreLoadingV65aInstalled=true;
+      let dspCoreLoadingStateV65a={ok:false,running:false,core_count:Number($('#coreSelect')?.value||4),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:0};
+      let dspCoreLoadingRequestBusyV65a=false;
+      let dspCoreLoadingLastErrorLoggedV65a=false;
+
+      function dspCoreCountV65a(){
+        const n=Number($('#coreSelect')?.value || dspCoreLoadingStateV65a.core_count || 4);
+        return Math.max(1,Math.min(64,Number.isFinite(n)?Math.round(n):4));
+      }
+      function dspCoreLoadingUrlV65a(){
+        return `/api/dsp/core/loading?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&cores=${dspCoreCountV65a()}&dsp=${encodeURIComponent($('#dspSelect')?.value||'HiFi5s')}`;
+      }
+      function numOrNullV65a(v){
+        const n=Number(v);
+        return Number.isFinite(n)?n:null;
+      }
+      function normalizeDspCoreFrameV65a(data){
+        const count=dspCoreCountV65a();
+        const raw=Array.isArray(data?.cores)?data.cores:[];
+        const cores=[];
+        for(let i=0;i<count;i++){
+          const c=raw.find(x=>Number(x.id)===i) || raw[i] || {};
+          cores.push({
+            id:i,
+            load:numOrNullV65a(c.loadPercent ?? c.load ?? c.load_percent),
+            temperature:numOrNullV65a(c.temperatureC ?? c.temperature ?? c.temperature_c),
+            powerW:numOrNullV65a(c.powerW ?? (Number.isFinite(Number(c.powerMw ?? c.power_mw)) ? Number(c.powerMw ?? c.power_mw)/1000 : null))
+          });
+        }
+        let total=numOrNullV65a(data?.summary?.totalLoadPercent ?? data?.summary?.totalLoad ?? data?.totalLoad);
+        if(total===null){
+          const vals=cores.map(c=>c.load).filter(v=>v!==null);
+          total=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+        }
+        let head=numOrNullV65a(data?.summary?.headroomPercent ?? data?.summary?.headroom ?? data?.headroom);
+        if(head===null && total!==null) head=Math.max(0,100-total);
+        return {ok:true,running:!!data?.running,core_count:count,cores,summary:{totalLoad:total,headroom:head},timestamp_ms:Number(data?.timestamp_ms||Date.now())};
+      }
+      async function refreshDspCoreLoadingV65a(){
+        if(dspCoreLoadingRequestBusyV65a) return false;
+        dspCoreLoadingRequestBusyV65a=true;
+        try{
+          const data=await apiGet(dspCoreLoadingUrlV65a());
+          if(data && data.ok!==false && Array.isArray(data.cores)){
+            dspCoreLoadingStateV65a=normalizeDspCoreFrameV65a(data);
+            state.dspCoreLoading=dspCoreLoadingStateV65a;
+            dspCoreLoadingLastErrorLoggedV65a=false;
+            renderCoreLoading();
+            return true;
+          }
+          dspCoreLoadingStateV65a={ok:false,running,core_count:dspCoreCountV65a(),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:Date.now()};
+          state.dspCoreLoading=dspCoreLoadingStateV65a;
+          if(running && !dspCoreLoadingLastErrorLoggedV65a){
+            dspCoreLoadingLastErrorLoggedV65a=true;
+            addLog('warn','DSP Core Loading unavailable','GET /api/dsp/core/loading failed; no frontend fake data is generated');
+          }
+          renderCoreLoading();
+          return false;
+        }finally{
+          dspCoreLoadingRequestBusyV65a=false;
+        }
+      }
+      function pctTextV65a(v){ return v===null?'N/A':`${Math.round(v)}%`; }
+      function tempTextV65a(v){ return v===null?'Temp N/A':`Temp ${Math.round(v)}°C`; }
+      function powerTextV65a(v){ return v===null?'Power N/A':`Power ${v.toFixed(2)} W`; }
+      function renderCoreLoadingV65a(){
+        const rows=$('#coreRows');
+        if(!rows) return;
+        const count=dspCoreCountV65a();
+        const stateFrame=state.dspCoreLoading || dspCoreLoadingStateV65a;
+        const cores=[];
+        for(let i=0;i<count;i++){
+          const c=(stateFrame.cores||[]).find(x=>Number(x.id)===i) || (stateFrame.cores||[])[i] || {id:i,load:null,temperature:null,powerW:null};
+          cores.push({id:i,load:numOrNullV65a(c.load),temperature:numOrNullV65a(c.temperature),powerW:numOrNullV65a(c.powerW)});
+        }
+        rows.innerHTML=cores.map(c=>{
+          const width=c.load===null?0:clamp(c.load,0,100);
+          return `<div class="core-row"><span>Core ${c.id}</span><div class="loadbar"><i style="width:${width}%"></i></div><b>${pctTextV65a(c.load)}</b></div><div class="core-extra"><span>${tempTextV65a(c.temperature)}</span><span>${powerTextV65a(c.powerW)}</span></div>`;
+        }).join('');
+        const total=numOrNullV65a(stateFrame.summary?.totalLoad);
+        const head=numOrNullV65a(stateFrame.summary?.headroom);
+        const totalEl=$('#totalLoad'), headEl=$('#headroom');
+        if(totalEl) totalEl.textContent=pctTextV65a(total);
+        if(headEl) headEl.textContent=pctTextV65a(head);
+      }
+
+      renderCoreLoading=renderCoreLoadingV65a;
+      const __syncTelemetryBeforeDspCoreV65a=syncTelemetryFromBackend;
+      syncTelemetryFromBackend=async function(){
+        let ok=false;
+        try{ ok=await __syncTelemetryBeforeDspCoreV65a(); }catch(e){ ok=false; }
+        await refreshDspCoreLoadingV65a();
+        return ok;
+      };
+      document.addEventListener('change',e=>{
+        if(e.target?.id==='coreSelect'){
+          dspCoreLoadingStateV65a={ok:false,running,core_count:dspCoreCountV65a(),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:Date.now()};
+          state.dspCoreLoading=dspCoreLoadingStateV65a;
+          renderCoreLoadingV65a();
+          refreshDspCoreLoadingV65a();
+          backendEdit('dsp_core_count_changed',{cores:dspCoreCountV65a()});
+        }
+      });
+      setInterval(refreshDspCoreLoadingV65a,700);
+      requestAnimationFrame(()=>{renderCoreLoadingV65a(); refreshDspCoreLoadingV65a();});
+      window.audioStudioDspCoreLoadingV65a={refreshDspCoreLoadingV65a,renderCoreLoadingV65a,dspCoreCountV65a,backendOwned:true,noFrontendFake:true};
     }
 
     function exportJson(){

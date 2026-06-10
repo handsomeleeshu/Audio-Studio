@@ -155,11 +155,13 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller,
                        std::shared_ptr<IInspectorController> inspector_controller,
-                       std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller)
+                       std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller,
+                       std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
     inspector_controller_(std::move(inspector_controller)),
-    algorithm_cost_controller_(std::move(algorithm_cost_controller)) {}
+    algorithm_cost_controller_(std::move(algorithm_cost_controller)),
+    dsp_core_loading_controller_(std::move(dsp_core_loading_controller)) {}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -206,6 +208,11 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     auto q = parseQuery(req.query);
     if (!algorithm_cost_controller_) return {503, "application/json", R"({"ok":false,"error":"algorithm cost controller not configured"})"};
     return {200, "application/json", algorithm_cost_controller_->liveCosts(q)};
+  }
+  if (req.method == "GET" && req.path == "/api/dsp/core/loading") {
+    auto q = parseQuery(req.query);
+    if (!dsp_core_loading_controller_) return {503, "application/json", R"({"ok":false,"error":"dsp core loading controller not configured"})"};
+    return {200, "application/json", dsp_core_loading_controller_->liveCoreLoading(q)};
   }
   if (req.method == "GET" && req.path == "/api/inspector/buffer/live") {
     auto q = parseQuery(req.query);

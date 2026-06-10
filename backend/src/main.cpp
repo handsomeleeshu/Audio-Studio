@@ -7,7 +7,8 @@ int main(int argc, char** argv) {
   auto runtime = std::make_shared<audiostudio::MockRuntimeEngine>();
   auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
   auto algorithm_cost = std::make_shared<audiostudio::FakeAlgorithmCostController>();
-  audiostudio::HttpServer server(root, port, runtime, runtime, runtime, inspector, algorithm_cost);
+  auto dsp_core_loading = std::make_shared<audiostudio::FakeDspCoreLoadingController>();
+  audiostudio::HttpServer server(root, port, runtime, runtime, runtime, inspector, algorithm_cost, dsp_core_loading);
   try { return server.run(); }
   catch (const std::exception& e) { std::cerr << "server error: " << e.what() << std::endl; return 1; }
 }

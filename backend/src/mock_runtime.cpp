@@ -1,4 +1,5 @@
 #include "audio_studio.hpp"
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <iomanip>
@@ -428,6 +429,79 @@ std::string FakeAlgorithmCostController::liveCosts(const std::map<std::string, s
   return os.str();
 }
 
+
+
+FakeDspCoreLoadingController::FakeDspCoreLoadingController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0xd5c065u));
+}
+
+double FakeDspCoreLoadingController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeDspCoreLoadingController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeDspCoreLoadingController::liveCoreLoading(const std::map<std::string, std::string>& query) {
+  static std::atomic<int> core_loading_count{0};
+  const int count = ++core_loading_count;
+  const bool run = queryBool(query, "running");
+  const int requested = std::max(1, std::min(64, queryInt(query, "cores", 4)));
+
+  if (count == 1 || count % 10 == 0) {
+    std::cout << "\n[AudioStudio Backend CALLBACK] IDspCoreLoadingController::liveCoreLoading"
+              << "\n  Fake DSP core loading data. request_count=" << count
+              << " running=" << (run ? "true" : "false")
+              << " core_count=" << requested << "\n" << std::flush;
+  }
+
+  const auto now_ms = static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(2);
+  os << "{\"ok\":true,\"mode\":\"fake_dsp_core_loading\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now_ms
+     << ",\"core_count\":" << requested
+     << ",\"cores\":[";
+
+  double sum = 0.0;
+  for (int i = 0; i < requested; ++i) {
+    if (i) os << ',';
+    double load = 0.0;
+    double temp = rnd(36.0, 40.5);
+    double power = rnd(0.10, 0.24);
+    if (run) {
+      const double branch = rnd(0.0, 1.0);
+      load = branch > 0.88 ? rnd(64.0, 92.0) : rnd(10.0, 58.0);
+      if (requested > 4 && i >= 4) load *= rnd(0.35, 0.72);
+      temp = 43.0 + load * 0.22 + rnd(-1.2, 1.4);
+      power = 0.32 + load / 100.0 * 1.55 + rnd(-0.04, 0.06);
+    }
+    load = std::max(0.0, std::min(100.0, load));
+    sum += load;
+    os << "{\"id\":" << i
+       << ",\"load\":" << load
+       << ",\"loadPercent\":" << load
+       << ",\"temperature\":" << temp
+       << ",\"temperatureC\":" << temp
+       << ",\"powerW\":" << power
+       << ",\"powerMw\":" << static_cast<int>(power * 1000.0) << "}";
+  }
+  const double total = requested > 0 ? sum / requested : 0.0;
+  const double headroom = std::max(0.0, 100.0 - total);
+  os << "],\"summary\":{\"totalLoad\":" << total
+     << ",\"totalLoadPercent\":" << total
+     << ",\"headroom\":" << headroom
+     << ",\"headroomPercent\":" << headroom << "}}";
+  return os.str();
+}
 
 MockRuntimeEngine::MockRuntimeEngine() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
