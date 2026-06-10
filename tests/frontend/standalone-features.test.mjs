@@ -465,6 +465,30 @@ assert.ok(
   'SYSTEM HEALTH and AUDIO I/O renderers must be backend-owned overrides'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioRealTimeProbeV66FreshInstalled'),
+  'missing v66fresh backend-driven realtime probe'
+);
+for (const token of [
+  '/api/realtime/probe/live',
+  '/api/realtime/probe/config',
+  'probeModeButton',
+  'probeChanAButton',
+  'probeChanBButton',
+  'probeChanAMenu',
+  'probeChanBMenu',
+  'ch0',
+  'fftSize:4096',
+  'backendOnly:true',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  !html.includes('probeChanASelect') && !html.includes('probeChanBSelect'),
+  'realtime probe should use upward custom channel menus, not bottom-clipped select elements'
+);
+
 console.log('standalone-features.test passed');
 
 

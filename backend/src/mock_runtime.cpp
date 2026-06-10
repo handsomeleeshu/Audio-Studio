@@ -721,6 +721,182 @@ std::string FakeAudioIoController::liveAudioIo(const std::map<std::string, std::
   return os.str();
 }
 
+
+FakeRealTimeProbeController::FakeRealTimeProbeController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0x66f2u));
+}
+
+double FakeRealTimeProbeController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeRealTimeProbeController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeRealTimeProbeController::configureProbe(const std::string& request_json) {
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    last_config_json_ = request_json;
+  }
+  printIntegrationTodo("IRealTimeProbeController::configureProbe", request_json,
+    "apply Real-Time Probe mode/channel selection to the backend/DSP probe path; real product can configure FFT/window/channel taps here.");
+  return "{\"ok\":true,\"callback\":\"IRealTimeProbeController::configureProbe\",\"mode\":\"backend_owned\"}";
+}
+
+static double rtProbeToneV66Fresh(int ch, int i, int sample_rate, double phase) {
+  constexpr double kPi = 3.1415926535897932384626433832795;
+  const double t = static_cast<double>(i) / std::max(1, sample_rate);
+  const double f1 = 430.0 + ch * 170.0;
+  const double f2 = 1100.0 + ch * 260.0;
+  const double f3 = 3200.0 + ch * 510.0;
+  double v = 0.50 * std::sin(2.0 * kPi * f1 * t + phase + ch * 0.53)
+           + 0.26 * std::sin(2.0 * kPi * f2 * t + phase * 0.37)
+           + 0.10 * std::sin(2.0 * kPi * f3 * t + phase * 0.19);
+  if (v > 1.0) v = 1.0;
+  if (v < -1.0) v = -1.0;
+  return v;
+}
+
+static void rtProbeAppendDoubleArrayV66Fresh(std::ostringstream& os, const std::vector<double>& values) {
+  os << '[';
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i) os << ',';
+    os << values[i];
+  }
+  os << ']';
+}
+
+std::string FakeRealTimeProbeController::liveProbeData(const std::map<std::string, std::string>& query) {
+  static std::atomic<int> probe_count{0};
+  const int count = ++probe_count;
+  const bool run = queryBool(query, "running");
+  std::string display_mode = queryGet(query, "mode", queryGet(query, "display_mode", "time"));
+  if (display_mode == "freq" || display_mode == "spectrum") display_mode = "frequency";
+  if (display_mode != "frequency") display_mode = "time";
+
+  const int channels = std::max(1, std::min(64, queryInt(query, "channels", 2)));
+  const int sample_rate = std::max(8000, queryInt(query, "sample_rate", 48000));
+  const int bits = std::max(8, queryInt(query, "bits", 16));
+  const int fft_size = 4096;
+  const int frame_samples = display_mode == "frequency"
+    ? fft_size
+    : std::max(512, std::min(4096, queryInt(query, "frame_samples", 2048)));
+  int channel_a = std::max(0, std::min(channels - 1, queryInt(query, "channel_a", 0)));
+  int channel_b = queryInt(query, "channel_b", channels > 1 ? 1 : -1);
+  if (channel_b >= channels) channel_b = channels - 1;
+  if (channel_b < 0) channel_b = -1;
+
+  const std::string edge_key = queryGet(query, "edge_key");
+  const std::string from = queryGet(query, "from");
+  const std::string to = queryGet(query, "to");
+  const auto now_ms = static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+
+  if (count == 1 || count % 25 == 0) {
+    std::cout << "\n[AudioStudio Backend CALLBACK] IRealTimeProbeController::liveProbeData"
+              << "\n  Backend-owned Real-Time Probe. request_count=" << count
+              << " running=" << (run ? "true" : "false")
+              << " mode=" << display_mode
+              << " channels=" << channels
+              << " fft_size=" << fft_size << "\n" << std::flush;
+  }
+
+  const double phase = (now_ms % 100000) * 0.0017;
+  std::vector<int> selected_channels;
+  selected_channels.push_back(channel_a);
+  if (channel_b >= 0 && channel_b != channel_a) selected_channels.push_back(channel_b);
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(5);
+  os << "{\"ok\":true,\"mode\":\"fake_realtime_probe\",\"backendOnly\":true"
+     << ",\"running\":" << (run ? "true" : "false")
+     << ",\"displayMode\":\"" << jsonEscape(display_mode) << "\""
+     << ",\"timestamp_ms\":" << now_ms
+     << ",\"edge_key\":\"" << jsonEscape(edge_key) << "\""
+     << ",\"from\":\"" << jsonEscape(from) << "\""
+     << ",\"to\":\"" << jsonEscape(to) << "\""
+     << ",\"format\":{\"channels\":" << channels
+     << ",\"sampleRate\":" << sample_rate
+     << ",\"bits\":" << bits
+     << ",\"frameSamples\":" << frame_samples
+     << ",\"fftSize\":" << (display_mode == "frequency" ? fft_size : 0)
+     << ",\"label\":\"" << channels << "ch · " << (sample_rate / 1000) << " kHz · " << bits << "-bit\"}"
+     << ",\"channels\":[";
+
+  double summary_rms = -120.0;
+  double summary_peak = -120.0;
+  for (size_t ci = 0; ci < selected_channels.size(); ++ci) {
+    const int ch = selected_channels[ci];
+    if (ci) os << ',';
+    std::vector<double> waveform;
+    std::vector<double> spectrum;
+    double sum2 = 0.0;
+    double peak = 0.0;
+    const int waveform_points = display_mode == "frequency" ? fft_size : frame_samples;
+    waveform.reserve(static_cast<size_t>(waveform_points));
+    for (int i = 0; i < waveform_points; ++i) {
+      double v = run ? rtProbeToneV66Fresh(ch, i, sample_rate, phase) : 0.0;
+      if (run) v += rnd(-0.018, 0.018);
+      if (v > 1.0) v = 1.0;
+      if (v < -1.0) v = -1.0;
+      waveform.push_back(v);
+      sum2 += v * v;
+      peak = std::max(peak, std::abs(v));
+    }
+    const double rms_lin = waveform.empty() ? 0.0 : std::sqrt(sum2 / waveform.size());
+    const double rms_db = run && rms_lin > 1e-9 ? 20.0 * std::log10(rms_lin) : -120.0;
+    const double peak_db = run && peak > 1e-9 ? 20.0 * std::log10(peak) : -120.0;
+    summary_rms = ci == 0 ? rms_db : std::max(summary_rms, rms_db);
+    summary_peak = ci == 0 ? peak_db : std::max(summary_peak, peak_db);
+
+    if (display_mode == "frequency") {
+      constexpr double kPi = 3.1415926535897932384626433832795;
+      const int bins = 1024;
+      spectrum.reserve(bins);
+      for (int b = 0; b < bins; ++b) {
+        const int k = std::max(1, static_cast<int>((static_cast<double>(b) / bins) * (fft_size / 2 - 1)));
+        double re = 0.0, im = 0.0;
+        // Backend mock computes a decimated 4096-point DFT view. This keeps the
+        // mock lightweight while still modeling a real backend FFT result.
+        for (int i = 0; i < fft_size; i += 4) {
+          const double ang = -2.0 * kPi * k * i / fft_size;
+          const double v = waveform[static_cast<size_t>(i)];
+          re += v * std::cos(ang);
+          im += v * std::sin(ang);
+        }
+        double mag = std::sqrt(re * re + im * im) / (fft_size / 4.0);
+        mag = std::log10(1.0 + mag * 18.0) / std::log10(19.0);
+        if (!run) mag = 0.0;
+        spectrum.push_back(std::max(0.0, std::min(1.0, mag)));
+      }
+    }
+
+    os << "{\"index\":" << ch
+       << ",\"label\":\"ch" << ch << "\""
+       << ",\"rms\":" << rms_db
+       << ",\"peak\":" << peak_db;
+    if (display_mode == "frequency") {
+      os << ",\"spectrum\":";
+      rtProbeAppendDoubleArrayV66Fresh(os, spectrum);
+      os << ",\"waveform\":[]";
+    } else {
+      os << ",\"waveform\":";
+      rtProbeAppendDoubleArrayV66Fresh(os, waveform);
+      os << ",\"spectrum\":[]";
+    }
+    os << '}';
+  }
+  os << "]";
+  os << ",\"summary\":{\"rms\":" << summary_rms << ",\"peak\":" << summary_peak << "}}";
+  return os.str();
+}
+
 MockRuntimeEngine::MockRuntimeEngine() {
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
 }

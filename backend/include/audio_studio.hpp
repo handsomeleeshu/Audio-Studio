@@ -265,6 +265,36 @@ private:
   std::mt19937 rng_;
 };
 
+
+struct RealTimeProbeChannelFrame {
+  int index = 0;
+  std::string label;
+  std::vector<double> waveform;
+  std::vector<double> spectrum;
+  double rms_dbfs = -120.0;
+  double peak_dbfs = -120.0;
+};
+
+class IRealTimeProbeController {
+public:
+  virtual ~IRealTimeProbeController() = default;
+  virtual std::string configureProbe(const std::string& request_json) = 0;
+  virtual std::string liveProbeData(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeRealTimeProbeController final : public IRealTimeProbeController {
+public:
+  FakeRealTimeProbeController();
+  std::string configureProbe(const std::string& request_json) override;
+  std::string liveProbeData(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::string last_config_json_;
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
 class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
@@ -296,7 +326,8 @@ public:
               std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller = nullptr,
               std::shared_ptr<IEventLogController> event_log_controller = nullptr,
               std::shared_ptr<ISystemHealthController> system_health_controller = nullptr,
-              std::shared_ptr<IAudioIoController> audio_io_controller = nullptr);
+              std::shared_ptr<IAudioIoController> audio_io_controller = nullptr,
+              std::shared_ptr<IRealTimeProbeController> real_time_probe_controller = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -311,6 +342,7 @@ private:
   std::shared_ptr<IEventLogController> event_log_controller_;
   std::shared_ptr<ISystemHealthController> system_health_controller_;
   std::shared_ptr<IAudioIoController> audio_io_controller_;
+  std::shared_ptr<IRealTimeProbeController> real_time_probe_controller_;
 HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 

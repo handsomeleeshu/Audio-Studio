@@ -159,7 +159,8 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
                        std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller,
                         std::shared_ptr<IEventLogController> event_log_controller,
                         std::shared_ptr<ISystemHealthController> system_health_controller,
-                        std::shared_ptr<IAudioIoController> audio_io_controller)
+                        std::shared_ptr<IAudioIoController> audio_io_controller,
+                        std::shared_ptr<IRealTimeProbeController> real_time_probe_controller)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
     inspector_controller_(std::move(inspector_controller)),
@@ -167,7 +168,8 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
     dsp_core_loading_controller_(std::move(dsp_core_loading_controller)),
     event_log_controller_(std::move(event_log_controller)),
     system_health_controller_(std::move(system_health_controller)),
-    audio_io_controller_(std::move(audio_io_controller)) {}
+    audio_io_controller_(std::move(audio_io_controller)),
+    real_time_probe_controller_(std::move(real_time_probe_controller)) {}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -234,6 +236,15 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     auto q = parseQuery(req.query);
     if (!audio_io_controller_) return {503, "application/json", R"({"ok":false,"error":"audio io controller not configured"})"};
     return {200, "application/json", audio_io_controller_->liveAudioIo(q)};
+  }
+  if (req.method == "GET" && req.path == "/api/realtime/probe/live") {
+    auto q = parseQuery(req.query);
+    if (!real_time_probe_controller_) return {503, "application/json", R"({"ok":false,"error":"realtime probe controller not configured"})"};
+    return {200, "application/json", real_time_probe_controller_->liveProbeData(q)};
+  }
+  if (req.method == "POST" && req.path == "/api/realtime/probe/config") {
+    if (!real_time_probe_controller_) return {503, "application/json", R"({"ok":false,"error":"realtime probe controller not configured"})"};
+    return {200, "application/json", real_time_probe_controller_->configureProbe(req.body)};
   }
   if (req.method == "GET" && req.path == "/api/inspector/buffer/live") {
     auto q = parseQuery(req.query);

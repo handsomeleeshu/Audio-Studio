@@ -566,6 +566,21 @@
     .backend-dashboard-live-v69 #logPanel .card-head .close{margin-left:auto;}
     .backend-dashboard-live-v69 .backend-empty-v69{color:var(--muted);font-size:12px;padding:10px;border:1px dashed #254460;border-radius:8px;background:rgba(5,12,23,.45);}
     .backend-dashboard-live-v69 .health-row small{display:block;color:var(--muted);font-size:10px;margin-top:2px;}
+
+
+    /* v66fresh: backend-driven high-resolution Real-Time Signal Probe. */
+    #probePanel.realtime-probe-v66fresh{display:flex;flex-direction:column;min-height:0;}
+    #probePanel.realtime-probe-v66fresh .card-head{flex:0 0 auto;}
+    #probePanel.realtime-probe-v66fresh #mainWave{flex:1 1 auto;min-height:0;height:auto!important;}
+    #probePanel.realtime-probe-v66fresh .probe-controls{flex:0 0 auto;align-items:center;}
+    .rt-probe-btn-v66fresh{border:1px solid #24415f;background:#071320;border-radius:7px;padding:4px 24px 4px 9px;min-width:72px;text-align:left;font-weight:850;color:#dcecff;position:relative;}
+    .rt-probe-btn-v66fresh:after{content:"⌃";position:absolute;right:8px;top:3px;color:#b9cee8;font-size:13px;}
+    .rt-probe-menu-v66fresh{position:fixed;z-index:9999;display:none;min-width:82px;max-height:190px;overflow-y:auto;border:1px solid #284766;border-radius:9px;background:#07111f;box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 20px rgba(0,216,255,.16);padding:4px;}
+    .rt-probe-menu-v66fresh.show{display:block;}
+    .rt-probe-menu-v66fresh button{display:block;width:100%;border:0;background:transparent;text-align:left;padding:6px 9px;border-radius:6px;font-weight:800;color:#dcecff;}
+    .rt-probe-menu-v66fresh button:hover,.rt-probe-menu-v66fresh button.active{background:rgba(0,216,255,.14);color:var(--cyan);}
+    .rt-probe-status-v66fresh{position:absolute;left:12px;top:34px;color:#91a8c6;font-size:11px;font-weight:800;pointer-events:none;}
+
 </style>
 </head>
 <body>
@@ -702,7 +717,7 @@
     <section class="bottom">
       <div class="card" id="costPanel"><div class="card-head"><span>PER-ALGORITHM COST</span><button class="close" data-hide="costPanel">×</button></div><table class="table" id="costTable"></table></div>
       <div class="card" id="corePanel"><div class="card-head"><span>DSP CORE LOADING</span><button class="close" data-hide="corePanel">×</button></div><div id="coreRows"></div><div class="total"><div>Total Load<br><b id="totalLoad">49%</b></div><div>Headroom<br><b id="headroom">51%</b></div></div></div>
-      <div class="card probe" id="probePanel"><div class="card-head"><span>REAL-TIME SIGNAL PROBE <small id="probeName">(AGC Output)</small></span><button class="close" data-hide="probePanel">×</button></div><canvas class="canvas-small" id="mainWave"></canvas><div class="probe-controls"><span class="selectish">Time Scale&nbsp; 10 ms/div</span><span class="selectish" id="rmsProbe">RMS -14.2 dBFS</span><span class="selectish" id="peakProbe">Peak -1.8 dBFS</span></div></div>
+      <div class="card probe realtime-probe-v66fresh" id="probePanel"><div class="card-head"><span>REAL-TIME SIGNAL PROBE <small id="probeName">(select buffer)</small></span><button class="close" data-hide="probePanel">×</button></div><div class="rt-probe-status-v66fresh" id="rtProbeStatus">Select a buffer connection</div><canvas class="canvas-small" id="mainWave"></canvas><div class="probe-controls"><span class="selectish">Mode&nbsp;<button type="button" class="rt-probe-btn-v66fresh" id="probeModeButton">Time</button></span><span class="selectish">Cyan&nbsp;<button type="button" class="rt-probe-btn-v66fresh" id="probeChanAButton">ch0</button></span><span class="selectish">Purple&nbsp;<button type="button" class="rt-probe-btn-v66fresh" id="probeChanBButton">ch1</button></span><span class="selectish" id="rmsProbe">RMS N/A</span><span class="selectish" id="peakProbe">Peak N/A</span></div></div>
       <div class="card" id="healthPanel"><div class="card-head"><span>SYSTEM HEALTH</span><button class="close" data-hide="healthPanel">×</button></div><div id="healthRows"></div></div>
       <div class="card" id="meterPanel"><div class="card-head"><span>AUDIO I/O</span><button class="close" data-hide="meterPanel">×</button></div><div class="meters"><div class="meter-wrap">IN L<div class="meter"><i id="inL" style="height:62%"></i></div><b id="inLv">-18.5</b></div><div class="meter-wrap">IN R<div class="meter"><i id="inR" style="height:66%"></i></div><b id="inRv">-16.1</b></div><div class="meter-wrap">OUT L<div class="meter"><i id="outL" style="height:73%"></i></div><b id="outLv">-9.8</b></div><div class="meter-wrap">OUT R<div class="meter"><i id="outR" style="height:71%"></i></div><b id="outRv">-10.3</b></div></div></div>
     </section>
@@ -8011,6 +8026,168 @@
       setInterval(refreshBackendDashboardLiveV69,900);
       setTimeout(refreshBackendDashboardLiveV69,50);
       window.audioStudioBackendDashboardLiveV69={refreshBackendDashboardLiveV69,refreshEventLogBackendV69,refreshSystemHealthBackendV69,refreshAudioIoBackendV69,backendOnly:true};
+    }
+
+
+    // v66fresh: backend-driven high-resolution Real-Time Signal Probe.
+    // No frontend fake waveform/spectrum is generated here; data comes only from
+    // /api/realtime/probe/live and mode/channel changes are sent to backend.
+    if(!window.__audioStudioRealTimeProbeV66FreshInstalled){
+      window.__audioStudioRealTimeProbeV66FreshInstalled=true;
+      const rtProbeV66Fresh={mode:'time',chA:0,chB:1,last:null,busy:false,lastFetch:0,backendOk:false,menu:null};
+      function rtProbeIsBufferSelectedV66Fresh(){ return !!selectedEdgeKey && !selectedNodeId && typeof currentInspectedEdgeParts==='function' && !!currentInspectedEdgeParts(); }
+      function rtProbeEdgeV66Fresh(){ return rtProbeIsBufferSelectedV66Fresh()?currentInspectedEdgeParts():null; }
+      function rtProbeFormatV66Fresh(ep){
+        const fmt=ep && typeof edgeBufferFormat==='function' ? edgeBufferFormat(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:256,label:'2ch · 48 kHz · 16-bit'};
+        fmt.channels=Math.max(1,Number(fmt.channels||2));
+        fmt.sampleRate=Number(fmt.sampleRate||48000);
+        fmt.bits=Number(fmt.bits||16);
+        return fmt;
+      }
+      function rtProbeClampChannelsV66Fresh(){
+        const fmt=rtProbeFormatV66Fresh(rtProbeEdgeV66Fresh());
+        rtProbeV66Fresh.chA=Math.max(0,Math.min(fmt.channels-1,Number(rtProbeV66Fresh.chA)||0));
+        if(rtProbeV66Fresh.chB>=fmt.channels) rtProbeV66Fresh.chB=fmt.channels>1?1:-1;
+        if(rtProbeV66Fresh.chB===rtProbeV66Fresh.chA && fmt.channels>1) rtProbeV66Fresh.chB=rtProbeV66Fresh.chA===0?1:0;
+      }
+      function rtProbeLabelV66Fresh(ch){ return ch<0?'Off':`ch${ch}`; }
+      function rtProbeSetButtonTextV66Fresh(){
+        rtProbeClampChannelsV66Fresh();
+        const m=$('#probeModeButton'), a=$('#probeChanAButton'), b=$('#probeChanBButton');
+        if(m) m.textContent=rtProbeV66Fresh.mode==='frequency'?'Freq':'Time';
+        if(a) a.textContent=rtProbeLabelV66Fresh(rtProbeV66Fresh.chA);
+        if(b) b.textContent=rtProbeLabelV66Fresh(rtProbeV66Fresh.chB);
+      }
+      function rtProbePostConfigV66Fresh(){
+        const ep=rtProbeEdgeV66Fresh();
+        const fmt=rtProbeFormatV66Fresh(ep);
+        apiPost('/api/realtime/probe/config',{session_id:API_SESSION_ID,project:currentProjectFile,pipeline_id:currentPipelineId,running,edge_key:selectedEdgeKey,from:ep?`${ep.from}.${ep.fromPort}`:'',to:ep?`${ep.to}.${ep.toPort}`:'',mode:rtProbeV66Fresh.mode,channel_a:rtProbeV66Fresh.chA,channel_b:rtProbeV66Fresh.chB,format:fmt,fft_size:4096});
+      }
+      function rtProbeEnsureMenusV66Fresh(){
+        for(const id of ['probeModeMenu','probeChanAMenu','probeChanBMenu']){
+          if(!document.getElementById(id)){
+            const d=document.createElement('div'); d.id=id; d.className='rt-probe-menu-v66fresh'; document.body.appendChild(d);
+          }
+        }
+      }
+      function rtProbeCloseMenuV66Fresh(){
+        $$('.rt-probe-menu-v66fresh').forEach(m=>m.classList.remove('show'));
+        rtProbeV66Fresh.menu=null;
+      }
+      function rtProbeOpenMenuV66Fresh(kind,button){
+        rtProbeEnsureMenusV66Fresh();
+        const menu=$('#'+(kind==='mode'?'probeModeMenu':kind==='a'?'probeChanAMenu':'probeChanBMenu'));
+        if(!menu||!button) return;
+        const fmt=rtProbeFormatV66Fresh(rtProbeEdgeV66Fresh());
+        let items=[];
+        if(kind==='mode') items=[['time','Time'],['frequency','Freq']];
+        else {
+          if(kind==='b') items.push([-1,'Off']);
+          for(let i=0;i<fmt.channels;i++) items.push([i,`ch${i}`]);
+        }
+        menu.innerHTML=items.map(([v,label])=>`<button type="button" data-v="${v}" class="${String(kind==='mode'?rtProbeV66Fresh.mode:(kind==='a'?rtProbeV66Fresh.chA:rtProbeV66Fresh.chB))===String(v)?'active':''}">${label}</button>`).join('');
+        const r=button.getBoundingClientRect();
+        menu.style.left=Math.round(r.left)+'px';
+        menu.style.top=Math.max(6,Math.round(r.top-menu.offsetHeight-8))+'px';
+        menu.classList.add('show');
+        rtProbeV66Fresh.menu=menu;
+        menu.querySelectorAll('button').forEach(btn=>btn.onclick=e=>{
+          e.preventDefault(); e.stopPropagation();
+          const raw=btn.dataset.v;
+          if(kind==='mode') rtProbeV66Fresh.mode=raw==='frequency'?'frequency':'time';
+          else if(kind==='a') rtProbeV66Fresh.chA=Math.max(0,Number(raw)||0);
+          else rtProbeV66Fresh.chB=Number(raw);
+          rtProbeSetButtonTextV66Fresh();
+          rtProbePostConfigV66Fresh();
+          rtProbeCloseMenuV66Fresh();
+          rtProbeRefreshBackendV66Fresh(true);
+        });
+        // Reposition after content height is known; menu opens upward from button.
+        requestAnimationFrame(()=>{const rr=button.getBoundingClientRect(); menu.style.left=Math.round(rr.left)+'px'; menu.style.top=Math.max(6,Math.round(rr.top-menu.offsetHeight-8))+'px';});
+      }
+      function rtProbeSetupControlsV66Fresh(){
+        $('#probeModeButton')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();rtProbeOpenMenuV66Fresh('mode',e.currentTarget);});
+        $('#probeChanAButton')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();rtProbeOpenMenuV66Fresh('a',e.currentTarget);});
+        $('#probeChanBButton')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();rtProbeOpenMenuV66Fresh('b',e.currentTarget);});
+        document.addEventListener('pointerdown',e=>{ if(!e.target.closest('.rt-probe-menu-v66fresh,.rt-probe-btn-v66fresh')) rtProbeCloseMenuV66Fresh(); },true);
+        rtProbeSetButtonTextV66Fresh();
+      }
+      function rtProbeQueryV66Fresh(ep){
+        const fmt=rtProbeFormatV66Fresh(ep);
+        const frame=rtProbeV66Fresh.mode==='frequency'?4096:2048;
+        const qp=new URLSearchParams({running:running?'1':'0',mode:rtProbeV66Fresh.mode,edge_key:selectedEdgeKey||'',from:ep?`${ep.from}.${ep.fromPort}`:'',to:ep?`${ep.to}.${ep.toPort}`:'',channels:String(fmt.channels),sample_rate:String(fmt.sampleRate),bits:String(fmt.bits),frame_samples:String(frame),channel_a:String(rtProbeV66Fresh.chA),channel_b:String(rtProbeV66Fresh.chB)});
+        return '/api/realtime/probe/live?'+qp.toString();
+      }
+      async function rtProbeRefreshBackendV66Fresh(force=false){
+        const now=Date.now();
+        if(!force && now-rtProbeV66Fresh.lastFetch<180) return;
+        rtProbeV66Fresh.lastFetch=now;
+        if(rtProbeV66Fresh.busy) return;
+        rtProbeV66Fresh.busy=true;
+        try{
+          const ep=rtProbeEdgeV66Fresh();
+          rtProbeClampChannelsV66Fresh();
+          if(!ep||!running){ rtProbeV66Fresh.last=null; rtProbeV66Fresh.backendOk=false; rtProbeDrawV66Fresh(); return; }
+          const data=await apiGet(rtProbeQueryV66Fresh(ep));
+          if(data&&data.ok!==false){ rtProbeV66Fresh.last=data; rtProbeV66Fresh.backendOk=true; }
+          else { rtProbeV66Fresh.last=null; rtProbeV66Fresh.backendOk=false; }
+          rtProbeDrawV66Fresh();
+        }finally{ rtProbeV66Fresh.busy=false; }
+      }
+      function rtProbeDrawGridV66Fresh(ctx,w,h){
+        ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h);
+        ctx.strokeStyle='rgba(90,126,170,.25)'; ctx.lineWidth=1;
+        for(let x=0;x<w;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+        for(let y=0;y<h;y+=28){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+      }
+      function rtProbeDrawLineV66Fresh(ctx,data,w,h,color,mode){
+        const arr=Array.isArray(data)?data:[];
+        if(!arr.length) return;
+        ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=1.6; ctx.shadowColor=color; ctx.shadowBlur=7;
+        for(let x=0;x<w;x++){
+          const i=Math.min(arr.length-1,Math.floor(x/w*arr.length));
+          const v=Number(arr[i]||0);
+          const y=mode==='frequency' ? h-8-clamp(v,0,1)*(h-18) : h/2 - clamp(v,-1,1)*h*.40;
+          if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke(); ctx.shadowBlur=0;
+      }
+      function rtProbeDrawV66Fresh(){
+        const c=$('#mainWave'); if(!c) return;
+        if(typeof resizeCanvas==='function') resizeCanvas(c);
+        const ctx=c.getContext('2d'), w=c.clientWidth, h=c.clientHeight;
+        rtProbeDrawGridV66Fresh(ctx,w,h);
+        const ep=rtProbeEdgeV66Fresh();
+        const data=rtProbeV66Fresh.last;
+        const status=$('#rtProbeStatus');
+        const name=$('#probeName');
+        const modeText=rtProbeV66Fresh.mode==='frequency'?'Frequency domain · 4096-point FFT':'Time domain';
+        const fmt=rtProbeFormatV66Fresh(ep);
+        if(name) name.textContent=ep?`(${ep.from}.${ep.fromPort} Buffer)`:'(select buffer)';
+        if(status) status.textContent=ep?`${modeText} · Cyan=${rtProbeLabelV66Fresh(rtProbeV66Fresh.chA)} · Purple=${rtProbeLabelV66Fresh(rtProbeV66Fresh.chB)}`:'Select a buffer connection';
+        if(!ep||!running||!data||!Array.isArray(data.channels)){
+          $('#rmsProbe')&&( $('#rmsProbe').textContent='RMS N/A' );
+          $('#peakProbe')&&( $('#peakProbe').textContent='Peak N/A' );
+          return;
+        }
+        data.channels.forEach((ch,idx)=>{
+          const color=idx===0?'#00d8ff':'#b65cff';
+          const series=rtProbeV66Fresh.mode==='frequency'?(ch.spectrum||[]):(ch.waveform||[]);
+          rtProbeDrawLineV66Fresh(ctx,series,w,h,color,rtProbeV66Fresh.mode);
+        });
+        const sum=data.summary||{};
+        $('#rmsProbe')&&( $('#rmsProbe').textContent=Number.isFinite(Number(sum.rms))?`RMS ${Number(sum.rms).toFixed(1)} dBFS`:'RMS N/A' );
+        $('#peakProbe')&&( $('#peakProbe').textContent=Number.isFinite(Number(sum.peak))?`Peak ${Number(sum.peak).toFixed(1)} dBFS`:'Peak N/A' );
+        rtProbeSetButtonTextV66Fresh();
+      }
+      const __drawWaveBeforeRealTimeProbeV66Fresh=drawWave;
+      drawWave=function(canvas){
+        if(canvas&&canvas.id==='mainWave'){ rtProbeDrawV66Fresh(); return; }
+        return __drawWaveBeforeRealTimeProbeV66Fresh(canvas);
+      };
+      rtProbeSetupControlsV66Fresh();
+      setInterval(()=>rtProbeRefreshBackendV66Fresh(false),200);
+      window.audioStudioRealTimeProbeV66Fresh={rtProbeRefreshBackendV66Fresh,rtProbeDrawV66Fresh,backendOnly:true,fftSize:4096};
     }
 
     function exportJson(){
