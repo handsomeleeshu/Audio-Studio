@@ -231,4 +231,18 @@ assert.ok(
   'v51 should filter nodes, edges and minimap when a pipeline group is selected'
 );
 
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostIdxLayoutV54Installed') && html.includes('cost-table-v54'),
+  'PER-ALGORITHM COST v54 should install hard IDX/LAT/Core layout override'
+);
+assert.ok(
+  html.includes("['idx','IDX']") && html.includes('ensureCostHeaderV54'),
+  'PER-ALGORITHM COST v54 should force visible IDX header after Name'
+);
+assert.ok(
+  html.includes('cost-col-lat-v54') && html.includes('cost-col-core-v54') && html.includes('text-overflow:ellipsis'),
+  'PER-ALGORITHM COST v54 should reserve LAT/Core width and ellipsize Name'
+);
 console.log('standalone-features.test passed');

@@ -275,6 +275,32 @@
     #costTable.cost-table-v50 .cost-na-v50{color:#8fa2bf;font-weight:600!important;}
     #costTable.cost-table-v50 tfoot td{height:24px!important;border-bottom:0;font-weight:800!important;}
 
+  
+    /* v54: hard override for PER-ALGORITHM COST IDX/LAT/Core layout. */
+    #costPanel #costTable.cost-table-v54{table-layout:fixed!important;width:100%!important;border-collapse:collapse;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-name-v54{width:27%!important;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-idx-v54{width:7%!important;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-cpu-v54{width:31%!important;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-mem-v54{width:16%!important;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-lat-v54{width:10%!important;}
+    #costPanel #costTable.cost-table-v54 col.cost-col-core-v54{width:9%!important;}
+    #costPanel #costTable.cost-table-v54 th,
+    #costPanel #costTable.cost-table-v54 td{box-sizing:border-box!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}
+    #costPanel #costTable.cost-table-v54 th{padding-left:6px!important;padding-right:6px!important;}
+    #costPanel #costTable.cost-table-v54 td{padding-left:6px!important;padding-right:6px!important;}
+    #costPanel #costTable.cost-table-v54 th[data-cost-sort-v50="idx"],
+    #costPanel #costTable.cost-table-v54 td.cost-idx-cell-v54{text-align:center!important;padding-left:2px!important;padding-right:2px!important;}
+    #costPanel #costTable.cost-table-v54 th[data-cost-sort-v50="lat"],
+    #costPanel #costTable.cost-table-v54 th[data-cost-sort-v50="core"]{overflow:visible!important;text-overflow:clip!important;}
+    #costPanel #costTable.cost-table-v54 .cost-th-inner-v50{display:flex!important;align-items:center!important;gap:3px!important;min-width:0!important;max-width:100%!important;}
+    #costPanel #costTable.cost-table-v54 .cost-th-text-v50{display:inline-block!important;min-width:0!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important;}
+    #costPanel #costTable.cost-table-v54 .cost-sort-icon-v50{display:inline-block!important;flex:0 0 10px!important;width:10px!important;text-align:left!important;color:var(--cyan)!important;}
+    #costPanel #costTable.cost-table-v54 .cost-name-cell-v54{min-width:0!important;}
+    #costPanel #costTable.cost-table-v54 .cost-name-cell-v54 .cost-name-v50,
+    #costPanel #costTable.cost-table-v54 .cost-name-cell-v54 .cost-name-v48{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;}
+    #costPanel #costTable.cost-table-v54 .cost-lat-cell-v54,
+    #costPanel #costTable.cost-table-v54 .cost-core-cell-v54{overflow:visible!important;text-overflow:clip!important;}
+
   </style>
 </head>
 <body>
@@ -4849,7 +4875,7 @@
     if(!window.__audioStudioPerAlgorithmCostV50Installed){
       window.__audioStudioPerAlgorithmCostV50Installed=true;
       const algorithmCostLiveV50={items:new Map(),sortKey:'cpu',sortDir:'desc',lastUserSortKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
-      const costColumnsV50=[['name','Name'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+      const costColumnsV50=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
       function ensureCostTableScrollV50(){
         const table=$('#costTable'), panel=$('#costPanel');
         if(!table || !panel) return;
@@ -4893,10 +4919,15 @@
         const hue=Math.round(125 - c*1.25);
         return `hsl(${hue}, 92%, 56%)`;
       }
+      function costIndexValueV54(n){
+        const idx=Number(n?.instanceIndex ?? n?.algorithmIndex ?? 1);
+        return Number.isFinite(idx) && idx>0 ? Math.floor(idx) : 1;
+      }
       function currentCostV50(n){return running?(algorithmCostLiveV50.items.get(n.id)||null):null;}
       function costValueV50(n,key){
         const item=currentCostV50(n);
         if(key==='name') return String(n.name||n.id||'').toLowerCase();
+        if(key==='idx') return costIndexValueV54(n);
         if(key==='core') return Number(n.core ?? item?.core ?? 0);
         if(key==='cpu') return Number(item?.cpu ?? 0);
         if(key==='mem') return item?.mem_kb===null||item?.mem_kb===undefined?null:Number(item.mem_kb);
@@ -4914,7 +4945,7 @@
         return dir*(av-bv);
       }
       function headerCostV50(){
-        return `<colgroup><col class="cost-col-name-v50"><col class="cost-col-cpu-v50"><col class="cost-col-mem-v50"><col class="cost-col-lat-v50"><col class="cost-col-core-v50"></colgroup><thead><tr>`+
+        return `<colgroup><col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54"></colgroup><thead><tr>`+
           costColumnsV50.map(([key,label])=>{
             const active=algorithmCostLiveV50.sortKey===key;
             const icon=active?(algorithmCostLiveV50.sortDir==='desc'?'▼':'▲'):'';
@@ -6527,6 +6558,124 @@
       updateInspectorIndexRowV51();
       window.audioStudioInstanceIndexAndGroupFilterV51={renderPipelineSelectV51,assignAlgorithmInstanceIndexesV51,visibleNodeIdSetV51,visibleNodesV51};
     }
+
+
+    // v54: harden PER-ALGORITHM COST IDX header + stable six-column layout.
+    // v53 was too dependent on matching the previous renderer's exact strings; this
+    // post-processes the rendered table every time, so old v50/v52/v53 DOM cannot keep
+    // hiding IDX or truncating LAT/Core.
+    if(!window.__audioStudioPerAlgorithmCostIdxLayoutV54Installed){
+      window.__audioStudioPerAlgorithmCostIdxLayoutV54Installed=true;
+      const costColumnsV54=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+      function costIndexValueForNodeV54(n){
+        const idx=Number(n?.instanceIndex ?? n?.algorithmIndex ?? 1);
+        return Number.isFinite(idx) && idx>0 ? Math.floor(idx) : 1;
+      }
+      function costTableActiveSortV54(table){
+        let activeKey='cpu', icon='';
+        table.querySelectorAll('th[data-cost-sort-v50],th[data-cost-sort]').forEach(th=>{
+          const i=(th.querySelector('.cost-sort-icon-v50')?.textContent || th.textContent || '').trim();
+          if(i.includes('▲') || i.includes('▼')){
+            activeKey=th.dataset.costSortV50 || th.dataset.costSort || activeKey;
+            icon=i.includes('▲') ? '▲' : '▼';
+          }
+        });
+        return {activeKey,icon};
+      }
+      function ensureCostColgroupV54(table){
+        let colgroup=[...table.children].find(el=>el.tagName==='COLGROUP');
+        if(!colgroup){
+          colgroup=document.createElement('colgroup');
+          table.insertBefore(colgroup,table.firstChild);
+        }
+        colgroup.innerHTML='<col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54">';
+      }
+      function ensureCostHeaderV54(table){
+        const active=costTableActiveSortV54(table);
+        let thead=table.tHead;
+        if(!thead){
+          thead=document.createElement('thead');
+          const firstNonCol=[...table.children].find(el=>el.tagName!=='COLGROUP');
+          table.insertBefore(thead,firstNonCol || table.firstChild);
+        }
+        let row=thead.rows[0];
+        if(!row) row=thead.insertRow();
+        row.innerHTML=costColumnsV54.map(([key,label])=>{
+          const icon=(active.activeKey===key) ? active.icon : '';
+          const thClass=key==='core'?'cost-col-core-head-v50':'';
+          return `<th data-cost-sort-v50="${key}" class="${thClass}" title="Click to sort ${label}"><span class="cost-th-inner-v50"><span class="cost-th-text-v50">${label}</span><span class="cost-sort-icon-v50">${icon}</span></span></th>`;
+        }).join('');
+      }
+      function ensureCostBodyColumnsV54(table){
+        window.audioStudioInstanceIndexAndGroupFilterV51?.assignAlgorithmInstanceIndexesV51?.();
+        const rows=table.tBodies?.[0]?.rows || [];
+        [...rows].forEach(row=>{
+          if(row.classList.contains('cost-na-v50') || row.cells.length===1) return;
+          const nodeId=row.dataset.costNodeId || row.getAttribute('data-cost-node-id') || '';
+          const n=nodeId ? nodeById(nodeId) : null;
+          if(row.cells.length===5){
+            const idx=document.createElement('td');
+            idx.className='cost-idx-cell-v54';
+            idx.innerHTML=`<span class="cost-num-v50">${escapeHtml(costIndexValueForNodeV54(n))}</span>`;
+            row.insertBefore(idx,row.cells[1]);
+          }
+          if(row.cells.length>=6){
+            row.cells[0].classList.add('cost-name-cell-v54');
+            row.cells[1].className='cost-idx-cell-v54';
+            row.cells[1].innerHTML=`<span class="cost-num-v50">${escapeHtml(costIndexValueForNodeV54(n))}</span>`;
+            row.cells[2].classList.add('cost-cpu-cell-td-v54');
+            row.cells[3].classList.add('cost-mem-cell-v54');
+            row.cells[4].classList.add('cost-lat-cell-v54');
+            row.cells[5].classList.add('cost-core-cell-v54');
+            const name=row.cells[0].querySelector('[data-cost-center-v50],[data-cost-center],.cost-name-v50,.cost-name-v48');
+            if(name){
+              name.classList.add('cost-name-v50');
+              const full=(n?.name || n?.id || name.textContent || '').trim();
+              name.title=`${full} · Ctrl/Cmd + click to center and flash this algorithm`;
+            }
+          }
+        });
+      }
+      function ensureCostFooterV54(table){
+        const row=table.tFoot?.rows?.[0];
+        if(!row) return;
+        if(row.cells.length===5){
+          const blank=document.createElement('td');
+          row.insertBefore(blank,row.cells[1]);
+        }
+        if(row.cells.length>=6){
+          row.cells[0].textContent='Total';
+          row.cells[1].textContent='';
+          row.cells[0].classList.add('cost-name-cell-v54');
+          row.cells[1].className='cost-idx-cell-v54';
+        }
+      }
+      function applyCostTableLayoutV54(){
+        const table=$('#costTable');
+        if(!table) return false;
+        table.classList.add('cost-table-v54');
+        ensureCostColgroupV54(table);
+        ensureCostHeaderV54(table);
+        ensureCostBodyColumnsV54(table);
+        ensureCostFooterV54(table);
+        return true;
+      }
+      const __renderCostTableBeforeV54=renderCostTable;
+      renderCostTable=function(){
+        const out=__renderCostTableBeforeV54?.();
+        applyCostTableLayoutV54();
+        return out;
+      };
+      document.addEventListener('pointerdown',e=>{
+        if(e.target?.closest?.('#costTable th[data-cost-sort-v50],#costTable th[data-cost-sort]')){
+          setTimeout(applyCostTableLayoutV54,0);
+          requestAnimationFrame(applyCostTableLayoutV54);
+        }
+      },true);
+      window.addEventListener('load',()=>requestAnimationFrame(applyCostTableLayoutV54));
+      window.audioStudioCostIdxLayoutV54={applyCostTableLayoutV54,costIndexValueForNodeV54};
+    }
+
 
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
