@@ -6315,6 +6315,219 @@
       window.audioStudioWorkingPipelineGroupsV44={currentWorkingGroupsV44,renderWorkingPipelineSelectV44,focusWorkingGroupV44};
     }
 
+
+    // v51: algorithm instance Index + working-group display filter.
+    // 1) Assign a live 1-based Index to each same-type algorithm instance.
+    // 2) Selecting a Pipeline working group now filters the canvas so only that
+    //    group is rendered; All restores the full layout.
+    if(!window.__audioStudioInstanceIndexAndGroupFilterV51Installed){
+      window.__audioStudioInstanceIndexAndGroupFilterV51Installed=true;
+      let activeWorkingGroupIdV51='ALL';
+      let filterNodeIdsOverrideV51=null;
+      let renderingFilteredGraphV51=false;
+      let lastWorkingGroupSignatureV51='';
+
+      function groupApiV51(){ return window.audioStudioWorkingPipelineGroupsV44 || null; }
+      function workingGroupsV51(){
+        const api=groupApiV51();
+        if(api && typeof api.currentWorkingGroupsV44==='function') return api.currentWorkingGroupsV44();
+        return [];
+      }
+      function validWorkingGroupIdsV51(groups=workingGroupsV51()){
+        return new Set(['ALL',...groups.map(g=>g.id)]);
+      }
+      function selectedWorkingGroupV51(){
+        if(activeWorkingGroupIdV51==='ALL') return null;
+        return workingGroupsV51().find(g=>g.id===activeWorkingGroupIdV51) || null;
+      }
+      function visibleNodeIdSetV51(){
+        if(filterNodeIdsOverrideV51) return filterNodeIdsOverrideV51;
+        const g=selectedWorkingGroupV51();
+        return g ? new Set(g.nodes.map(n=>n.id)) : null;
+      }
+      function visibleNodesV51(){
+        const ids=visibleNodeIdSetV51();
+        return ids ? state.nodes.filter(n=>ids.has(n.id)) : state.nodes;
+      }
+      function withVisibleGraphV51(fn){
+        const ids=visibleNodeIdSetV51();
+        if(!ids) return fn();
+        const oldNodes=state.nodes, oldEdges=state.edges;
+        filterNodeIdsOverrideV51=ids;
+        renderingFilteredGraphV51=true;
+        state.nodes=oldNodes.filter(n=>ids.has(n.id));
+        state.edges=oldEdges.filter(e=>{const p=edgeParts(e); return ids.has(p.from) && ids.has(p.to);});
+        try{return fn();}
+        finally{
+          state.nodes=oldNodes;
+          state.edges=oldEdges;
+          renderingFilteredGraphV51=false;
+          filterNodeIdsOverrideV51=null;
+        }
+      }
+      function algorithmInstanceKeyV51(n){
+        return String(n?.moduleTypeId || n?.rawModuleType?.type_id || n?.name || n?.type || 'algorithm').trim().toLowerCase();
+      }
+      function algorithmDisplayTypeV51(n){
+        return n?.moduleTypeId || n?.name || n?.type || 'Algorithm';
+      }
+      function assignAlgorithmInstanceIndexesV51(){
+        const nodes=visibleNodesV51();
+        const groups=new Map();
+        nodes.forEach(n=>{
+          const key=algorithmInstanceKeyV51(n);
+          if(!groups.has(key)) groups.set(key,[]);
+          groups.get(key).push(n);
+        });
+        groups.forEach(arr=>{
+          arr.sort((a,b)=>
+            String(a.pipelineName||a.pipelineId||'').localeCompare(String(b.pipelineName||b.pipelineId||'')) ||
+            (Number(a.x)||0)-(Number(b.x)||0) ||
+            (Number(a.y)||0)-(Number(b.y)||0) ||
+            String(a.id).localeCompare(String(b.id))
+          );
+          arr.forEach((n,i)=>{
+            n.instanceIndex=i+1;
+            n.instanceCount=arr.length;
+            n.instanceType=algorithmDisplayTypeV51(n);
+          });
+        });
+      }
+      function ensureInspectorIndexRowV51(){
+        const general=$('#inspectorGeneral');
+        if(!general) return null;
+        let row=$('#nodeInstanceIndexRowV51');
+        if(!row){
+          row=document.createElement('div');
+          row.className='kv';
+          row.id='nodeInstanceIndexRowV51';
+          row.innerHTML='<span>Index</span><b id="nodeInstanceIndexInfoV51">N/A</b>';
+          general.appendChild(row);
+        }
+        return row;
+      }
+      function updateInspectorIndexRowV51(){
+        const row=ensureInspectorIndexRowV51();
+        if(!row) return;
+        const value=$('#nodeInstanceIndexInfoV51');
+        const n=nodeById(selectedNodeId)||state.nodes[0];
+        const nodeMode=!!n && !selectedEdgeKey;
+        row.style.display=nodeMode?'':'none';
+        if(!nodeMode || !value) return;
+        assignAlgorithmInstanceIndexesV51();
+        const idx=Number(n.instanceIndex)||1;
+        const total=Number(n.instanceCount)||1;
+        value.textContent=`${idx} / ${total} · ${algorithmDisplayTypeV51(n)}`;
+      }
+      function workingGroupLabelV51(g){
+        return `${g.displayName || g.name || g.id} — ${g.statusLabel || g.status || 'Working'} · ${g.nodes.length}N/${g.edges.length}E`;
+      }
+      function renderPipelineSelectV51(){
+        const select=$('#pipelineSelect');
+        if(!select) return [];
+        const groups=workingGroupsV51();
+        const valid=validWorkingGroupIdsV51(groups);
+        if(!valid.has(activeWorkingGroupIdV51)) activeWorkingGroupIdV51='ALL';
+        const sig=JSON.stringify(groups.map(g=>({id:g.id,name:g.displayName||g.name,status:g.status,n:g.nodes.length,e:g.edges.length})));
+        if(sig!==lastWorkingGroupSignatureV51 || select.dataset.mode!=='working_groups_filter_v51'){
+          select.innerHTML='';
+          const allOpt=document.createElement('option');
+          allOpt.value='ALL';
+          allOpt.textContent=`All — ${groups.length} group(s)`;
+          select.appendChild(allOpt);
+          groups.forEach(g=>{
+            const opt=document.createElement('option');
+            opt.value=g.id;
+            opt.textContent=workingGroupLabelV51(g);
+            opt.dataset.status=g.status || '';
+            opt.title=`${g.statusLabel || g.status || 'Working'}: ${g.nodes.length} node(s), ${g.edges.length} connection(s)`;
+            select.appendChild(opt);
+          });
+          select.dataset.mode='working_groups_filter_v51';
+          select.title='Pipeline list is generated from live connected components. Selecting an item filters the canvas to that group.';
+          lastWorkingGroupSignatureV51=sig;
+        }
+        select.value=activeWorkingGroupIdV51;
+        select.onchange=e=>{
+          if(running){
+            toast('Run 状态下不能切换 pipeline group，请先 Stop');
+            e.target.value=activeWorkingGroupIdV51;
+            return;
+          }
+          activeWorkingGroupIdV51=e.target.value || 'ALL';
+          const group=selectedWorkingGroupV51();
+          clearSelection();
+          if(group){
+            selectedNodeIds=new Set(group.nodes.map(n=>n.id));
+            selectedEdgeKeys=new Set(group.edges.map(edgeKeyForEdge));
+            selectedNodeId=group.nodes[0]?.id || '';
+            selectedEdgeKey='';
+            inspectorRenderKey='';
+          }
+          renderAll(true);
+          if(group){
+            const b=boundsOfNodes(group.nodes);
+            const sc=getScrollEl();
+            if(sc){
+              const z=state.zoom||1;
+              sc.scrollLeft=Math.max(0,(b.x-120)*z);
+              sc.scrollTop=Math.max(0,(b.y-80)*z);
+              renderMinimap();
+            }
+            backendEdit('working_group_filter_selected',{group_id:group.id,name:group.displayName||group.name,status:group.status,nodes:group.nodes.map(n=>n.id),edges:group.edges.map(edgeKeyForEdge)});
+            toast(`Showing only: ${group.displayName || group.name}`);
+          }else{
+            backendEdit('working_group_filter_selected',{group_id:'ALL'});
+            toast('Showing all working pipeline groups');
+          }
+        };
+        return groups;
+      }
+
+      const __renderPipelineSelectBeforeV51=renderPipelineSelect;
+      renderPipelineSelect=function(){ return renderPipelineSelectV51() || __renderPipelineSelectBeforeV51?.(); };
+
+      const __renderNodesBeforeV51=renderNodes;
+      renderNodes=function(){
+        assignAlgorithmInstanceIndexesV51();
+        return withVisibleGraphV51(()=>__renderNodesBeforeV51());
+      };
+      const __drawEdgesBeforeV51=drawEdges;
+      drawEdges=function(){
+        const out=withVisibleGraphV51(()=>__drawEdgesBeforeV51());
+        if(!renderingFilteredGraphV51) renderPipelineSelectV51();
+        return out;
+      };
+      const __renderMinimapBeforeV51=renderMinimap;
+      renderMinimap=function(){
+        return withVisibleGraphV51(()=>__renderMinimapBeforeV51());
+      };
+      const __renderInspectorBeforeV51=renderInspector;
+      renderInspector=function(){
+        const out=__renderInspectorBeforeV51();
+        updateInspectorIndexRowV51();
+        return out;
+      };
+      const __applyInspectorLiveDataToUiBeforeV51=applyInspectorLiveDataToUi;
+      applyInspectorLiveDataToUi=function(n){
+        const out=__applyInspectorLiveDataToUiBeforeV51(n);
+        updateInspectorIndexRowV51();
+        return out;
+      };
+      const __renderAllBeforeV51=renderAll;
+      renderAll=function(rebuildNodes=true){
+        assignAlgorithmInstanceIndexesV51();
+        const out=__renderAllBeforeV51(rebuildNodes);
+        renderPipelineSelectV51();
+        updateInspectorIndexRowV51();
+        return out;
+      };
+
+      renderPipelineSelectV51();
+      updateInspectorIndexRowV51();
+      window.audioStudioInstanceIndexAndGroupFilterV51={renderPipelineSelectV51,assignAlgorithmInstanceIndexesV51,visibleNodeIdSetV51,visibleNodesV51};
+    }
+
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);

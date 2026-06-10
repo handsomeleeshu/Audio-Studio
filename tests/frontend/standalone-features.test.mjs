@@ -209,4 +209,26 @@ assert.ok(
   'frontend must not synthesize fake algorithm cost data'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioInstanceIndexAndGroupFilterV51Installed'),
+  'missing v51 algorithm instance index and group filter feature'
+);
+for (const token of [
+  'assignAlgorithmInstanceIndexesV51',
+  'algorithmInstanceKeyV51',
+  'nodeInstanceIndexRowV51',
+  'nodeInstanceIndexInfoV51',
+  'working_groups_filter_v51',
+  'visibleNodeIdSetV51',
+  'withVisibleGraphV51',
+  'Showing only:',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('renderNodes=function()') && html.includes('drawEdges=function()') && html.includes('renderMinimap=function()'),
+  'v51 should filter nodes, edges and minimap when a pipeline group is selected'
+);
+
 console.log('standalone-features.test passed');
