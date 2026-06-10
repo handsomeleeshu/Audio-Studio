@@ -259,4 +259,31 @@ assert.ok(
   'PER-ALGORITHM COST v56 should keep body scroll separate from fixed Total table'
 );
 
+
+
+assert.ok(
+  html.includes('__audioStudioPerAlgorithmCostLayoutV59Installed'),
+  'missing v59 per-algorithm cost layout post-processor'
+);
+for (const token of [
+  'cost-table-v59',
+  'cost-th-inner-v59',
+  'cost-th-text-v59',
+  'cost-sort-icon-v59',
+  'cost-idx-head-v59',
+  'cost-idx-cell-v59',
+  'cost-cpu-cell-v59',
+  'cost-core-cell-v59',
+  'cost-total-table-v59',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('width:8%!important') && html.includes('width:16%!important'),
+  'v59 should keep IDX readable and widen Core'
+);
+assert.ok(
+  html.includes('display:inline-flex!important') && html.includes('gap:4px!important'),
+  'v59 sort arrow should be inline next to the header label'
+);
 console.log('standalone-features.test passed');
