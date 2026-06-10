@@ -109,4 +109,40 @@ assert.ok(
   'pipeline list should be rendered from working connected components'
 );
 
+
+assert.ok(
+  html.includes('grid-column:2/4') && html.includes('grid-row:3'),
+  'bottom dashboard should span canvas + inspector columns only'
+);
+assert.ok(
+  html.includes('.left-panel') && html.includes('grid-row:2/4'),
+  'left algorithm library should keep original full-height layout'
+);
+assert.ok(
+  html.includes('.right-panel') && html.includes('grid-row:2;'),
+  'right inspector should stay in the upper work area so dashboard can use its lower area'
+);
+
+
+assert.ok(
+  html.includes('__audioStudioDashboardStripV47Installed'),
+  'missing v47 bounded dashboard strip layout override'
+);
+assert.ok(
+  html.includes('bounded right-bottom dashboard strip') && html.includes('dashboard-docked-v47'),
+  'dashboard cards should be docked into a bounded right-bottom strip'
+);
+assert.ok(
+  html.includes('display:flex!important') && html.includes('overflow-x:auto'),
+  'bottom dashboard should be a horizontal scroll strip instead of overflowing page'
+);
+assert.ok(
+  html.includes('dashboardCheckedOrderV47') && html.includes('onDashboardMenuChangeV47'),
+  'dashboard panel order should follow user checkbox order'
+);
+assert.ok(
+  html.includes("'logPanel'") && html.includes('Event Log'),
+  'Event Log should be part of the dashboard selectable strip'
+);
+
 console.log('standalone-features.test passed');
