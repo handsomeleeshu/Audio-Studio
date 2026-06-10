@@ -184,6 +184,87 @@ private:
   std::mt19937 rng_;
 };
 
+
+struct EventLogEntry {
+  int id = 0;
+  std::int64_t timestamp_ms = 0;
+  std::string time;
+  std::string kind;
+  std::string message;
+  std::string detail;
+  std::string source;
+};
+
+class IEventLogController {
+public:
+  virtual ~IEventLogController() = default;
+  virtual std::string postEvent(const std::string& request_json) = 0;
+  virtual std::string liveEvents(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeEventLogController final : public IEventLogController {
+public:
+  FakeEventLogController();
+  std::string postEvent(const std::string& request_json) override;
+  std::string liveEvents(const std::map<std::string, std::string>& query) override;
+private:
+  std::int64_t nowMs() const;
+  void appendLocked(const std::string& kind, const std::string& message, const std::string& detail, const std::string& source);
+  std::vector<EventLogEntry> events_;
+  int next_id_ = 1;
+  std::int64_t last_generated_ms_ = 0;
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
+struct SystemHealthRow {
+  std::string label;
+  std::string value;
+  double percent = 0.0;
+  std::string severity;
+};
+
+class ISystemHealthController {
+public:
+  virtual ~ISystemHealthController() = default;
+  virtual std::string liveHealth(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeSystemHealthController final : public ISystemHealthController {
+public:
+  FakeSystemHealthController();
+  std::string liveHealth(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
+struct AudioIoChannelMeter {
+  std::string id;
+  std::string label;
+  double dbfs = -120.0;
+  double height = 0.0;
+};
+
+class IAudioIoController {
+public:
+  virtual ~IAudioIoController() = default;
+  virtual std::string liveAudioIo(const std::map<std::string, std::string>& query) = 0;
+};
+
+class FakeAudioIoController final : public IAudioIoController {
+public:
+  FakeAudioIoController();
+  std::string liveAudioIo(const std::map<std::string, std::string>& query) override;
+private:
+  double rnd(double min, double max);
+  int rndi(int min, int max);
+  std::mutex mutex_;
+  std::mt19937 rng_;
+};
+
 class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
@@ -212,7 +293,10 @@ public:
              std::shared_ptr<IParameterController> parameter_controller,
              std::shared_ptr<IInspectorController> inspector_controller = nullptr,
              std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller = nullptr,
-              std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller = nullptr);
+              std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller = nullptr,
+              std::shared_ptr<IEventLogController> event_log_controller = nullptr,
+              std::shared_ptr<ISystemHealthController> system_health_controller = nullptr,
+              std::shared_ptr<IAudioIoController> audio_io_controller = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -224,6 +308,9 @@ private:
   std::shared_ptr<IInspectorController> inspector_controller_;
   std::shared_ptr<IAlgorithmCostController> algorithm_cost_controller_;
     std::shared_ptr<IDspCoreLoadingController> dsp_core_loading_controller_;
+  std::shared_ptr<IEventLogController> event_log_controller_;
+  std::shared_ptr<ISystemHealthController> system_health_controller_;
+  std::shared_ptr<IAudioIoController> audio_io_controller_;
 HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 

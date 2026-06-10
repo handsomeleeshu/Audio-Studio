@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <ctime>
+#include <cstdio>
 
 namespace audiostudio {
 
@@ -500,6 +502,222 @@ std::string FakeDspCoreLoadingController::liveCoreLoading(const std::map<std::st
      << ",\"totalLoadPercent\":" << total
      << ",\"headroom\":" << headroom
      << ",\"headroomPercent\":" << headroom << "}}";
+  return os.str();
+}
+
+
+static long long dashboardNowMsV69() {
+  return static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+static std::string dashboardTimeTextV69(long long ms) {
+  std::time_t sec = static_cast<std::time_t>(ms / 1000);
+  std::tm tmv{};
+#if defined(_WIN32)
+  localtime_s(&tmv, &sec);
+#else
+  localtime_r(&sec, &tmv);
+#endif
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+  return std::string(buf);
+}
+
+FakeEventLogController::FakeEventLogController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0xe709u));
+  std::lock_guard<std::mutex> lk(mutex_);
+  appendLocked("ok", "Backend event log ready", "EVENT LOG is owned by /api/event-log/live", "backend");
+  appendLocked("info", "System Health API ready", "SYSTEM HEALTH uses /api/system/health/live", "backend");
+  appendLocked("info", "Audio I/O API ready", "AUDIO I/O uses /api/audio/io/live", "backend");
+}
+
+std::int64_t FakeEventLogController::nowMs() const {
+  return dashboardNowMsV69();
+}
+
+void FakeEventLogController::appendLocked(const std::string& kind, const std::string& message, const std::string& detail, const std::string& source) {
+  EventLogEntry e;
+  e.id = next_id_++;
+  e.timestamp_ms = nowMs();
+  e.time = dashboardTimeTextV69(e.timestamp_ms);
+  e.kind = kind.empty() ? "info" : kind;
+  e.message = message.empty() ? "UI event" : message;
+  e.detail = detail;
+  e.source = source.empty() ? "frontend" : source;
+  events_.push_back(std::move(e));
+  if (events_.size() > 240) events_.erase(events_.begin(), events_.begin() + static_cast<long>(events_.size() - 240));
+}
+
+std::string FakeEventLogController::postEvent(const std::string& request_json) {
+  std::string kind = simpleJsonField(request_json, "kind");
+  std::string msg = simpleJsonField(request_json, "msg");
+  if (msg.empty()) msg = simpleJsonField(request_json, "message");
+  std::string sub = simpleJsonField(request_json, "sub");
+  if (sub.empty()) sub = simpleJsonField(request_json, "detail");
+  std::string source = simpleJsonField(request_json, "source");
+  if (source.empty()) source = "frontend_ui";
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    appendLocked(kind, msg, sub, source);
+  }
+  printIntegrationTodo("IEventLogController::postEvent", request_json,
+    "record UI/runtime events in backend-owned event log; real product can forward these to persistent logging or firmware trace buffers.");
+  return "{\"ok\":true,\"callback\":\"IEventLogController::postEvent\",\"mode\":\"fake_event_log\"}";
+}
+
+std::string FakeEventLogController::liveEvents(const std::map<std::string, std::string>& query) {
+  const bool run = queryBool(query, "running");
+  const int limit = std::max(1, std::min(200, queryInt(query, "limit", 80)));
+  const long long now = nowMs();
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (run && (last_generated_ms_ == 0 || now - last_generated_ms_ > 1200)) {
+      std::uniform_int_distribution<int> dist(0, 5);
+      switch (dist(rng_)) {
+        case 0: appendLocked("info", "Runtime heartbeat", "DSP scheduler tick and audio I/O are active", "mock_runtime"); break;
+        case 1: appendLocked("ok", "Audio frame processed", "256 samples · 48 kHz · no underrun", "mock_runtime"); break;
+        case 2: appendLocked("info", "System health sampled", "Latency, buffer and power counters updated", "mock_runtime"); break;
+        case 3: appendLocked("info", "Audio I/O meters updated", "Input/output dBFS frame received", "mock_runtime"); break;
+        case 4: appendLocked("info", "Telemetry pushed", "Node cost and dashboard data refreshed", "mock_runtime"); break;
+        default: appendLocked("warn", "Transient buffer pressure", "Buffer occupancy is high but still below xrun threshold", "mock_runtime"); break;
+      }
+      last_generated_ms_ = now;
+    }
+  }
+
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::ostringstream os;
+  os << "{\"ok\":true,\"mode\":\"fake_event_log\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now << ",\"events\":[";
+  const size_t count = std::min(static_cast<size_t>(limit), events_.size());
+  for (size_t out = 0; out < count; ++out) {
+    const auto& e = events_[events_.size() - 1 - out];
+    if (out) os << ',';
+    os << "{\"id\":" << e.id
+       << ",\"timestamp_ms\":" << e.timestamp_ms
+       << ",\"time\":\"" << jsonEscape(e.time) << "\""
+       << ",\"kind\":\"" << jsonEscape(e.kind) << "\""
+       << ",\"msg\":\"" << jsonEscape(e.message) << "\""
+       << ",\"sub\":\"" << jsonEscape(e.detail) << "\""
+       << ",\"source\":\"" << jsonEscape(e.source) << "\"}";
+  }
+  os << "]}";
+  return os.str();
+}
+
+FakeSystemHealthController::FakeSystemHealthController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0x51a7u));
+}
+
+double FakeSystemHealthController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeSystemHealthController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeSystemHealthController::liveHealth(const std::map<std::string, std::string>& query) {
+  const bool run = queryBool(query, "running");
+  const int cores = std::max(1, std::min(64, queryInt(query, "cores", 4)));
+  const int nodes = std::max(0, queryInt(query, "nodes", 0));
+  const long long now = dashboardNowMsV69();
+
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(2);
+  os << "{\"ok\":true,\"mode\":\"fake_system_health\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now;
+
+  auto row = [&](bool comma, const std::string& label, const std::string& value, double percent, const std::string& severity) {
+    if (comma) os << ',';
+    os << "{\"label\":\"" << jsonEscape(label) << "\",\"value\":\"" << jsonEscape(value)
+       << "\",\"percent\":" << std::max(0.0, std::min(100.0, percent))
+       << ",\"severity\":\"" << jsonEscape(severity) << "\"}";
+  };
+
+  if (run) {
+    const double latency = rnd(13.5, 24.0) + nodes * 0.015;
+    const double buffer = rnd(30.0, 58.0);
+    const double throughput = rnd(91.0, 112.0);
+    const double mem = rnd(250.0, 390.0) + nodes * 2.2;
+    const double power = rnd(3.05, 4.95) + cores * 0.02;
+    const int xruns = rnd(0.0, 1.0) > 0.985 ? 1 : 0;
+    os << ",\"summary\":{\"latencyMs\":" << latency
+       << ",\"bufferOccupancy\":" << buffer
+       << ",\"memoryMb\":" << mem
+       << ",\"throughput\":" << throughput
+       << ",\"powerW\":" << power
+       << ",\"xruns\":\"" << xruns << "\""
+       << ",\"activeCores\":" << cores << "}";
+    os << ",\"rows\":[";
+    row(false, "End-to-End Latency", std::to_string(latency).substr(0, 4) + " ms", latency / 30.0 * 100.0, latency > 23.0 ? "warn" : "ok");
+    row(true, "Buffer Occupancy", std::to_string(static_cast<int>(std::round(buffer))) + "%", buffer, buffer > 70.0 ? "warn" : "ok");
+    row(true, "Throughput", std::to_string(throughput).substr(0, 5) + " x realtime", std::min(100.0, throughput), throughput < 100.0 ? "warn" : "ok");
+    row(true, "XRuns / Dropouts", std::to_string(xruns), xruns ? 100.0 : 4.0, xruns ? "warn" : "ok");
+    row(true, "Memory Usage", std::to_string(static_cast<int>(std::round(mem))) + " MB / 512 MB", mem / 512.0 * 100.0, mem > 460.0 ? "warn" : "ok");
+    row(true, "Power Usage", std::to_string(power).substr(0, 4) + " W / 6.50 W", power / 6.5 * 100.0, power > 5.5 ? "warn" : "ok");
+    row(true, "Active Cores", std::to_string(cores) + " / " + std::to_string(cores), 100.0, "ok");
+    os << "]}";
+  } else {
+    os << ",\"summary\":{\"latencyMs\":null,\"bufferOccupancy\":null,\"memoryMb\":null,\"throughput\":null,\"powerW\":null,\"xruns\":\"0\",\"activeCores\":0}";
+    os << ",\"rows\":[";
+    row(false, "End-to-End Latency", "N/A", 0.0, "idle");
+    row(true, "Buffer Occupancy", "N/A", 0.0, "idle");
+    row(true, "Throughput", "N/A", 0.0, "idle");
+    row(true, "XRuns / Dropouts", "0", 0.0, "idle");
+    row(true, "Memory Usage", "N/A", 0.0, "idle");
+    row(true, "Power Usage", "N/A", 0.0, "idle");
+    row(true, "Active Cores", "0 / " + std::to_string(cores), 0.0, "idle");
+    os << "]}";
+  }
+  return os.str();
+}
+
+FakeAudioIoController::FakeAudioIoController() {
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ 0xa10u));
+}
+
+double FakeAudioIoController::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int FakeAudioIoController::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string FakeAudioIoController::liveAudioIo(const std::map<std::string, std::string>& query) {
+  const bool run = queryBool(query, "running");
+  const int sample_rate = std::max(8000, queryInt(query, "sample_rate", 48000));
+  const long long now = dashboardNowMsV69();
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(2);
+  os << "{\"ok\":true,\"mode\":\"fake_audio_io\",\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp_ms\":" << now
+     << ",\"format\":{\"sampleRate\":" << sample_rate << ",\"bits\":16,\"label\":\"" << (sample_rate / 1000) << " kHz · 16-bit\"}"
+     << ",\"channels\":[";
+  const char* ids[4] = {"inL", "inR", "outL", "outR"};
+  const char* labels[4] = {"IN L", "IN R", "OUT L", "OUT R"};
+  for (int i = 0; i < 4; ++i) {
+    if (i) os << ',';
+    if (run) {
+      const double db = (i < 2) ? -rnd(10.0, 30.0) : -rnd(6.0, 22.0);
+      const double height = std::max(5.0, std::min(100.0, (60.0 + db) / 60.0 * 100.0));
+      os << "{\"id\":\"" << ids[i] << "\",\"label\":\"" << labels[i] << "\",\"dbfs\":" << db << ",\"height\":" << height << "}";
+    } else {
+      os << "{\"id\":\"" << ids[i] << "\",\"label\":\"" << labels[i] << "\",\"dbfs\":null,\"height\":0}";
+    }
+  }
+  os << "]}";
   return os.str();
 }
 

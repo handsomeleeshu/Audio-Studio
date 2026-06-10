@@ -439,6 +439,32 @@ assert.ok(
   'old broken v67/v67b markers should not remain'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioBackendDashboardLiveV69Installed'),
+  'missing v69 backend-owned dashboard live panels'
+);
+for (const token of [
+  '/api/event-log/live',
+  '/api/system/health/live',
+  '/api/audio/io/live',
+  'refreshEventLogBackendV69',
+  'refreshSystemHealthBackendV69',
+  'refreshAudioIoBackendV69',
+  'Backend Event Log unavailable',
+  'Backend System Health unavailable',
+  'data-hide="logPanel"',
+  'data-panel="logPanel"',
+  'backendOnly:true',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('renderHealth=function(){renderHealthFromBackendV69();};') &&
+  html.includes('renderMeters=function(){renderMetersFromBackendV69();};'),
+  'SYSTEM HEALTH and AUDIO I/O renderers must be backend-owned overrides'
+);
+
 console.log('standalone-features.test passed');
 
 
