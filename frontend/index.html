@@ -538,7 +538,18 @@
     .right-panel.audio-file-removed-v67c .audio-file{display:none!important;}
     .right-panel.audio-file-removed-v67c .inspector{flex:1 1 auto!important;height:100%!important;min-height:0!important;}
     .right-panel.audio-file-removed-v67c .inspector-body{flex:1 1 auto!important;min-height:0!important;overflow:auto!important;}
-  </style>
+  
+
+    /* v68: make dashboard close buttons win over panel-specific display overrides.
+       PER-ALGORITHM COST has older #costPanel display:flex!important rules;
+       this higher-specificity rule keeps the top-right × hide action effective. */
+    #costPanel.hidden-panel,
+    #corePanel.hidden-panel{
+      display:none!important;
+      visibility:hidden!important;
+      pointer-events:none!important;
+    }
+</style>
 </head>
 <body>
   <div class="app">
@@ -7835,7 +7846,44 @@
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
       const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='audio-studio-pipeline-demo.json'; a.click(); URL.revokeObjectURL(a.href);
     }
-    function setPanelVisible(id, visible){ const el=$('#'+id); if(!el) return; el.classList.toggle('hidden-panel',!visible); const cb=$(`input[data-panel="${id}"]`); if(cb) cb.checked=visible; }
+    function setPanelVisible(id, visible){
+      const el=$('#'+id);
+      if(!el) return;
+      const hidden=!visible;
+      el.classList.toggle('hidden-panel',hidden);
+      if(hidden){
+        // v68: inline !important is needed because older dashboard CSS uses
+        // #costPanel{display:flex!important}, which beats .hidden-panel.
+        el.style.setProperty('display','none','important');
+        el.setAttribute('aria-hidden','true');
+      }else{
+        el.style.removeProperty('display');
+        el.removeAttribute('aria-hidden');
+      }
+      const cb=$(`input[data-panel="${id}"]`);
+      if(cb) cb.checked=visible;
+      try{ window.dispatchEvent(new CustomEvent('audioStudioPanelVisibilityChanged',{detail:{id,visible}})); }catch(e){}
+    }
+
+
+    // v68: robust dashboard close-button delegation.
+    // Keep close working even after future DOM refreshes or panel menu rebuilds.
+    if(!window.__audioStudioDashboardCloseV68Installed){
+      window.__audioStudioDashboardCloseV68Installed=true;
+      document.addEventListener('click',e=>{
+        const btn=e.target?.closest?.('[data-hide]');
+        if(!btn) return;
+        const panelId=btn.dataset.hide;
+        if(!panelId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setPanelVisible(panelId,false);
+      },true);
+      window.audioStudioDashboardCloseV68={
+        closePanel:id=>setPanelVisible(id,false),
+        openPanel:id=>setPanelVisible(id,true)
+      };
+    }
     function init(){
       pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); setupInspectorTabs(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawInspectorProbeCanvases(); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
       $('#searchInput').addEventListener('input', e=>renderLibrary(e.target.value));

@@ -440,3 +440,17 @@ assert.ok(
 );
 
 console.log('standalone-features.test passed');
+
+
+assert.ok(
+  html.includes('__audioStudioDashboardCloseV68Installed'),
+  'missing v68 dashboard close-button robustness fix'
+);
+assert.ok(
+  html.includes('#costPanel.hidden-panel') && html.includes('#corePanel.hidden-panel'),
+  'cost/core dashboard panels must have high-specificity hidden-panel CSS'
+);
+assert.ok(
+  html.includes("style.setProperty('display','none','important')") && html.includes('audioStudioPanelVisibilityChanged'),
+  'setPanelVisible should force hidden display state and keep panel menu synchronized'
+);
