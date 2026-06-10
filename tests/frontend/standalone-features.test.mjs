@@ -389,4 +389,31 @@ assert.ok(
   'pipeline node selection should trigger Algorithm Library focus'
 );
 
+
+assert.ok(
+  html.includes('__audioStudioWindowTitleColorsV66Installed'),
+  'missing v66 colored window title/menu feature'
+);
+for (const token of [
+  'windowTitleColorsV66',
+  'applyWindowTitleColorsV66',
+  'panel-title-color-v66',
+  'panel-menu-color-v66',
+  '--window-title-color-v66',
+  'Algorithm Library',
+  'Inspector',
+  'Per-Algorithm Cost',
+  'DSP Core Loading',
+  'Signal Probe',
+  'System Health',
+  'Audio I/O',
+  'Event Log',
+]) {
+  assert.ok(html.includes(token), `missing ${token}`);
+}
+assert.ok(
+  html.includes('input[data-panel=\"${cfg.panel}\"]') && html.includes('menuLabel.style.setProperty'),
+  'window checkbox list item color should be bound to matching panel title color'
+);
+
 console.log('standalone-features.test passed');

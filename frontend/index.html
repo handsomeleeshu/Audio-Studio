@@ -487,6 +487,51 @@
     #coreRows::-webkit-scrollbar-thumb{background:#24415f;border-radius:8px;border:2px solid #07101d;}
     #corePanel .total{flex:0 0 auto!important;margin-top:8px!important;}
 
+
+    /* v66: per-window title/menu colors. */
+    .panel-title-color-v66,
+    .card-head.panel-title-color-v66{
+      position:relative;
+      color:var(--window-title-color-v66)!important;
+      text-shadow:0 0 12px var(--window-title-glow-v66, rgba(0,216,255,.35));
+    }
+    .panel-title-color-v66 span:first-child,
+    .card-head.panel-title-color-v66 span:first-child{
+      color:var(--window-title-color-v66)!important;
+      text-shadow:0 0 12px var(--window-title-glow-v66, rgba(0,216,255,.35));
+    }
+    .panel-title-color-v66 small,
+    .card-head.panel-title-color-v66 small{
+      color:rgba(210,226,255,.72)!important;
+      text-shadow:none!important;
+    }
+    .panel-title-color-v66 .close,
+    .card-head.panel-title-color-v66 .close{
+      color:var(--window-title-color-v66)!important;
+      opacity:.88;
+    }
+    .panel-title-color-v66:before,
+    .card-head.panel-title-color-v66:before{
+      content:"";
+      width:4px;
+      align-self:stretch;
+      min-height:18px;
+      border-radius:999px;
+      margin-right:7px;
+      background:var(--window-title-color-v66);
+      box-shadow:0 0 12px var(--window-title-glow-v66, rgba(0,216,255,.35));
+      flex:0 0 4px;
+    }
+    #panelMenu label.panel-menu-color-v66{
+      color:var(--window-title-color-v66)!important;
+      border-left:3px solid var(--window-title-color-v66);
+      padding-left:8px;
+      text-shadow:0 0 10px var(--window-title-glow-v66, rgba(0,216,255,.28));
+    }
+    #panelMenu label.panel-menu-color-v66 input{
+      accent-color:var(--window-title-color-v66)!important;
+    }
+
   </style>
 </head>
 <body>
@@ -7725,6 +7770,52 @@
         setTimeout(()=>scheduleLibraryFocusForSelectedNodeV45('click'),0);
       },true);
       window.audioStudioLibraryFocusV45={focusAlgorithmLibraryForNodeV45,scheduleLibraryFocusForSelectedNodeV45,findLibraryComponentForNodeV45};
+    }
+
+
+    // v66: give every sub-window title a stable unique color, and keep the
+    // panel visibility menu labels in the same color as the corresponding title.
+    if(!window.__audioStudioWindowTitleColorsV66Installed){
+      window.__audioStudioWindowTitleColorsV66Installed=true;
+      const windowTitleColorsV66=[
+        {panel:'leftPanel',  name:'Algorithm Library', title:'#leftPanel > .panel-head',               color:'#00d8ff', glow:'rgba(0,216,255,.40)'},
+        {panel:'rightPanel', name:'Inspector',         title:'#rightPanel .inspector > .panel-head',   color:'#b65cff', glow:'rgba(182,92,255,.38)'},
+        {panel:'audioFilePanel', name:'Audio File',    title:'#rightPanel .audio-file .card-head',     color:'#48f0a1', glow:'rgba(72,240,161,.34)'},
+        {panel:'costPanel',  name:'Per-Algorithm Cost',title:'#costPanel > .card-head',                color:'#ffcc45', glow:'rgba(255,204,69,.36)'},
+        {panel:'corePanel',  name:'DSP Core Loading',  title:'#corePanel > .card-head',                color:'#31f26b', glow:'rgba(49,242,107,.34)'},
+        {panel:'probePanel', name:'Signal Probe',      title:'#probePanel > .card-head',               color:'#2e8bff', glow:'rgba(46,139,255,.38)'},
+        {panel:'healthPanel',name:'System Health',     title:'#healthPanel > .card-head',              color:'#ff6b8a', glow:'rgba(255,107,138,.34)'},
+        {panel:'meterPanel', name:'Audio I/O',         title:'#meterPanel > .card-head',               color:'#ffa826', glow:'rgba(255,168,38,.36)'},
+        {panel:'logPanel',   name:'Event Log',         title:'#logPanel > .card-head',                 color:'#9dff5c', glow:'rgba(157,255,92,.32)'},
+      ];
+      function applyWindowTitleColorsV66(){
+        windowTitleColorsV66.forEach(cfg=>{
+          document.querySelectorAll(cfg.title).forEach(head=>{
+            head.classList.add('panel-title-color-v66');
+            head.style.setProperty('--window-title-color-v66',cfg.color);
+            head.style.setProperty('--window-title-glow-v66',cfg.glow);
+            head.dataset.windowColorPanel=cfg.panel;
+            head.dataset.windowColorName=cfg.name;
+          });
+          const menuInput=document.querySelector(`#panelMenu input[data-panel="${cfg.panel}"]`);
+          const menuLabel=menuInput?.closest('label');
+          if(menuLabel){
+            menuLabel.classList.add('panel-menu-color-v66');
+            menuLabel.style.setProperty('--window-title-color-v66',cfg.color);
+            menuLabel.style.setProperty('--window-title-glow-v66',cfg.glow);
+            menuLabel.dataset.windowColorPanel=cfg.panel;
+            menuLabel.dataset.windowColorName=cfg.name;
+            menuLabel.title=`${cfg.name} · ${cfg.color}`;
+          }
+        });
+      }
+      applyWindowTitleColorsV66();
+      document.addEventListener('DOMContentLoaded',applyWindowTitleColorsV66,{once:true});
+      const panelMenuV66=document.getElementById('panelMenu');
+      if(panelMenuV66){
+        new MutationObserver(applyWindowTitleColorsV66).observe(panelMenuV66,{childList:true,subtree:true,attributes:true,attributeFilter:['data-panel','checked']});
+      }
+      window.audioStudioWindowTitleColorsV66={windowTitleColorsV66,applyWindowTitleColorsV66};
     }
 
     function exportJson(){
