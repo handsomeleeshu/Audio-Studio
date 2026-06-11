@@ -1,0 +1,136 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cmake: configure debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "cmake: build debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "debug",
+        "--parallel"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "cmake: configure debug",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "cmake: configure profile",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "profile"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "cmake: build profile",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "profile",
+        "--parallel"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "cmake: configure profile",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "test: frontend",
+      "type": "shell",
+      "command": "node tests/frontend/config-parser.test.mjs && node tests/frontend/plain-html-integration.test.mjs && node tests/frontend/standalone-features.test.mjs && node tests/dev-environment.test.mjs",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "test: backend debug",
+      "type": "shell",
+      "command": "ctest",
+      "args": [
+        "--test-dir",
+        "${workspaceFolder}/build/debug",
+        "--output-on-failure"
+      ],
+      "dependsOn": "cmake: build debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "test: all",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/run_tests.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "wait: backend",
+      "type": "shell",
+      "command": "for i in {1..240}; do curl -fsS http://127.0.0.1:${input:serverPort}/api/projects >/dev/null 2>&1 && exit 0; sleep 0.25; done; echo 'Audio Studio backend is not reachable on port ${input:serverPort}.' >&2; exit 1",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "profile: backend",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/profile_backend.sh",
+      "args": [
+        "${input:serverPort}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AUDIO_STUDIO_PROFILE_SECONDS": "${input:profileSeconds}"
+        }
+      },
+      "dependsOn": "cmake: build profile",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serverPort",
+      "type": "promptString",
+      "description": "Audio Studio server port",
+      "default": "8080"
+    },
+    {
+      "id": "profileSeconds",
+      "type": "promptString",
+      "description": "Backend sampling duration in seconds",
+      "default": "30"
+    }
+  ]
+}
