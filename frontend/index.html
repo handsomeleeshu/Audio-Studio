@@ -9058,6 +9058,7 @@
       function renderWorkingPipelineSelectV44() {
         const select = $('#pipelineSelect');
         if (!select) return [];
+        if (select.dataset.mode === 'working_groups_filter_v51') return currentWorkingGroupsV44();
         const groups = currentWorkingGroupsV44();
         const sig = JSON.stringify(groups.map(g => ({ id: g.id, name: g.displayName, status: g.status, n: g.nodes.length, e: g.edges.length, orig: g.originPipelineIds })));
         const validIds = new Set(['ALL', ...groups.map(g => g.id)]);
@@ -9148,6 +9149,53 @@
       let filterNodeIdsOverrideV51 = null;
       let renderingFilteredGraphV51 = false;
       let lastWorkingGroupSignatureV51 = '';
+
+      const pipelineSelectInteractionState = { until: 0, bound: false };
+      function markPipelineSelectInteraction(reason = '', holdMs = 900) {
+        pipelineSelectInteractionState.until = Math.max(pipelineSelectInteractionState.until, Date.now() + holdMs);
+        const select = $('#pipelineSelect');
+        if (select) select.dataset.pipelineSelectInteracting = '1';
+      }
+      function pipelineSelectIsBeingEdited(select = $('#pipelineSelect')) {
+        if (!select) return false;
+        return select.dataset.pipelineSelectInteracting === '1' || Date.now() < pipelineSelectInteractionState.until;
+      }
+      function releasePipelineSelectInteractionSoon(delayMs = 180) {
+        setTimeout(() => {
+          const select = $('#pipelineSelect');
+          if (Date.now() >= pipelineSelectInteractionState.until) select?.removeAttribute('data-pipeline-select-interacting');
+        }, delayMs);
+      }
+      function setupPipelineSelectInteractionGuards(select = $('#pipelineSelect')) {
+        if (!select || select.dataset.pipelineSelectInteractionBound === '1') return;
+        select.dataset.pipelineSelectInteractionBound = '1';
+        ['pointerdown', 'mousedown', 'touchstart', 'focus'].forEach(type => {
+          select.addEventListener(type, () => markPipelineSelectInteraction(type, 1400), true);
+        });
+        select.addEventListener('keydown', e => {
+          if (['ArrowDown', 'ArrowUp', 'Enter', ' ', 'Escape', 'Home', 'End'].includes(e.key)) {
+            markPipelineSelectInteraction('keyboard', 1400);
+          }
+        }, true);
+        select.addEventListener('input', () => {
+          markPipelineSelectInteraction('input', 260);
+          releasePipelineSelectInteractionSoon(320);
+        }, true);
+        select.addEventListener('change', () => {
+          markPipelineSelectInteraction('change', 260);
+          releasePipelineSelectInteractionSoon(320);
+        }, true);
+        select.addEventListener('blur', () => {
+          pipelineSelectInteractionState.until = Math.min(pipelineSelectInteractionState.until, Date.now() + 80);
+          releasePipelineSelectInteractionSoon(120);
+        }, true);
+      }
+      window.audioStudioPipelineSelectInteractionGuard = {
+        mark: markPipelineSelectInteraction,
+        isActive: pipelineSelectIsBeingEdited,
+        setup: setupPipelineSelectInteractionGuards
+      };
+
 
       function groupApiV51() { return window.audioStudioWorkingPipelineGroupsV44 || null; }
       function workingGroupsV51() {
@@ -9247,7 +9295,9 @@
       function renderPipelineSelectV51() {
         const select = $('#pipelineSelect');
         if (!select) return [];
+        setupPipelineSelectInteractionGuards(select);
         const groups = workingGroupsV51();
+        if (pipelineSelectIsBeingEdited(select) && select.dataset.mode === 'working_groups_filter_v51') return groups;
         const valid = validWorkingGroupIdsV51(groups);
         if (!valid.has(activeWorkingGroupIdV51)) activeWorkingGroupIdV51 = 'ALL';
         const sig = JSON.stringify(groups.map(g => ({ id: g.id, name: g.displayName || g.name, status: g.status, n: g.nodes.length, e: g.edges.length })));
@@ -9271,7 +9321,8 @@
         }
         select.value = activeWorkingGroupIdV51;
         select.onchange = e => {
-          // Running pipeline view switch hotfix: allow switching All/working-group views while runtime is active.
+          // View selection is independent from runtime state; only graph edits remain locked while running.
+          markPipelineSelectInteraction('change', 260);
           activeWorkingGroupIdV51 = e.target.value || 'ALL';
           const group = selectedWorkingGroupV51();
           clearSelection();
@@ -11062,6 +11113,7 @@
     function decorateRuntimeSelectOptions() {
       const select = $('#pipelineSelect');
       if (!select) return;
+      if (window.audioStudioPipelineSelectInteractionGuard?.isActive?.(select)) return;
       const groups = runtimeGroups();
       const validIds = new Set(['ALL', ...groups.map(g => g.id)]);
       const currentSelectValue = select.value || 'ALL';
