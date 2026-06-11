@@ -75,8 +75,10 @@ Frontend breakpoints go in:
 
 ```text
 frontend/index.html
-frontend/assets/js/*.js
 ```
+
+The files under `frontend/assets/js/` are tested helper/model modules, not the
+current browser entrypoint.
 
 Useful backend breakpoint locations:
 

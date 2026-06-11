@@ -1,140 +1,109 @@
-# Frontend Development Guide — React Edition
+# Frontend Development Guide
 
 ## 入口与运行方式
 
+当前前端是 standalone HTML 实现：
+
 ```text
 frontend/index.html
-frontend/assets/js/react-app.js
-frontend/assets/css/styles.css
-frontend/assets/js/configParser.js
-frontend/assets/js/layout.js
-frontend/assets/js/pipelineRules.js
-frontend/assets/js/api.js
-frontend/assets/js/telemetry.js
+frontend/config/built-in-algorithm.json
+frontend/assets/verisilicon-logo.png
 ```
 
-当前前端已经切换为 React 组件化实现。为了让 C++ Mock Server 仍能直接服务静态文件，`index.html` 默认通过 UMD CDN 加载 React 18，然后执行 `react-app.js`。
-
-如需公司内网离线运行，建议后续二次开发时改成 Vite 方式：
+C++ Mock Server 直接托管 `frontend/index.html`、静态资源和 `/api/*` 接口。本地调试推荐：
 
 ```bash
-npm install
-npm run dev
+./scripts/build_backend.sh
+./build/audio_studio_server . 8080
 ```
 
-然后把构建产物复制到 `frontend/` 或让 C++ 服务 `dist/`。
-
-## UI 组件结构
-
-`react-app.js` 里主要组件：
+然后打开：
 
 ```text
-App
-├─ Topbar
-│  ├─ Audio Studio logo
-│  ├─ Project select
-│  ├─ DSP/Core/Rate controls
-│  └─ Validate/Build/Run/Stop/Auto Arrange/Delete/Export
-├─ AlgorithmLibrary
-├─ PipelineHeader
-├─ EdgeLayer
-├─ PipelineNode
-├─ Inspector
-├─ ParamPanel / ParameterControl
-├─ Dashboard
-└─ Panel Dock
+http://127.0.0.1:8080
 ```
 
-## Project 与 Pipeline 的关系
+根目录 `index.html` 只负责跳转到 `frontend/`。
 
-顶部左上角是 Project，而不是 Pipeline。当前 `A2.json` 是一个 Project 示例。
+## 当前代码组织
 
-Project JSON 仍然描述：
+`frontend/index.html` 包含当前可交互 UI 的 HTML、CSS 和运行时代码。这样做的原因是 GitHub Pages 预览和 C++ Mock Server 都可以不经过前端构建链直接服务页面。
+
+`frontend/assets/js/` 下保留的是测试覆盖的纯逻辑模块：
 
 ```text
-meta / naming / hardware_hints
-module_types
-presets
-module_instances
-pipelines
-scenes
+configParser.js              # 产品 JSON 转 pipeline/model 的解析逻辑
+layout.js                    # pipeline 节点布局、端口坐标和连线路径
+pipelineRules.js             # 连接规则
+pipelineEditCallbackModel.js # pipeline 编辑回调 payload/model
+topbarPanelMenuModel.js      # panel 菜单状态 model
+utils.js                     # 解析和格式化辅助函数
 ```
 
-Pipeline 是 Project 内的一个工作图。UI 中 Pipeline/Scene 切换放在 Pipeline Header 区域，而不是左上角主 Project 下拉框。
+这些模块不是页面入口脚本；它们用于把关键策略拆出来做单元测试，避免所有行为都只能靠扫描巨大 HTML 字符串验证。
 
-## 算法库扩展
+## 主要 UI 区域
 
-算法库完全由 `module_types` 自动生成。新增算法时，只需要在产品 JSON 里增加：
+```text
+Topbar
+├─ Project / DSP / Cores / Frequency
+├─ Validate / Build / Run / Stop
+├─ Auto Arrange / Undo / Redo / Save / Export
 
-```json
-{
-  "type_id": "fx.demo",
-  "category": "playback/fx",
-  "io": {
-    "in_ports": [{ "name": "in", "max_ch": 2 }],
-    "out_ports": [{ "name": "out", "max_ch": 2 }]
-  },
-  "static_schema": {
-    "fields": [
-      { "key": "quality", "type": "enum", "enum": ["low", "high"], "default": "high" }
-    ]
-  },
-  "runtime_params": [
-    { "param_id": "enable", "param_name": "Enable", "value_type": "bool", "default": true },
-    { "param_id": "gain", "param_name": "Gain", "value_type": "int16", "range": { "min": -12, "max": 12, "step": 1 }, "default": 0 }
-  ]
-}
+Algorithm Library
+Pipeline Canvas
+Inspector
+Runtime Dashboard
+├─ Per-Algorithm Cost
+├─ DSP Core Loading
+├─ Real-Time Signal Probe
+├─ System Health
+├─ Audio I/O
+└─ Event Log
 ```
 
-刷新后：
+## 数据流
 
-- 左侧算法库自动出现该模块。
-- 算法 list item 自动获得一个小图标。
-- Pipeline 里仍按原方框比例显示节点。
-- 输入/输出端口数量自动来自 `io.in_ports/out_ports`。
-- Inspector 自动生成静态/动态参数 UI。
+1. `GET /api/projects` 获取可用 project。
+2. `GET /api/config?project=...` 加载产品 JSON。
+3. `module_types` 和 `frontend/config/built-in-algorithm.json` 生成算法库。
+4. `pipelines` 生成节点、端口、连线和初始 layout。
+5. UI 编辑通过 `/api/pipeline/edit`、`/api/pipeline/tool`、`/api/node/action` 回调后端。
+6. Validate/Build/Run/Stop 调用对应 `/api/*`。
+7. running 或 stopped 状态下的 dashboard/inspector 数据都通过后端 live API 获取。
 
-## 参数 UI 自动适配
+## 参数与运行态规则
 
-| JSON 类型 | UI 控件 |
-|---|---|
-| `bool` | Switch |
-| `enum` | Select |
-| `int16/uint8/uint16/float + range` | Slider + Number Input |
-| `bytes` | Textarea placeholder，后续可替换成文件/二进制上传控件 |
+- `static_schema.fields`：仅 stopped 状态可改。
+- `runtime_params`：running/stopped 状态都可改，running 时调用 `/api/param/update`。
+- 节点新增、删除、移动、连线、删线：仅 stopped 状态允许。
+- buffer dump 和 real-time probe 数据必须来自后端接口，前端不生成 fake PCM 或 fake spectrum 数据。
 
-运行态规则：
+## 连接策略
 
-- `static_schema.fields`：running 时锁定。
-- `runtime_params`：running 时仍可修改，调用 `/api/param/update`。
-- Pipeline 节点新增、删除、移动、连线、删线：仅 Stop 状态允许。
-
-## 连线策略
-
-连线规则在 `frontend/assets/js/pipelineRules.js` 中：
+连接规则由当前 standalone 入口实现，并由 `frontend/assets/js/pipelineRules.js` 的单元测试覆盖：
 
 - 必须从 output port 连到 input port。
 - 不允许同一节点自连。
 - UI 手动编辑时，一个 output port 只能连接一个 input port。
 - 一个 input port 也只能有一个上游 output。
 - 新连接如果占用了旧 output 或旧 input，会替换旧连接。
-- 点击连线后，可以点击顶部 Delete 删除该 in-out 连接。
 
-注意：如果旧产品 JSON 存在 fanout，例如一个 `EQ:out` 同时连多个节点，UI 会先按配置显示；后续手动编辑会按单 output 连接规则执行。建议产品 JSON 后续用显式 splitter/copier 节点描述 fanout，这样更利于资源估算和 DSP buffer ownership 管理。
+如果产品 JSON 需要 fanout，建议后续用显式 splitter/copier 节点描述 fanout，这样更利于资源估算和 DSP buffer ownership 管理。
 
-## 布局与连线显示
+## 性能调试
 
-- 节点与 SVG 连线统一使用 world coordinate。
-- Auto Arrange 使用较大的 `MIN_X_DISTANCE` / `MIN_Y_DISTANCE`，避免节点过近时连线被覆盖或视觉上断开。
-- `pipeline-world` 只让节点接收事件；空白区域和连线点击由 `EdgeLayer` 接收。
-- 小地图根据真实 world coordinate 计算。
+前端性能命令行基准：
 
-## 子窗口显示/隐藏
-
-Panel Dock 按钮：
-
-```text
-Library / Inspector / Dashboard
+```bash
+npm run profile:frontend
 ```
 
-关闭某个 panel 后，可通过右下角 dock 按钮恢复。布局会自动扩展 pipeline 区域。
+常用场景：
+
+```bash
+AUDIO_STUDIO_PROFILE_SCENARIO=running npm run profile:frontend
+AUDIO_STUDIO_PROFILE_SCENARIO=both AUDIO_STUDIO_PROFILE_MS=30000 npm run profile:frontend
+```
+
+报告会写入 `profiles/frontend/`，指标包括 Chrome `Performance.getMetrics`、Long Task、frame interval、DOM node 数、JS heap、API 请求数量和页面注册的 interval delay。
