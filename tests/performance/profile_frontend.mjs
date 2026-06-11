@@ -108,9 +108,19 @@ async function launchChrome() {
 
   return {
     version,
-    stop: () => {
-      if (!options.keepBrowser) child.kill('SIGTERM');
-      if (!options.keepBrowser) fs.rmSync(userDataDir, { recursive: true, force: true });
+    stop: async () => {
+      if (options.keepBrowser) return;
+      if (!child.killed) child.kill('SIGTERM');
+      await Promise.race([
+        new Promise(resolve => child.once('exit', resolve)),
+        sleep(1200)
+      ]);
+      try {
+        fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      } catch {
+        // Chrome can release profile files just after process exit; stale temp dirs
+        // must not make an otherwise successful profile run fail.
+      }
     }
   };
 }
@@ -392,7 +402,7 @@ async function main() {
     console.log(`\nProfile written to ${profileDirLabel}/${path.basename(outPath)}`);
   } finally {
     client.close();
-    chrome.stop();
+    await chrome.stop();
     backend.stop();
   }
 }
