@@ -550,6 +550,13 @@
       pointer-events:none!important;
     }
 
+    /* v74: Algorithm Library close button should hide the left panel too. */
+    #leftPanel.hidden-panel{
+      display:none!important;
+      visibility:hidden!important;
+      pointer-events:none!important;
+    }
+
 
     /* v69: backend-owned EVENT LOG / SYSTEM HEALTH / AUDIO I/O live panels. */
     .backend-dashboard-live-v69 #healthPanel,
@@ -624,7 +631,7 @@
     </header>
 
     <aside class="left-panel" id="leftPanel">
-      <div class="panel-head"><span>ALGORITHM LIBRARY</span><span>×</span></div>
+      <div class="panel-head"><span>ALGORITHM LIBRARY</span><button class="close" data-hide="leftPanel" title="Hide Algorithm Library">×</button></div>
       <input class="search" id="searchInput" placeholder="Search components..." />
       <div class="lib" id="componentLib"></div>
       <div class="hint">拖拽组件到中间画布；点击节点端口可连线</div>
@@ -7940,15 +7947,21 @@
       const __renderAllBeforeLibraryFocusV45=renderAll;
       renderAll=function(rebuildNodes=true){
         const out=__renderAllBeforeLibraryFocusV45(rebuildNodes);
-        scheduleLibraryFocusForSelectedNodeV45('render');
+        // v74: ordinary selection/render must not auto-expand, scroll, or flash
+        // the Algorithm Library. Library focus is now an explicit Shift+click action.
         return out;
       };
+      function isLibraryFocusGestureV69(e){
+        return !!(e && e.shiftKey);
+      }
       $('#nodesLayer')?.addEventListener('click',e=>{
         const nodeEl=e.target?.closest?.('.pipeline-node');
         if(!nodeEl || e.target?.closest?.('.port,.delete-node')) return;
-        setTimeout(()=>scheduleLibraryFocusForSelectedNodeV45('click'),0);
+        if(!isLibraryFocusGestureV69(e)) return;
+        setTimeout(()=>scheduleLibraryFocusForSelectedNodeV45('shift_click'),0);
       },true);
       window.audioStudioLibraryFocusV45={focusAlgorithmLibraryForNodeV45,scheduleLibraryFocusForSelectedNodeV45,findLibraryComponentForNodeV45};
+      window.audioStudioLibraryFocusV69={isLibraryFocusGestureV69,shiftClickOnly:true,noRenderAutoFocus:true};
     }
 
 

@@ -525,3 +525,33 @@ assert.ok(
   html.includes("style.setProperty('display','none','important')") && html.includes('audioStudioPanelVisibilityChanged'),
   'setPanelVisible should force hidden display state and keep panel menu synchronized'
 );
+
+
+assert.ok(
+  html.includes('data-hide="leftPanel"') && html.includes('Hide Algorithm Library'),
+  'Algorithm Library titlebar close button should hide leftPanel through existing data-hide handler'
+);
+assert.ok(
+  html.includes('#leftPanel.hidden-panel') && html.includes('Algorithm Library close button should hide the left panel'),
+  'Algorithm Library hidden-panel CSS override should be present'
+);
+assert.ok(
+  html.includes('window.audioStudioLibraryFocusV69') &&
+  html.includes('isLibraryFocusGestureV69') &&
+  html.includes('shiftClickOnly:true') &&
+  html.includes('noRenderAutoFocus:true'),
+  'Algorithm Library focus should be explicit Shift-click behavior'
+);
+assert.ok(
+  html.includes('e.shiftKey') && html.includes("scheduleLibraryFocusForSelectedNodeV45('shift_click')"),
+  'Pipeline node should focus Algorithm Library only on Shift-click'
+);
+assert.ok(
+  !html.includes("scheduleLibraryFocusForSelectedNodeV45('render');"),
+  'ordinary render/selection should not auto-expand or auto-scroll Algorithm Library'
+);
+assert.ok(
+  !html.includes('ctrlClickOnly:true') && !html.includes("scheduleLibraryFocusForSelectedNodeV45('ctrl_click')"),
+  'Algorithm Library focus should no longer use Ctrl/Cmd-click because Ctrl is reserved for multi-select'
+);
+
