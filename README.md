@@ -265,6 +265,26 @@ node tests/frontend/standalone-features.test.mjs
 
 ---
 
+## 5.1 VSCode Debug / Profile
+
+本工程已提供 VSCode 一键调试和剖析配置：
+
+```text
+Full Stack: Debug
+Full Stack: Profile
+Backend: Debug Server
+Frontend: Debug Chrome
+Frontend: Profile Chrome
+```
+
+详细使用方式见：
+
+```text
+docs/debug_profile_guide.md
+```
+
+---
+
 ## 6. 主要后端 API
 
 ### 6.1 Project / Config

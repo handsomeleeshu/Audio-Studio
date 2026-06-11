@@ -1,0 +1,97 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Debug Server",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/debug/audio_studio_server",
+      "args": [
+        "${workspaceFolder}",
+        "${input:serverPort}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "cmake: build debug",
+      "env": {
+        "AUDIO_STUDIO_ENV": "debug"
+      }
+    },
+    {
+      "name": "Backend: Profile",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "AUDIO_STUDIO_PROFILE_SECONDS=${input:profileSeconds} \"${workspaceFolder}/scripts/profile_backend.sh\" ${input:serverPort}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cmake: build profile"
+    },
+    {
+      "name": "Frontend: Debug Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:${input:serverPort}",
+      "webRoot": "${workspaceFolder}/frontend",
+      "sourceMaps": false,
+      "runtimeArgs": [
+        "--remote-debugging-port=9222",
+        "--auto-open-devtools-for-tabs",
+        "--user-data-dir=${workspaceFolder}/.vscode/chrome-debug-profile"
+      ],
+      "preLaunchTask": "wait: backend"
+    },
+    {
+      "name": "Frontend: Attach Chrome",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/frontend",
+      "sourceMaps": false
+    },
+    {
+      "name": "Frontend: Profile Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:${input:serverPort}",
+      "webRoot": "${workspaceFolder}/frontend",
+      "sourceMaps": false,
+      "runtimeArgs": [
+        "--auto-open-devtools-for-tabs",
+        "--enable-precise-memory-info",
+        "--user-data-dir=${workspaceFolder}/.vscode/chrome-profile"
+      ],
+      "preLaunchTask": "wait: backend"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Debug",
+      "configurations": [
+        "Backend: Debug Server",
+        "Frontend: Debug Chrome"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Full Stack: Profile",
+      "configurations": [
+        "Backend: Profile",
+        "Frontend: Profile Chrome"
+      ],
+      "stopAll": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serverPort",
+      "type": "promptString",
+      "description": "Audio Studio server port",
+      "default": "8080"
+    },
+    {
+      "id": "profileSeconds",
+      "type": "promptString",
+      "description": "Backend sampling duration in seconds",
+      "default": "30"
+    }
+  ]
+}
