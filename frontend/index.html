@@ -7708,19 +7708,21 @@
         normalizeCostBodyRowsV62(table);
         normalizeCostFooterV62(table);
         return true;
-      }
-      const __renderCostTableBeforeV62=renderCostTable;
-      renderCostTable=function(){
-        const out=__renderCostTableBeforeV62?.();
-        applyCostStoppedIdxFixV62();
-        requestAnimationFrame(applyCostStoppedIdxFixV62);
-        setTimeout(applyCostStoppedIdxFixV62,0);
-        return out;
-      };
-      const costPanelV62=document.querySelector('#costPanel');
-      if(costPanelV62){
-        new MutationObserver(()=>requestAnimationFrame(applyCostStoppedIdxFixV62)).observe(costPanelV62,{childList:true,subtree:true});
-      }
+	      }
+	      const __renderCostTableBeforeV62=renderCostTable;
+	      renderCostTable=function(){
+	        const out=__renderCostTableBeforeV62?.();
+	        applyCostStoppedIdxFixV62();
+	        if(!running){
+	          requestAnimationFrame(applyCostStoppedIdxFixV62);
+	          setTimeout(applyCostStoppedIdxFixV62,0);
+	        }
+	        return out;
+	      };
+	      const costPanelV62=document.querySelector('#costPanel');
+	      if(costPanelV62){
+	        new MutationObserver(()=>{if(!running) requestAnimationFrame(applyCostStoppedIdxFixV62);}).observe(costPanelV62,{childList:true,subtree:true});
+	      }
       [0,50,200,500,1000].forEach(ms=>setTimeout(applyCostStoppedIdxFixV62,ms));
       window.audioStudioPerAlgorithmCostStoppedIdxV62={applyCostStoppedIdxFixV62};
     }

@@ -71,5 +71,10 @@ assert.ok(
   html.includes('let edgeLayoutRedrawFrame=0') && !html.includes('raf(()=>{ drawEdges(); raf(drawEdges); })'),
   'edge redraw after layout should be coalesced instead of triple-drawing every render'
 );
+assert.ok(
+  /if\(!running\)\{\s*requestAnimationFrame\(applyCostStoppedIdxFixV62\);\s*setTimeout\(applyCostStoppedIdxFixV62,0\);/.test(html) &&
+    html.includes('new MutationObserver(()=>{if(!running) requestAnimationFrame(applyCostStoppedIdxFixV62);})'),
+  'stopped-state cost-table repair should not schedule extra async DOM passes while running'
+);
 
 console.log('runtime-loop-policy.test passed');
