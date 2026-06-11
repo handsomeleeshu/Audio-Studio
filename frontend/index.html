@@ -3204,6 +3204,94 @@
       font-weight: 800;
       pointer-events: none;
     }
+
+
+
+
+
+
+    /* Bottom dashboard edge gutters. */
+    .app .bottom {
+      margin-right: var(--layout-edge-gutter, 10px) !important;
+      border-right: 1px solid var(--line) !important;
+    }
+
+    .app.layout-left-collapsed .bottom {
+      margin-left: var(--layout-edge-gutter, 10px) !important;
+      border-left: 1px solid var(--line) !important;
+    }
+
+    /* Closed-panel boundary gutters. */
+    .app {
+      --layout-edge-gutter: 10px;
+    }
+
+    .app.layout-left-collapsed .canvas-zone,
+    .app.layout-left-collapsed .bottom {
+      margin-left: var(--layout-edge-gutter) !important;
+    }
+
+    .app.layout-right-collapsed .canvas-zone,
+    .app.layout-right-collapsed .bottom {
+      margin-right: var(--layout-edge-gutter) !important;
+    }
+
+    .app.layout-left-collapsed .canvas-zone {
+      border-left: 1px solid var(--line) !important;
+    }
+
+    .app.layout-right-collapsed .canvas-zone {
+      border-right: 1px solid var(--line) !important;
+    }
+
+    .app.layout-left-collapsed .bottom {
+      border-left: 1px solid var(--line) !important;
+    }
+
+    .app.layout-right-collapsed .bottom {
+      border-right: 1px solid var(--line) !important;
+    }
+
+    /* Flexible closed-panel layout occupancy. */
+    .app {
+      --layout-left-col: 260px;
+      --layout-right-col: 360px;
+      --layout-bottom-row: 292px;
+      grid-template-columns: var(--layout-left-col) minmax(600px, 1fr) var(--layout-right-col) !important;
+      grid-template-rows: 86px minmax(0, 1fr) var(--layout-bottom-row) !important;
+    }
+
+    .app.layout-left-collapsed {
+      --layout-left-col: 0px;
+    }
+
+    .app.layout-right-collapsed {
+      --layout-right-col: 0px;
+    }
+
+    .app.layout-bottom-collapsed {
+      --layout-bottom-row: 0px;
+    }
+
+    .app.layout-left-collapsed .left-panel,
+    .app.layout-right-collapsed .right-panel,
+    .app.layout-bottom-collapsed .bottom {
+      display: none !important;
+    }
+
+    .app.layout-left-collapsed .canvas-zone {
+      border-left: 0;
+    }
+
+    .app.layout-right-collapsed .canvas-zone {
+      border-right: 0;
+    }
+
+    .app.layout-bottom-collapsed .canvas-zone,
+    .app.layout-bottom-collapsed .left-panel,
+    .app.layout-bottom-collapsed .right-panel {
+      border-bottom: 0;
+    }
   </style>
 </head>
 
@@ -10572,8 +10660,65 @@
       // Inspector parameters are now generated dynamically from module JSON runtime_params.
       scheduleTelemetryPoll(); scheduleInspectorPoll(); refreshInspectorBackend(); animate();
     }
+
+
+    // Flexible closed-panel layout occupancy.
+    // Keep panel visibility as the single source of truth, then adjust the app
+    // grid so canvas/Inspector/dashboard reclaim space released by closed panels.
+    const dashboardPanelIdsForLayout = ['costPanel', 'corePanel', 'probePanel', 'healthPanel', 'meterPanel', 'logPanel'];
+    let responsivePanelLayoutTimer = 0;
+    function panelIsHiddenForLayout(id) {
+      const el = document.getElementById(id);
+      if (!el) return true;
+      const menuInput = [...document.querySelectorAll('#panelMenu input[data-panel]')].find(input => input.dataset.panel === id);
+      if (menuInput && !menuInput.checked) return true;
+      if (el.classList.contains('hidden-panel')) return true;
+      if (el.hidden) return true;
+      return false;
+    }
+    function hasVisibleDashboardPanelForLayout() {
+      return dashboardPanelIdsForLayout.some(id => !panelIsHiddenForLayout(id));
+    }
+    function refreshResponsivePanelLayout(reason = '') {
+      responsivePanelLayoutTimer = 0;
+      const app = document.querySelector('.app');
+      if (!app) return;
+      const leftHidden = panelIsHiddenForLayout('leftPanel');
+      const rightHidden = panelIsHiddenForLayout('rightPanel');
+      const bottomHidden = !hasVisibleDashboardPanelForLayout();
+      app.classList.toggle('layout-left-collapsed', leftHidden);
+      app.classList.toggle('layout-right-collapsed', rightHidden);
+      app.classList.toggle('layout-bottom-collapsed', bottomHidden);
+      const bottom = document.querySelector('.bottom');
+      if (bottom) bottom.setAttribute('aria-hidden', bottomHidden ? 'true' : 'false');
+      const raf = window.requestAnimationFrame || (cb => setTimeout(cb, 0));
+      raf(() => {
+        try { updateWorldBounds(); } catch (e) { }
+        try { applyZoom(false); } catch (e) { }
+        try { renderMinimap(); } catch (e) { }
+        try { drawEdges(); } catch (e) { }
+        try { backendTool('responsive_panel_layout', { reason, left_hidden: leftHidden, right_hidden: rightHidden, bottom_hidden: bottomHidden }); } catch (e) { }
+      });
+    }
+    function scheduleResponsivePanelLayout(reason = '') {
+      if (responsivePanelLayoutTimer) clearTimeout(responsivePanelLayoutTimer);
+      responsivePanelLayoutTimer = setTimeout(() => refreshResponsivePanelLayout(reason), 0);
+    }
+    function setupResponsivePanelLayout() {
+      document.addEventListener('audioStudioPanelVisibilityChanged', () => scheduleResponsivePanelLayout('panel_visibility_changed'));
+      document.addEventListener('change', e => {
+        if (e.target?.matches?.('#panelMenu input[data-panel]')) scheduleResponsivePanelLayout('panel_menu_changed');
+      }, true);
+      document.addEventListener('click', e => {
+        if (e.target?.closest?.('[data-hide]')) scheduleResponsivePanelLayout('panel_close_button');
+      }, true);
+      window.addEventListener('resize', () => scheduleResponsivePanelLayout('resize'));
+      scheduleResponsivePanelLayout('initial');
+    }
+
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
+    setupResponsivePanelLayout();
 
     // bounded dashboard strip + checkbox-order driven panel layout.
     {
