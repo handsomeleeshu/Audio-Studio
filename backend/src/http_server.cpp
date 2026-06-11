@@ -33,6 +33,27 @@ std::string jsonEscape(const std::string& s) {
   return out;
 }
 
+
+static std::string jsonStringField(const std::string& body, const std::string& field, const std::string& fallback = "") {
+  const std::string key = std::string("\"") + field + "\"";
+  size_t pos = body.find(key);
+  if (pos == std::string::npos) return fallback;
+  pos = body.find(':', pos + key.size());
+  if (pos == std::string::npos) return fallback;
+  pos = body.find('"', pos + 1);
+  if (pos == std::string::npos) return fallback;
+  std::string out;
+  bool esc = false;
+  for (size_t i = pos + 1; i < body.size(); ++i) {
+    char c = body[i];
+    if (esc) { out.push_back(c); esc = false; continue; }
+    if (c == '\\') { esc = true; continue; }
+    if (c == '"') return out.empty() ? fallback : out;
+    out.push_back(c);
+  }
+  return fallback;
+}
+
 std::vector<std::string> splitCsv(const std::string& csv) {
   std::vector<std::string> out;
   std::string cur;
@@ -187,6 +208,8 @@ HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::strin
 
 HttpResponse HttpServer::handle(const HttpRequest& req) {
   logApiRequest(req);
+  static size_t ui_notification_seq = 0;
+  static std::vector<std::string> ui_notifications;
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
   if (req.method == "GET" && (req.path == "/" || req.path == "/index.html" || req.path == "/frontend/" || req.path == "/frontend/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
   if (req.method == "GET" && req.path.rfind("/assets/", 0) == 0) return serveFile("frontend" + req.path, "");
@@ -269,6 +292,28 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/ui/event") {
     if (!event_log_controller_) return {200, "application/json", runtime_->pipelineToolAction(req.body)};
     return {200, "application/json", event_log_controller_->postEvent(req.body)};
+  }
+  if (req.method == "GET" && req.path == "/api/ui/notify") {
+    std::ostringstream ss;
+    ss << "{\"ok\":true,\"messages\":[";
+    for (size_t i = 0; i < ui_notifications.size(); ++i) {
+      if (i) ss << ",";
+      ss << ui_notifications[i];
+    }
+    ss << "]}";
+    ui_notifications.clear();
+    return {200, "application/json", ss.str()};
+  }
+  if (req.method == "POST" && req.path == "/api/ui/notify") {
+    const std::string level = jsonStringField(req.body, "level", jsonStringField(req.body, "kind", "info"));
+    const std::string message = jsonStringField(req.body, "message", jsonStringField(req.body, "msg", req.body.empty() ? "Backend notification" : req.body));
+    std::ostringstream item;
+    item << "{\"id\":" << (++ui_notification_seq)
+         << ",\"level\":\"" << jsonEscape(level) << "\""
+         << ",\"message\":\"" << jsonEscape(message) << "\"}";
+    ui_notifications.push_back(item.str());
+    if (ui_notifications.size() > 40) ui_notifications.erase(ui_notifications.begin(), ui_notifications.begin() + static_cast<long>(ui_notifications.size() - 40));
+    return {200, "application/json", std::string("{\"ok\":true,\"id\":") + std::to_string(ui_notification_seq) + "}"};
   }
   if (req.method == "POST" && req.path == "/api/project/save") return {200, "application/json", runtime_->pipelineEditEvent(std::string("{\"action\":\"project_save\",\"payload\":") + req.body + "}")};
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
