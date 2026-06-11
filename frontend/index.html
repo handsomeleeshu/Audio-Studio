@@ -3347,6 +3347,87 @@
       box-shadow: 0 0 24px rgba(255, 81, 81, .18);
     }
 
+
+
+    /* Pipeline-scoped runtime state colors. */
+    .pipeline-node.runtime-not-ready .alive {
+      background: #7d8ba0 !important;
+      box-shadow: 0 0 10px rgba(125, 139, 160, .7) !important;
+    }
+
+    .pipeline-node.runtime-validated .alive {
+      background: var(--cyan) !important;
+      box-shadow: 0 0 12px rgba(0, 216, 255, .9) !important;
+    }
+
+    .pipeline-node.runtime-built .alive {
+      background: var(--purple) !important;
+      box-shadow: 0 0 12px rgba(182, 92, 255, .9) !important;
+    }
+
+    .pipeline-node.runtime-running .alive {
+      background: var(--green) !important;
+      box-shadow: 0 0 12px rgba(49, 242, 107, .9) !important;
+    }
+
+    .pipeline-node.runtime-stopped .alive,
+    .pipeline-node.runtime-error .alive {
+      background: var(--red) !important;
+      box-shadow: 0 0 12px rgba(255, 81, 81, .85) !important;
+    }
+
+    .active-label.runtime-not-ready {
+      color: #93a2b8 !important;
+      text-shadow: 0 0 12px rgba(125, 139, 160, .35) !important;
+    }
+
+    .active-label.runtime-validated {
+      color: var(--cyan) !important;
+      text-shadow: 0 0 12px rgba(0, 216, 255, .55) !important;
+    }
+
+    .active-label.runtime-built {
+      color: var(--purple) !important;
+      text-shadow: 0 0 12px rgba(182, 92, 255, .55) !important;
+    }
+
+    .active-label.runtime-running {
+      color: var(--green) !important;
+      text-shadow: 0 0 12px rgba(49, 242, 107, .55) !important;
+    }
+
+    .active-label.runtime-stopped,
+    .active-label.runtime-error {
+      color: var(--red) !important;
+      text-shadow: 0 0 12px rgba(255, 81, 81, .55) !important;
+    }
+
+
+
+    /* Pipeline node title overflow guard. */
+    .pipeline-node .node-title {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .pipeline-node .node-title .nicon {
+      flex: 0 0 24px;
+    }
+
+    .pipeline-node .node-title .node-name {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: block;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .pipeline-node .node-title .alive {
+      flex: 0 0 8px;
+      margin-left: 6px;
+    }
   </style>
 </head>
 
@@ -4754,6 +4835,11 @@
         el.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', el.dataset.name); });
       });
     }
+
+    function nodeRuntimeVisualState(n) {
+      return window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || 'not-ready';
+    }
+
     function renderNodes() {
       applyZoom(false);
       const layer = $('#nodesLayer'); layer.innerHTML = '';
@@ -4768,9 +4854,9 @@
           return `<div class="port ${dir}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}" style="top:${top}%"></div>`;
         }).join('');
         const el = document.createElement('div');
-        el.className = `pipeline-node ${colors[n.type] || ''} ${isNodeSelected(n.id) ? 'selected' : ''} ${n.portsFlipped ? 'flipped' : ''} ${running ? 'locked' : 'editable'}`;
+        el.className = `pipeline-node ${colors[n.type] || ''} ${isNodeSelected(n.id) ? 'selected' : ''} ${n.portsFlipped ? 'flipped' : ''} ${running ? 'locked' : 'editable'} runtime-${nodeRuntimeVisualState(n)}`;
         el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; el.style.minHeight = n.h + 'px'; el.style.height = 'auto'; el.dataset.id = n.id;
-        el.innerHTML = `<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts, 'in')}${portHtml(outPorts, 'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span>${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
+        el.innerHTML = `<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts, 'in')}${portHtml(outPorts, 'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span class="node-name" title="${n.name}">${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
         layer.appendChild(el);
         const measuredH = Math.ceil(el.getBoundingClientRect().height / (state.zoom || 1));
         if (Number.isFinite(measuredH) && measuredH > n.h) n.h = measuredH;
@@ -5050,7 +5136,7 @@
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', '3'); dot.setAttribute('class', 'edge-particle');
           const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+        if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
       });
     }
     function deleteSelectedEdge() {
@@ -6735,11 +6821,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (running) {
+          if (edgePipelineRuntimeState(ep) === 'running') {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -7302,11 +7388,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (running) {
+          if (edgePipelineRuntimeState(ep) === 'running') {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -8996,11 +9082,7 @@
         }
         select.value = currentWorkingGroupIdV44;
         select.onchange = e => {
-          if (running) {
-            toast('Run 状态下不能切换 pipeline group，请先 Stop');
-            e.target.value = currentWorkingGroupIdV44;
-            return;
-          }
+          // Running pipeline view switch hotfix: allow switching All/working-group views while runtime is active.
           const value = e.target.value || 'ALL';
           currentWorkingGroupIdV44 = value;
           if (value === 'ALL') {
@@ -9189,11 +9271,7 @@
         }
         select.value = activeWorkingGroupIdV51;
         select.onchange = e => {
-          if (running) {
-            toast('Run 状态下不能切换 pipeline group，请先 Stop');
-            e.target.value = activeWorkingGroupIdV51;
-            return;
-          }
+          // Running pipeline view switch hotfix: allow switching All/working-group views while runtime is active.
           activeWorkingGroupIdV51 = e.target.value || 'ALL';
           const group = selectedWorkingGroupV51();
           clearSelection();
@@ -10877,10 +10955,288 @@
       scheduleResponsivePanelLayout('initial');
     }
 
+
+
+    // Pipeline-scoped runtime state model.
+    // This is the canonical frontend runtime-state layer: pipeline working groups
+    // can be validated, built, run and stopped independently. The legacy global
+    // `running` flag remains a coarse compatibility flag that is true whenever
+    // at least one working group is running.
+    const pipelineRuntimeStates = new Map();
+    let activeRuntimeGroupId = 'ALL';
+    let runtimeRenderScopeNodeIds = null;
+    const RUNTIME_STATUS_META = {
+      'not-ready': { label: 'Not Ready', log: 'warn' },
+      validated: { label: 'Validated', log: 'info' },
+      built: { label: 'Built', log: 'ok' },
+      running: { label: 'Active', log: 'ok' },
+      stopped: { label: 'Stopped', log: 'warn' },
+      error: { label: 'Error', log: 'err' }
+    };
+
+    function runtimeGroups() {
+      return window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.() || [];
+    }
+    function runtimeGroupById(id) {
+      return runtimeGroups().find(g => g.id === id) || null;
+    }
+    function runtimeGroupForNodeId(nodeId) {
+      if (!nodeId) return null;
+      return runtimeGroups().find(g => g.nodes?.some(n => n.id === nodeId)) || null;
+    }
+    function runtimeGroupForEdgeKey(key) {
+      if (!key) return null;
+      return runtimeGroups().find(g => g.edges?.some(e => edgeKeyForEdge(e) === key)) || null;
+    }
+    // Pipeline runtime visibility hotfix: runtime state must not own canvas
+    // filtering. Working-group visibility remains handled by the canonical
+    // pipeline dropdown/group-filter layer; runtime state only colors/statuses
+    // groups. Mutating state.nodes/state.edges during render makes other groups
+    // disappear from connected-component discovery.
+    function runtimeVisibleNodeIdSet() { return null; }
+    function withRuntimeVisibleGraph(fn) { return fn(); }
+    function normalizeRuntimeStatus(status = 'not-ready') {
+      const s = String(status || 'not-ready').toLowerCase().replace(/_/g, '-');
+      return RUNTIME_STATUS_META[s] ? s : 'not-ready';
+    }
+    function runtimeStatusForGroupId(groupId) {
+      if (!groupId || groupId === 'ALL') return anyRuntimeGroupRunning() ? 'running' : 'not-ready';
+      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || 'not-ready');
+    }
+    function runtimeStatusForNode(node) {
+      return runtimeStatusForGroupId(runtimeGroupForNodeId(node?.id)?.id);
+    }
+    function edgePipelineRuntimeState(ep) {
+      const g = runtimeGroupForEdgeKey(edgeKeyFromParts(ep?.from, ep?.fromPort, ep?.to, ep?.toPort));
+      return runtimeStatusForGroupId(g?.id);
+    }
+    function anyRuntimeGroupRunning() {
+      return [...pipelineRuntimeStates.values()].some(s => normalizeRuntimeStatus(s?.status) === 'running');
+    }
+    function setGlobalRunningFromGroups() {
+      running = anyRuntimeGroupRunning();
+      return running;
+    }
+    function targetRuntimeGroupId() {
+      const selected = $('#pipelineSelect')?.value || activeRuntimeGroupId || 'ALL';
+      if (selected && selected !== 'ALL') return selected;
+      const fromNode = runtimeGroupForNodeId(selectedNodeId);
+      if (fromNode) return fromNode.id;
+      const fromEdge = runtimeGroupForEdgeKey(selectedEdgeKey);
+      if (fromEdge) return fromEdge.id;
+      return 'ALL';
+    }
+    function setRuntimeStatusForGroup(groupId, status, reason = '') {
+      const normalized = normalizeRuntimeStatus(status);
+      const ids = groupId === 'ALL' ? runtimeGroups().map(g => g.id) : [groupId];
+      ids.filter(Boolean).forEach(id => {
+        const g = runtimeGroupById(id);
+        pipelineRuntimeStates.set(id, {
+          status: normalized,
+          updatedAt: Date.now(),
+          reason,
+          displayName: g?.displayName || g?.name || id
+        });
+      });
+      setGlobalRunningFromGroups();
+      renderRuntimeStateVisuals();
+    }
+    function markGroupsNotReadyForGraphMutation(kind = '', payload = {}) {
+      const mutationKinds = new Set(['connection_added', 'connections_removed', 'selection_deleted', 'selection_pasted', 'selection_cut', 'undo', 'redo', 'node_added', 'node_removed']);
+      if (!mutationKinds.has(kind)) return;
+      const ids = new Set();
+      const addNode = id => { const g = runtimeGroupForNodeId(id); if (g) ids.add(g.id); };
+      if (payload?.node_id) addNode(payload.node_id);
+      if (Array.isArray(payload?.nodes)) payload.nodes.forEach(n => addNode(n.id || n.node_id || n));
+      if (Array.isArray(payload?.edges)) payload.edges.forEach(e => { addNode(e.from); addNode(e.to); });
+      if (!ids.size) runtimeGroups().forEach(g => ids.add(g.id));
+      ids.forEach(id => {
+        const st = runtimeStatusForGroupId(id);
+        if (st === 'validated' || st === 'built' || st === 'stopped') setRuntimeStatusForGroup(id, 'not-ready', kind);
+      });
+    }
+    function runtimeStatusText(status) {
+      const normalized = normalizeRuntimeStatus(status);
+      return `● ${RUNTIME_STATUS_META[normalized].label}`;
+    }
+    function decorateRuntimeSelectOptions() {
+      const select = $('#pipelineSelect');
+      if (!select) return;
+      const groups = runtimeGroups();
+      const validIds = new Set(['ALL', ...groups.map(g => g.id)]);
+      const currentSelectValue = select.value || 'ALL';
+      if (!validIds.has(currentSelectValue)) select.value = 'ALL';
+      [...select.options].forEach(opt => {
+        const id = opt.value || 'ALL';
+        if (id === 'ALL') return;
+        const status = runtimeStatusForGroupId(id);
+        opt.dataset.runtimeStatus = status;
+        const g = groups.find(x => x.id === id);
+        const base = g ? `${g.displayName || g.name || id} — ${g.statusLabel || g.status || 'Working'} · ${g.nodes.length}N/${g.edges.length}E` : opt.textContent.replace(/ · (Not Ready|Validated|Built|Active|Stopped|Error)$/i, '');
+        opt.textContent = `${base} · ${RUNTIME_STATUS_META[status].label}`;
+      });
+    }
+    function selectedRuntimeGroupForInspector() {
+      if (selectedNodeId) return runtimeGroupForNodeId(selectedNodeId);
+      if (selectedEdgeKey) return runtimeGroupForEdgeKey(selectedEdgeKey);
+      if (activeRuntimeGroupId !== 'ALL') return runtimeGroupById(activeRuntimeGroupId);
+      return null;
+    }
+    function updateInspectorRuntimeStatus() {
+      const label = document.querySelector('.active-label');
+      if (!label) return;
+      const g = selectedRuntimeGroupForInspector();
+      const status = runtimeStatusForGroupId(g?.id);
+      label.classList.remove('runtime-not-ready', 'runtime-validated', 'runtime-built', 'runtime-running', 'runtime-stopped', 'runtime-error');
+      label.classList.add(`runtime-${status}`);
+      label.textContent = runtimeStatusText(status);
+      label.title = g ? `${g.displayName || g.name || g.id} · ${RUNTIME_STATUS_META[status].label}` : RUNTIME_STATUS_META[status].label;
+    }
+    function updateNodeRuntimeClasses() {
+      document.querySelectorAll('.pipeline-node').forEach(el => {
+        const n = nodeById(el.dataset.id);
+        const status = runtimeStatusForNode(n);
+        el.classList.remove('runtime-not-ready', 'runtime-validated', 'runtime-built', 'runtime-running', 'runtime-stopped', 'runtime-error');
+        el.classList.add(`runtime-${status}`);
+        el.dataset.runtimeStatus = status;
+        el.title = `${n?.name || el.dataset.id || 'Node'} · ${RUNTIME_STATUS_META[status].label}`;
+      });
+    }
+    function renderRuntimeStateVisuals() {
+      decorateRuntimeSelectOptions();
+      updateNodeRuntimeClasses();
+      updateInspectorRuntimeStatus();
+      drawEdges();
+      updateHistoryButtons();
+    }
+    async function postRuntimeGroupState(action, groupId, status) {
+      const groups = runtimeGroups();
+      const selectedGroups = groupId === 'ALL' ? groups : groups.filter(g => g.id === groupId);
+      const payload = {
+        session_id: API_SESSION_ID,
+        project: currentProjectFile,
+        pipeline_id: currentPipelineId,
+        group_id: groupId,
+        scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
+        status,
+        running_groups: groups.filter(g => runtimeStatusForGroupId(g.id) === 'running').map(g => g.id),
+        nodes: selectedGroups.flatMap(g => g.nodes.map(n => n.id)),
+        edges: selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge))
+      };
+      const path = action === 'stop' ? '/api/runtime/stop' : '/api/runtime/run';
+      try { return await apiPost(path, payload); } catch (e) { return null; }
+    }
+    function startRuntimeGroup(groupId = targetRuntimeGroupId()) {
+      setRuntimeStatusForGroup(groupId, 'running', 'run_button');
+      postRuntimeGroupState('run', groupId, 'running');
+      if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();
+      const label = groupId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId);
+      addLog('ok', 'Pipeline running', `${label} started`);
+      toast(`${label} running`, 'ok');
+    }
+    function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
+      const stopId = groupId === 'ALL' ? 'ALL' : groupId;
+      setRuntimeStatusForGroup(stopId, 'stopped', 'stop_button');
+      postRuntimeGroupState('stop', stopId, 'stopped');
+      const label = stopId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(stopId)?.displayName || stopId);
+      addLog('warn', 'Pipeline stopped', `${label} stopped`);
+      toast(`${label} stopped`, 'warn');
+    }
+    function setRuntimeGroupFilter(groupId) {
+      activeRuntimeGroupId = groupId || 'ALL';
+      const g = runtimeGroupById(activeRuntimeGroupId);
+      clearSelection();
+      if (g) {
+        selectedNodeIds = new Set(g.nodes.map(n => n.id));
+        selectedEdgeKeys = new Set(g.edges.map(edgeKeyForEdge));
+        selectedNodeId = g.nodes[0]?.id || '';
+        selectedEdgeKey = '';
+        inspectorRenderKey = '';
+      }
+      renderAll(true);
+      if (g) {
+        const b = boundsOfNodes(g.nodes);
+        const sc = getScrollEl();
+        if (sc) {
+          const z = state.zoom || 1;
+          sc.scrollLeft = Math.max(0, (b.x - 120) * z);
+          sc.scrollTop = Math.max(0, (b.y - 80) * z);
+          renderMinimap();
+        }
+        toast(`Showing only: ${g.displayName || g.name || g.id}`);
+      } else {
+        toast('Showing all working pipeline groups');
+      }
+      renderRuntimeStateVisuals();
+    }
+    function installPipelineScopedRuntimeControls() {
+      const runBtn = $('#runBtn'), stopBtn = $('#stopBtn'), validateBtn = $('#validateBtn'), buildBtn = $('#buildBtn'), select = $('#pipelineSelect');
+      runBtn?.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); startRuntimeGroup(); }, true);
+      stopBtn?.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); stopRuntimeGroup(); }, true);
+      validateBtn?.addEventListener('click', () => { setRuntimeStatusForGroup(targetRuntimeGroupId(), 'validated', 'validate_button'); renderRuntimeStateVisuals(); });
+      buildBtn?.addEventListener('click', () => { setRuntimeStatusForGroup(targetRuntimeGroupId(), 'built', 'build_button'); renderRuntimeStateVisuals(); });
+      setRuntimeStatusForGroup('ALL', 'not-ready', 'initial');
+    }
+    const __renderNodesBeforePipelineRuntimeState = renderNodes;
+    renderNodes = function () {
+      const out = __renderNodesBeforePipelineRuntimeState();
+      updateNodeRuntimeClasses();
+      return out;
+    };
+    const __drawEdgesBeforePipelineRuntimeState = drawEdges;
+    drawEdges = function () {
+      return __drawEdgesBeforePipelineRuntimeState();
+    };
+    const __renderMinimapBeforePipelineRuntimeState = renderMinimap;
+    renderMinimap = function () {
+      return __renderMinimapBeforePipelineRuntimeState();
+    };
+    const __renderPipelineSelectBeforePipelineRuntimeState = renderPipelineSelect;
+    renderPipelineSelect = function () {
+      const out = __renderPipelineSelectBeforePipelineRuntimeState?.();
+      decorateRuntimeSelectOptions();
+      return out;
+    };
+    const __renderInspectorBeforePipelineRuntimeState = renderInspector;
+    renderInspector = function () {
+      const out = __renderInspectorBeforePipelineRuntimeState();
+      updateInspectorRuntimeStatus();
+      return out;
+    };
+    const __renderAllBeforePipelineRuntimeState = renderAll;
+    renderAll = function (rebuildNodes = true) {
+      const out = __renderAllBeforePipelineRuntimeState(rebuildNodes);
+      renderRuntimeStateVisuals();
+      return out;
+    };
+    const __renderRuntimeTelemetryBeforePipelineRuntimeState = renderRuntimeTelemetry;
+    renderRuntimeTelemetry = function () {
+      const out = __renderRuntimeTelemetryBeforePipelineRuntimeState();
+      renderRuntimeStateVisuals();
+      return out;
+    };
+    const __backendEditBeforePipelineRuntimeState = backendEdit;
+    backendEdit = function (kind, payload = {}) {
+      try { markGroupsNotReadyForGraphMutation(kind, payload); } catch (e) { }
+      return __backendEditBeforePipelineRuntimeState(kind, payload);
+    };
+    window.audioStudioPipelineRuntimeState = {
+      runtimeGroups,
+      runtimeStatusForGroupId,
+      setRuntimeStatusForGroup,
+      startRuntimeGroup,
+      stopRuntimeGroup,
+      targetRuntimeGroupId,
+      setRuntimeGroupFilter,
+      edgePipelineRuntimeState,
+      runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === 'running')
+    };
+
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
     setupPanelMenuAutoClose();
     setupBackendNotificationPolling();
+    installPipelineScopedRuntimeControls();
 
     // bounded dashboard strip + checkbox-order driven panel layout.
     {
