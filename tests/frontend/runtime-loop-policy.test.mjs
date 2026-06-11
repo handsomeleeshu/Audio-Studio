@@ -23,5 +23,21 @@ assert.ok(
   html.includes('dspCorePollDelayV65a') && !html.includes('setInterval(refreshDspCoreLoadingV65a,700)'),
   'DSP core loading refresh should use dynamic polling rather than a fixed 700 ms interval'
 );
+assert.ok(
+  html.includes('telemetryPollDelay') && !html.includes('setInterval(updateRandom,600)'),
+  'telemetry refresh should use dynamic polling rather than a fixed 600 ms interval'
+);
+assert.ok(
+  html.includes('inspectorPollDelay') && !html.includes('setInterval(refreshInspectorBackend,350)'),
+  'inspector live refresh should use dynamic polling rather than a fixed 350 ms interval'
+);
+assert.ok(
+  html.includes('rtProbePollDelayV66Fresh') && !html.includes('setInterval(()=>rtProbeRefreshBackendV66Fresh(false),200)'),
+  'realtime probe refresh should use dynamic polling rather than a fixed 200 ms interval'
+);
+assert.ok(
+  html.includes('rtProbeShouldDrawBlankV66Fresh'),
+  'realtime probe should avoid redrawing blank canvas every poll when inactive'
+);
 
 console.log('runtime-loop-policy.test passed');

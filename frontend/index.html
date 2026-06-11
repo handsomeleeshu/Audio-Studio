@@ -745,6 +745,12 @@
     const AUDIO_STUDIO_RUNNING_DASHBOARD_POLL_MS = 3000;
     const AUDIO_STUDIO_STOPPED_CORE_POLL_MS = 5000;
     const AUDIO_STUDIO_RUNNING_CORE_POLL_MS = 3000;
+    const AUDIO_STUDIO_STOPPED_TELEMETRY_POLL_MS = 5000;
+    const AUDIO_STUDIO_RUNNING_TELEMETRY_POLL_MS = 600;
+    const AUDIO_STUDIO_STOPPED_INSPECTOR_POLL_MS = 5000;
+    const AUDIO_STUDIO_RUNNING_INSPECTOR_POLL_MS = 700;
+    const AUDIO_STUDIO_INACTIVE_RT_PROBE_POLL_MS = 1000;
+    const AUDIO_STUDIO_RUNNING_RT_PROBE_POLL_MS = 200;
 
     const API_SESSION_ID = 'standalone_html_demo';
     async function apiPost(path, body = {}) {
@@ -5529,7 +5535,39 @@
 	      if(running){ t+=2; drawWave($('#mainWave')); drawInspectorProbeCanvases(); }
 	      scheduleAnimationLoop();
 	    }
-    function inferNodePipelineId(n){
+	    let telemetryPollTimer=0;
+	    let inspectorPollTimer=0;
+	    function telemetryPollDelay(){
+	      return running ? AUDIO_STUDIO_RUNNING_TELEMETRY_POLL_MS : AUDIO_STUDIO_STOPPED_TELEMETRY_POLL_MS;
+	    }
+	    function inspectorPollDelay(){
+	      return running ? AUDIO_STUDIO_RUNNING_INSPECTOR_POLL_MS : AUDIO_STUDIO_STOPPED_INSPECTOR_POLL_MS;
+	    }
+	    function scheduleTelemetryPoll(){
+	      if(telemetryPollTimer) return;
+	      telemetryPollTimer=setTimeout(async ()=>{
+	        telemetryPollTimer=0;
+	        await updateRandom();
+	        scheduleTelemetryPoll();
+	      },telemetryPollDelay());
+	    }
+	    function wakeTelemetryPoll(){
+	      if(telemetryPollTimer){clearTimeout(telemetryPollTimer); telemetryPollTimer=0;}
+	      scheduleTelemetryPoll();
+	    }
+	    function scheduleInspectorPoll(){
+	      if(inspectorPollTimer) return;
+	      inspectorPollTimer=setTimeout(async ()=>{
+	        inspectorPollTimer=0;
+	        await refreshInspectorBackend();
+	        scheduleInspectorPoll();
+	      },inspectorPollDelay());
+	    }
+	    function wakeInspectorPoll(){
+	      if(inspectorPollTimer){clearTimeout(inspectorPollTimer); inspectorPollTimer=0;}
+	      scheduleInspectorPoll();
+	    }
+	    function inferNodePipelineId(n){
       if(n.pipelineId) return n.pipelineId;
       const s=String(n.id||'');
       return s.includes('__') ? s.split('__')[0] : 'MANUAL';
@@ -8220,11 +8258,23 @@
     // v66fresh: backend-driven high-resolution Real-Time Signal Probe.
     // No frontend fake waveform/spectrum is generated here; data comes only from
     // /api/realtime/probe/live and mode/channel changes are sent to backend.
-    if(!window.__audioStudioRealTimeProbeV66FreshInstalled){
-      window.__audioStudioRealTimeProbeV66FreshInstalled=true;
-      const rtProbeV66Fresh={mode:'time',chA:0,chB:1,last:null,busy:false,lastFetch:0,backendOk:false,menu:null};
-      function rtProbeIsBufferSelectedV66Fresh(){ return !!selectedEdgeKey && !selectedNodeId && typeof currentInspectedEdgeParts==='function' && !!currentInspectedEdgeParts(); }
-      function rtProbeEdgeV66Fresh(){ return rtProbeIsBufferSelectedV66Fresh()?currentInspectedEdgeParts():null; }
+	    if(!window.__audioStudioRealTimeProbeV66FreshInstalled){
+	      window.__audioStudioRealTimeProbeV66FreshInstalled=true;
+	      const rtProbeV66Fresh={mode:'time',chA:0,chB:1,last:null,busy:false,lastFetch:0,backendOk:false,menu:null};
+	      let rtProbePollTimerV66Fresh=0;
+	      function rtProbeIsBufferSelectedV66Fresh(){ return !!selectedEdgeKey && !selectedNodeId && typeof currentInspectedEdgeParts==='function' && !!currentInspectedEdgeParts(); }
+	      function rtProbeEdgeV66Fresh(){ return rtProbeIsBufferSelectedV66Fresh()?currentInspectedEdgeParts():null; }
+	      function rtProbePollDelayV66Fresh(){
+	        return running && rtProbeEdgeV66Fresh() ? AUDIO_STUDIO_RUNNING_RT_PROBE_POLL_MS : AUDIO_STUDIO_INACTIVE_RT_PROBE_POLL_MS;
+	      }
+	      function scheduleRtProbePollV66Fresh(){
+	        if(rtProbePollTimerV66Fresh) return;
+	        rtProbePollTimerV66Fresh=setTimeout(async ()=>{
+	          rtProbePollTimerV66Fresh=0;
+	          await rtProbeRefreshBackendV66Fresh(false);
+	          scheduleRtProbePollV66Fresh();
+	        },rtProbePollDelayV66Fresh());
+	      }
       function rtProbeFormatV66Fresh(ep){
         const fmt=ep && typeof edgeBufferFormat==='function' ? edgeBufferFormat(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:256,label:'2ch · 48 kHz · 16-bit'};
         fmt.channels=Math.max(1,Number(fmt.channels||2));
@@ -8306,22 +8356,31 @@
         const qp=new URLSearchParams({running:running?'1':'0',mode:rtProbeV66Fresh.mode,edge_key:selectedEdgeKey||'',from:ep?`${ep.from}.${ep.fromPort}`:'',to:ep?`${ep.to}.${ep.toPort}`:'',channels:String(fmt.channels),sample_rate:String(fmt.sampleRate),bits:String(fmt.bits),frame_samples:String(frame),channel_a:String(rtProbeV66Fresh.chA),channel_b:String(rtProbeV66Fresh.chB)});
         return '/api/realtime/probe/live?'+qp.toString();
       }
-      async function rtProbeRefreshBackendV66Fresh(force=false){
-        const now=Date.now();
-        if(!force && now-rtProbeV66Fresh.lastFetch<180) return;
-        rtProbeV66Fresh.lastFetch=now;
-        if(rtProbeV66Fresh.busy) return;
+	      async function rtProbeRefreshBackendV66Fresh(force=false){
+	        const now=Date.now();
+	        if(!force && now-rtProbeV66Fresh.lastFetch<180) return;
+	        rtProbeV66Fresh.lastFetch=now;
+	        if(rtProbeV66Fresh.busy) return;
         rtProbeV66Fresh.busy=true;
         try{
-          const ep=rtProbeEdgeV66Fresh();
-          rtProbeClampChannelsV66Fresh();
-          if(!ep||!running){ rtProbeV66Fresh.last=null; rtProbeV66Fresh.backendOk=false; rtProbeDrawV66Fresh(); return; }
-          const data=await apiGet(rtProbeQueryV66Fresh(ep));
-          if(data&&data.ok!==false){ rtProbeV66Fresh.last=data; rtProbeV66Fresh.backendOk=true; }
-          else { rtProbeV66Fresh.last=null; rtProbeV66Fresh.backendOk=false; }
-          rtProbeDrawV66Fresh();
-        }finally{ rtProbeV66Fresh.busy=false; }
-      }
+	          const ep=rtProbeEdgeV66Fresh();
+	          rtProbeClampChannelsV66Fresh();
+	          if(!ep||!running){
+	            const shouldDraw=rtProbeShouldDrawBlankV66Fresh(force);
+	            rtProbeV66Fresh.last=null;
+	            rtProbeV66Fresh.backendOk=false;
+	            if(shouldDraw) rtProbeDrawV66Fresh();
+	            return;
+	          }
+	          const data=await apiGet(rtProbeQueryV66Fresh(ep));
+	          if(data&&data.ok!==false){ rtProbeV66Fresh.last=data; rtProbeV66Fresh.backendOk=true; }
+	          else { rtProbeV66Fresh.last=null; rtProbeV66Fresh.backendOk=false; }
+	          rtProbeDrawV66Fresh();
+	        }finally{ rtProbeV66Fresh.busy=false; }
+	      }
+	      function rtProbeShouldDrawBlankV66Fresh(force=false){
+	        return !!(force || rtProbeV66Fresh.last || rtProbeV66Fresh.backendOk);
+	      }
       function rtProbeDrawGridV66Fresh(ctx,w,h){
         ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h);
         ctx.strokeStyle='rgba(90,126,170,.25)'; ctx.lineWidth=1;
@@ -8372,11 +8431,11 @@
       drawWave=function(canvas){
         if(canvas&&canvas.id==='mainWave'){ rtProbeDrawV66Fresh(); return; }
         return __drawWaveBeforeRealTimeProbeV66Fresh(canvas);
-      };
-      rtProbeSetupControlsV66Fresh();
-      setInterval(()=>rtProbeRefreshBackendV66Fresh(false),200);
-      window.audioStudioRealTimeProbeV66Fresh={rtProbeRefreshBackendV66Fresh,rtProbeDrawV66Fresh,backendOnly:true,fftSize:4096};
-    }
+	      };
+	      rtProbeSetupControlsV66Fresh();
+	      scheduleRtProbePollV66Fresh();
+	      window.audioStudioRealTimeProbeV66Fresh={rtProbeRefreshBackendV66Fresh,rtProbeDrawV66Fresh,backendOnly:true,fftSize:4096};
+	    }
 
     function exportJson(){
       const data={target:{dsp:'HiFi5',cores:4,sampleRate:48000,frameSize:256},nodes:state.nodes.map(n=>({id:n.id,module:n.name,x:n.x,y:n.y,in_ports:(n.inPorts||[]).map(p=>p.name),out_ports:(n.outPorts||[]).map(p=>p.name),ports_flipped:!!n.portsFlipped,params:{cpu:n.cpu,latency:n.lat,core:n.core}})),connections:state.edges.map(e=>{const p=edgeParts(e); return {from:p.from+'.'+p.fromPort,to:p.to+'.'+p.toPort};})};
@@ -8483,8 +8542,8 @@
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
       $('#validateBtn').addEventListener('click',async ()=>{ const res=await apiPost('/api/pipeline/validate',pipelineSnapshot()); const warnings=res?.warnings||[]; const errors=res?.errors||[]; $('#warnCount').textContent=String(warnings.length); $('#errCount').textContent=String(errors.length); addLog(errors.length?'warn':'ok','Pipeline validated','Backend callback: /api/pipeline/validate'); toast(errors.length?'Validate failed':'Validate success');});
       $('#buildBtn').addEventListener('click',async ()=>{ buildState='building'; running=false; $('#playBtn').textContent='▶'; $('.badge.ok').textContent='◌ BUILDING'; toast('Building...'); addLog('info','Build started','Calling /api/pipeline/build'); const res=await apiPost('/api/pipeline/build',pipelineSnapshot()); setTimeout(()=>{buildState=res?.ok===false?'failed':'success'; $('.badge.ok').textContent=buildState==='success'?'● BUILD SUCCESS':'● BUILD FAILED'; if(res?.core_map){/* reserved for real DSP mapping */} else state.nodes.forEach(n=>n.core=Math.floor(Math.random()*4)); renderAll(true); addLog(buildState==='success'?'ok':'warn',buildState==='success'?'Build successful':'Build failed','Backend callback: /api/pipeline/build'); toast(buildState==='success'?'Build success':'Build failed');},300);});
-      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; if(running) wakeAnimationLoop(); inspectorBackendContextKey=''; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); refreshInspectorBackend(); drawEdges(); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
-      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; inspectorBackendContextKey=''; if(bufferDumpState.active) await stopBufferDump('pipeline_stopped'); $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); refreshInspectorBackend(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
+      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; if(running){ wakeAnimationLoop(); wakeTelemetryPoll(); wakeInspectorPoll(); } inspectorBackendContextKey=''; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); refreshInspectorBackend(); drawEdges(); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
+      $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; wakeTelemetryPoll(); wakeInspectorPoll(); inspectorBackendContextKey=''; if(bufferDumpState.active) await stopBufferDump('pipeline_stopped'); $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); refreshInspectorBackend(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn')?.addEventListener('click',undoEdit);
       $('#redoBtn')?.addEventListener('click',redoEdit);
@@ -8496,7 +8555,7 @@
       $('#changeFileBtn')?.addEventListener('click',()=>$('#fileInput')?.click());
       $('#fileInput')?.addEventListener('change',e=>{ if(e.target.files[0]){const fileNameEl=$('#fileName'); if(fileNameEl) fileNameEl.textContent=e.target.files[0].name; backendEdit('audio_file_changed',{file_name:e.target.files[0].name}); addLog('info','Audio file changed',e.target.files[0].name);} });
       // Inspector parameters are now generated dynamically from module JSON runtime_params.
-      setInterval(updateRandom,600); setInterval(refreshInspectorBackend,350); refreshInspectorBackend(); animate();
+      scheduleTelemetryPoll(); scheduleInspectorPoll(); refreshInspectorBackend(); animate();
     }
     window.addEventListener('resize',()=>{updateWorldBounds(); if(!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true);});
     init();
