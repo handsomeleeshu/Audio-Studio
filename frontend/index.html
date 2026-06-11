@@ -8118,11 +8118,15 @@
       window.__audioStudioBackendDashboardLiveV69Installed=true;
       document.body.classList.add('backend-dashboard-live-v69');
       let backendEventLogStateV69={ok:false,events:[],lastError:false};
-      let backendHealthStateV69={ok:false,summary:null,rows:[],lastError:false};
-      let backendAudioIoStateV69={ok:false,channels:[],lastError:false};
-      let dashboardRefreshBusyV69=false;
-      let telemetryMissingLoggedV69=false;
-      let dashboardPollTimerV69=0;
+	      let backendHealthStateV69={ok:false,summary:null,rows:[],lastError:false};
+	      let backendAudioIoStateV69={ok:false,channels:[],lastError:false};
+	      let dashboardRefreshBusyV69=false;
+	      let telemetryMissingLoggedV69=false;
+	      let dashboardPollTimerV69=0;
+	      let eventLogRefreshTimerV69=0;
+	      let eventLogRefreshBusyV69=false;
+	      const EVENT_LOG_REFRESH_DEBOUNCE_MS_V69=140;
+	      const EVENT_LOG_RUNNING_POLL_MS_V69=1500;
 
       function fmtNumV69(v,d=1){const n=Number(v);return Number.isFinite(n)?n.toFixed(d):'N/A';}
       function pctV69(v){const n=Number(v);return Number.isFinite(n)?clamp(n,0,100):0;}
@@ -8140,32 +8144,51 @@
         },dashboardPollDelayV69());
       }
 
-      function eventLogUrlV69(){return `/api/event-log/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&limit=120&_=${Date.now()}`;}
-      function systemHealthUrlV69(){return `/api/system/health/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&cores=${encodeURIComponent($('#coreSelect')?.value||4)}&nodes=${state.nodes.length}&_=${Date.now()}`;}
-      function audioIoUrlV69(){return `/api/audio/io/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&sample_rate=${encodeURIComponent($('#rateSelect')?.value||48000)}&_=${Date.now()}`;}
+	      function eventLogUrlV69(){return `/api/event-log/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&limit=120&_=${Date.now()}`;}
+	      function systemHealthUrlV69(){return `/api/system/health/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&cores=${encodeURIComponent($('#coreSelect')?.value||4)}&nodes=${state.nodes.length}&_=${Date.now()}`;}
+	      function audioIoUrlV69(){return `/api/audio/io/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&sample_rate=${encodeURIComponent($('#rateSelect')?.value||48000)}&_=${Date.now()}`;}
+	      function cancelScheduledEventLogRefreshV69(){
+	        if(eventLogRefreshTimerV69){clearTimeout(eventLogRefreshTimerV69); eventLogRefreshTimerV69=0;}
+	      }
+	      function scheduleEventLogRefreshV69(delay=EVENT_LOG_REFRESH_DEBOUNCE_MS_V69){
+	        if(eventLogRefreshTimerV69) return;
+	        eventLogRefreshTimerV69=setTimeout(()=>{
+	          eventLogRefreshTimerV69=0;
+	          refreshEventLogBackendV69();
+	        },delay);
+	      }
 
-      function renderLogsFromBackendV69(){
-        const el=$('#eventLog'); if(!el) return;
-        const events=backendEventLogStateV69.events || [];
-        if(!backendEventLogStateV69.ok){renderBackendUnavailableV69(el,'Backend Event Log unavailable');return;}
+	      function renderLogsFromBackendV69(){
+	        const el=$('#eventLog'); if(!el) return;
+	        const events=backendEventLogStateV69.events || [];
+	        if(!backendEventLogStateV69.ok){renderBackendUnavailableV69(el,'Backend Event Log unavailable');return;}
         if(!events.length){renderBackendUnavailableV69(el,'No backend events yet');return;}
-        el.innerHTML=events.map(l=>`<div class="log-item"><span class="log-time">${escapeHtml(String(l.time||'--:--').slice(0,5))}</span><i class="log-dot ${logKindV69(l.kind)}"></i><div><b>${escapeHtml(l.msg||l.message||'Event')}</b><br><small style="color:var(--muted)">${escapeHtml(l.sub||l.detail||l.source||'')}</small></div></div>`).join('');
-      }
-      async function refreshEventLogBackendV69(){
-        const data=await apiGet(eventLogUrlV69());
-        if(data && data.ok!==false && Array.isArray(data.events)){
-          backendEventLogStateV69={ok:true,events:data.events,lastError:false};
-        }else{
-          backendEventLogStateV69={ok:false,events:[],lastError:true};
-        }
-        state.logs=backendEventLogStateV69.events || [];
-        renderLogsFromBackendV69();
-        return backendEventLogStateV69.ok;
-      }
-      const postUiEventToBackendV69=(kind,msg,sub='')=>apiPost('/api/ui/event',{kind,msg,sub,source:'frontend_ui',session_id:API_SESSION_ID,timestamp_ms:Date.now()});
-      addLog=function(kind,msg,sub=''){
-        postUiEventToBackendV69(kind,msg,sub).finally(()=>refreshEventLogBackendV69());
-      };
+	        el.innerHTML=events.map(l=>`<div class="log-item"><span class="log-time">${escapeHtml(String(l.time||'--:--').slice(0,5))}</span><i class="log-dot ${logKindV69(l.kind)}"></i><div><b>${escapeHtml(l.msg||l.message||'Event')}</b><br><small style="color:var(--muted)">${escapeHtml(l.sub||l.detail||l.source||'')}</small></div></div>`).join('');
+	      }
+	      async function refreshEventLogBackendV69(){
+	        if(eventLogRefreshBusyV69){
+	          scheduleEventLogRefreshV69(EVENT_LOG_REFRESH_DEBOUNCE_MS_V69);
+	          return false;
+	        }
+	        eventLogRefreshBusyV69=true;
+	        try{
+	          const data=await apiGet(eventLogUrlV69());
+	          if(data && data.ok!==false && Array.isArray(data.events)){
+	            backendEventLogStateV69={ok:true,events:data.events,lastError:false};
+	          }else{
+	            backendEventLogStateV69={ok:false,events:[],lastError:true};
+	          }
+	          state.logs=backendEventLogStateV69.events || [];
+	          renderLogsFromBackendV69();
+	          return backendEventLogStateV69.ok;
+	        }finally{
+	          eventLogRefreshBusyV69=false;
+	        }
+	      }
+	      const postUiEventToBackendV69=(kind,msg,sub='')=>apiPost('/api/ui/event',{kind,msg,sub,source:'frontend_ui',session_id:API_SESSION_ID,timestamp_ms:Date.now()});
+	      addLog=function(kind,msg,sub=''){
+	        postUiEventToBackendV69(kind,msg,sub).finally(()=>scheduleEventLogRefreshV69());
+	      };
       renderLogs=function(){renderLogsFromBackendV69();};
 
       function normalizeHealthRowsV69(data){
@@ -8244,21 +8267,23 @@
       }
       renderMeters=function(){renderMetersFromBackendV69();};
 
-      async function refreshBackendDashboardLiveV69(){
-        if(dashboardRefreshBusyV69) return false;
-        dashboardRefreshBusyV69=true;
-        try{
-          const out=await Promise.allSettled([refreshEventLogBackendV69(),refreshSystemHealthBackendV69(),refreshAudioIoBackendV69()]);
-          return out.some(x=>x.status==='fulfilled' && x.value);
-        }finally{dashboardRefreshBusyV69=false;}
-      }
+	      async function refreshBackendDashboardLiveV69(){
+	        if(dashboardRefreshBusyV69) return false;
+	        dashboardRefreshBusyV69=true;
+	        try{
+	          cancelScheduledEventLogRefreshV69();
+	          const out=await Promise.allSettled([refreshEventLogBackendV69(),refreshSystemHealthBackendV69(),refreshAudioIoBackendV69()]);
+	          return out.some(x=>x.status==='fulfilled' && x.value);
+	        }finally{dashboardRefreshBusyV69=false;}
+	      }
       const __syncTelemetryBeforeDashboardLiveV69=syncTelemetryFromBackend;
-      syncTelemetryFromBackend=async function(){
-        let ok=false;
-        try{ok=await __syncTelemetryBeforeDashboardLiveV69();}catch(e){ok=false;}
-        await Promise.allSettled([refreshSystemHealthBackendV69(),refreshAudioIoBackendV69(),refreshEventLogBackendV69()]);
-        return ok;
-      };
+	      syncTelemetryFromBackend=async function(){
+	        let ok=false;
+	        try{ok=await __syncTelemetryBeforeDashboardLiveV69();}catch(e){ok=false;}
+	        await Promise.allSettled([refreshSystemHealthBackendV69(),refreshAudioIoBackendV69()]);
+	        scheduleEventLogRefreshV69(EVENT_LOG_RUNNING_POLL_MS_V69);
+	        return ok;
+	      };
       updateRandom=async function(){
         if(!running) return false;
         const fromBackend=await syncTelemetryFromBackend();

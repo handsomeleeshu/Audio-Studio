@@ -55,5 +55,13 @@ assert.ok(
   html.includes('const telemetryOnlyV49=window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49'),
   'v50 should avoid chaining through v49 cost refresh during telemetry ticks'
 );
+assert.ok(
+  html.includes('EVENT_LOG_REFRESH_DEBOUNCE_MS_V69') && html.includes('scheduleEventLogRefreshV69(EVENT_LOG_RUNNING_POLL_MS_V69)'),
+  'event log refreshes should be debounced and rate-limited during running telemetry ticks'
+);
+assert.ok(
+  !html.includes('.finally(()=>refreshEventLogBackendV69())'),
+  'UI event posting must not trigger an immediate full event-log refresh for every log line'
+);
 
 console.log('runtime-loop-policy.test passed');
