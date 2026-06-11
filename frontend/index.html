@@ -3226,6 +3226,30 @@
       --layout-edge-gutter: 10px;
     }
 
+    /* Flexible closed-panel layout occupancy. */
+    .app {
+      --layout-left-col: 260px;
+      --layout-center-min: 600px;
+      --layout-right-col: 360px;
+      --layout-bottom-row: 292px;
+      grid-template-columns: var(--layout-left-col) minmax(var(--layout-center-min), 1fr) var(--layout-right-col);
+      grid-template-rows: 86px minmax(0, 1fr) var(--layout-bottom-row);
+    }
+
+    @media(max-width:1320px) {
+      .app {
+        --layout-left-col: 230px;
+        --layout-center-min: 500px;
+        --layout-right-col: 320px;
+      }
+    }
+
+    @media(max-height:760px) {
+      .app {
+        --layout-bottom-row: 250px;
+      }
+    }
+
     .app.layout-left-collapsed .canvas-zone,
     .app.layout-left-collapsed .bottom {
       margin-left: var(--layout-edge-gutter) !important;
@@ -3250,15 +3274,6 @@
 
     .app.layout-right-collapsed .bottom {
       border-right: 1px solid var(--line) !important;
-    }
-
-    /* Flexible closed-panel layout occupancy. */
-    .app {
-      --layout-left-col: 260px;
-      --layout-right-col: 360px;
-      --layout-bottom-row: 292px;
-      grid-template-columns: var(--layout-left-col) minmax(600px, 1fr) var(--layout-right-col) !important;
-      grid-template-rows: 86px minmax(0, 1fr) var(--layout-bottom-row) !important;
     }
 
     .app.layout-left-collapsed {
@@ -10686,18 +10701,22 @@
       const leftHidden = panelIsHiddenForLayout('leftPanel');
       const rightHidden = panelIsHiddenForLayout('rightPanel');
       const bottomHidden = !hasVisibleDashboardPanelForLayout();
+      const layoutChanged =
+        app.classList.contains('layout-left-collapsed') !== leftHidden ||
+        app.classList.contains('layout-right-collapsed') !== rightHidden ||
+        app.classList.contains('layout-bottom-collapsed') !== bottomHidden;
       app.classList.toggle('layout-left-collapsed', leftHidden);
       app.classList.toggle('layout-right-collapsed', rightHidden);
       app.classList.toggle('layout-bottom-collapsed', bottomHidden);
       const bottom = document.querySelector('.bottom');
       if (bottom) bottom.setAttribute('aria-hidden', bottomHidden ? 'true' : 'false');
+      if (!layoutChanged) return;
       const raf = window.requestAnimationFrame || (cb => setTimeout(cb, 0));
       raf(() => {
         try { updateWorldBounds(); } catch (e) { }
         try { applyZoom(false); } catch (e) { }
         try { renderMinimap(); } catch (e) { }
         try { drawEdges(); } catch (e) { }
-        try { backendTool('responsive_panel_layout', { reason, left_hidden: leftHidden, right_hidden: rightHidden, bottom_hidden: bottomHidden }); } catch (e) { }
       });
     }
     function scheduleResponsivePanelLayout(reason = '') {
@@ -10705,20 +10724,18 @@
       responsivePanelLayoutTimer = setTimeout(() => refreshResponsivePanelLayout(reason), 0);
     }
     function setupResponsivePanelLayout() {
-      document.addEventListener('audioStudioPanelVisibilityChanged', () => scheduleResponsivePanelLayout('panel_visibility_changed'));
+      window.addEventListener('audioStudioPanelVisibilityChanged', () => scheduleResponsivePanelLayout('panel_visibility_changed'));
       document.addEventListener('change', e => {
         if (e.target?.matches?.('#panelMenu input[data-panel]')) scheduleResponsivePanelLayout('panel_menu_changed');
       }, true);
       document.addEventListener('click', e => {
         if (e.target?.closest?.('[data-hide]')) scheduleResponsivePanelLayout('panel_close_button');
       }, true);
-      window.addEventListener('resize', () => scheduleResponsivePanelLayout('resize'));
       scheduleResponsivePanelLayout('initial');
     }
 
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
-    setupResponsivePanelLayout();
 
     // bounded dashboard strip + checkbox-order driven panel layout.
     {
@@ -10811,6 +10828,8 @@
       window.audioStudioDashboardStripV47 = { renderDashboardStripV47, dashboardCheckedOrderV47 };
 
     }
+
+    setupResponsivePanelLayout();
 
   </script>
 </body>
