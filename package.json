@@ -4,13 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "profile:frontend": "node tests/performance/profile_frontend.mjs",
     "test:frontend": "node tests/frontend/config-parser.test.mjs && node tests/frontend/layout.test.mjs && node tests/frontend/parameter-policy.test.mjs && node tests/frontend/connection-policy.test.mjs"
-  },
-  "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "devDependencies": {}
+  }
 }
