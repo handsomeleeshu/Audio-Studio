@@ -763,13 +763,13 @@
     }
 
     .pipeline-node.locked {
-      cursor: not-allowed;
+      cursor: pointer;
       opacity: .94
     }
 
     .pipeline-node.locked .port {
-      cursor: not-allowed;
-      filter: saturate(.5)
+      cursor: crosshair;
+      filter: saturate(.8)
     }
 
     .node-title {
@@ -3307,6 +3307,46 @@
     .app.layout-bottom-collapsed .right-panel {
       border-bottom: 0;
     }
+
+
+    /* Pipeline runtime UX polish. */
+    .pipeline-node.locked {
+      cursor: pointer;
+    }
+
+    .pipeline-node.locked .port {
+      cursor: crosshair;
+      filter: saturate(.8);
+    }
+
+    .toast {
+      top: 116px;
+    }
+
+    .toast.show {
+      top: 126px;
+    }
+
+    .toast.info,
+    .toast.ok {
+      color: #ccf6ff;
+      border-color: rgba(0, 216, 255, .5);
+      box-shadow: 0 0 24px rgba(0, 216, 255, .15);
+    }
+
+    .toast.warn {
+      color: #fff2c7;
+      border-color: rgba(255, 204, 69, .65);
+      box-shadow: 0 0 24px rgba(255, 204, 69, .18);
+    }
+
+    .toast.err,
+    .toast.error {
+      color: #ffd2d2;
+      border-color: rgba(255, 81, 81, .68);
+      box-shadow: 0 0 24px rgba(255, 81, 81, .18);
+    }
+
   </style>
 </head>
 
@@ -3574,6 +3614,97 @@
       }
       return null;
     }
+
+    // Pipeline runtime UX helper functions.
+    const edgeRuntimeFormatCache = new Map();
+    let backendNotificationLastPoll = 0;
+    function normalizeRuntimeFormat(fmt, fallback = null) {
+      const f = fmt || fallback || {};
+      const channels = Number(f.channels || fallback?.channels || 2);
+      const sampleRate = Number(f.sampleRate || f.sample_rate || fallback?.sampleRate || fallback?.sample_rate || 48000);
+      const bits = Number(f.bits || f.bitDepth || f.bit_depth || fallback?.bits || fallback?.bitDepth || 16);
+      const frameSamples = Number(f.frameSamples || f.frame_samples || fallback?.frameSamples || fallback?.frame_samples || 480);
+      const srText = formatSampleRateLabel(sampleRate);
+      return {
+        ...f,
+        channels: Math.max(1, channels || 2),
+        sampleRate: sampleRate || 48000,
+        bits: bits || 16,
+        frameSamples: frameSamples || 480,
+        label: f.label || f.format || `${Math.max(1, channels || 2)}ch · ${srText} · ${bits || 16}-bit`
+      };
+    }
+    function rememberEdgeRuntimeFormat(key, fmt, fallback = null) {
+      if (!key || !fmt) return null;
+      const normalized = normalizeRuntimeFormat(fmt, fallback);
+      edgeRuntimeFormatCache.set(key, normalized);
+      return normalized;
+    }
+    function cachedEdgeRuntimeFormat(key) {
+      return key ? edgeRuntimeFormatCache.get(key) || null : null;
+    }
+    function formatSampleRateLabel(rate) {
+      const sr = Number(rate || 48000);
+      if (!Number.isFinite(sr) || sr <= 0) return '48 kHz';
+      if (sr >= 1000) {
+        const khz = sr / 1000;
+        return `${Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1)} kHz`;
+      }
+      return `${Math.round(sr)} Hz`;
+    }
+    function inferredEdgeFormat(ep) {
+      const key = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : '';
+      const cached = cachedEdgeRuntimeFormat(key);
+      if (cached) return cached;
+      try {
+        const fromNode = nodeById(ep?.from);
+        const toNode = nodeById(ep?.to);
+        const outPort = nodePortList(fromNode || {}, 'out').find(p => p.name === ep?.fromPort) || {};
+        const inPort = nodePortList(toNode || {}, 'in').find(p => p.name === ep?.toPort) || {};
+        const ch = Number(outPort.max_ch || inPort.max_ch || String(fromNode?.ch || toNode?.ch || '2').replace(/\D/g, '') || 2);
+        return normalizeRuntimeFormat({ channels: ch, sampleRate: 48000, bits: 16, frameSamples: 480 });
+      } catch (e) {
+        return normalizeRuntimeFormat({ channels: 2, sampleRate: 48000, bits: 16, frameSamples: 480 });
+      }
+    }
+    function edgeSampleRateLabelForEdge(ep, key = '') {
+      const fmt = cachedEdgeRuntimeFormat(key) || inferredEdgeFormat(ep);
+      return formatSampleRateLabel(fmt?.sampleRate || fmt?.sample_rate || 48000);
+    }
+    function setupPanelMenuAutoClose() {
+      const menu = $('#panelMenu');
+      const button = $('#panelMenuBtn');
+      if (!menu || !button || menu.dataset.autoCloseInstalled === '1') return;
+      menu.dataset.autoCloseInstalled = '1';
+      document.addEventListener('pointerdown', e => {
+        if (!menu.classList.contains('show')) return;
+        if (menu.contains(e.target) || button.contains(e.target)) return;
+        menu.classList.remove('show');
+      }, true);
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') menu.classList.remove('show');
+      }, true);
+    }
+    async function refreshBackendNotifications() {
+      const data = await apiGet(`/api/ui/notify?after=${encodeURIComponent(String(backendNotificationLastPoll || 0))}`);
+      if (!data?.ok || !Array.isArray(data.messages)) return false;
+      data.messages.forEach(item => {
+        const id = Number(item.id || 0);
+        if (id > backendNotificationLastPoll) backendNotificationLastPoll = id;
+        const level = String(item.level || item.kind || 'info').toLowerCase();
+        const message = item.message || item.msg || item.text || '';
+        if (message) toast(message, level);
+        addLog(level === 'error' || level === 'err' ? 'err' : (level === 'warn' ? 'warn' : 'info'), 'Backend notice', message);
+      });
+      return data.messages.length > 0;
+    }
+    function setupBackendNotificationPolling() {
+      if (window.audioStudioBackendNotificationPolling) return;
+      window.audioStudioBackendNotificationPolling = true;
+      setInterval(refreshBackendNotifications, 1500);
+      setTimeout(refreshBackendNotifications, 250);
+    }
+
     function getScrollEl() {
       return $('#canvasScroll') || $('#canvasWrap');
     }
@@ -4592,7 +4723,7 @@
       const h = Math.max(142, 108 + Math.max(inPorts.length, outPorts.length, 1) * 18);
       return { id, name, type, icon, x, y, w: 128, h, cpu: c.cpu || rnd(.2, 5), mem: c.mem || Math.round(rnd(64, 512)), lat: c.lat || rnd(.1, 2.2), core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || '2ch', moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, paramValues: {}, portsFlipped: false };
     }
-    function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1600) }
+    function toast(msg, level = 'info') { const t = $('#toast'); if (!t) return; t.textContent = msg; t.className = `toast ${String(level || 'info').toLowerCase()} show`; setTimeout(() => t.classList.remove('show'), 2200) }
     function addLog(kind, msg, sub = '') {
       const d = new Date(); const time = d.toTimeString().slice(0, 8); state.logs.unshift({ time, kind, msg, sub }); state.logs = state.logs.slice(0, 8); renderLogs();
     }
@@ -4718,11 +4849,11 @@
       });
     }
     function makeDraggable(el, n) {
-      let startX, startY, drag = false, moved = false, dragNodes = [], origPos = new Map();
+      let startX, startY, drag = false, moved = false, dragNodes = [], origPos = new Map(), lockedRunDrag = null;
       const nodeElementById = (id) => $$('.pipeline-node').find(x => x.dataset.id === id);
       el.addEventListener('pointerdown', e => {
         if (e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
-        if (running) { selectedNodeId = n.id; renderAll(false); toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点'); return; }
+        if (running) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; lockedRunDrag = { x: e.clientX, y: e.clientY, warned: false }; renderAll(false); return; }
 
         // If this node is part of a marquee selection, keep the selection and
         // drag all selected nodes together. If it is not selected, fall back to
@@ -4752,6 +4883,13 @@
         renderAll(false);
       });
       el.addEventListener('pointermove', e => {
+        if (running && lockedRunDrag) {
+          if (!lockedRunDrag.warned && Math.hypot(e.clientX - lockedRunDrag.x, e.clientY - lockedRunDrag.y) > 3) {
+            lockedRunDrag.warned = true;
+            toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点', 'warn');
+          }
+          return;
+        }
         if (!drag) return;
         const dx = (e.clientX - startX) / (state.zoom || 1);
         const dy = (e.clientY - startY) / (state.zoom || 1);
@@ -4782,6 +4920,7 @@
             backendEdit('node_moved', { node_id: n.id, x: n.x, y: n.y });
           }
         }
+        lockedRunDrag = null;
         drag = false;
         moved = false;
         dragNodes = [];
@@ -4911,7 +5050,7 @@
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', '3'); dot.setAttribute('class', 'edge-particle');
           const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if (idx % 2 === 0) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = '48 kHz'; svg.appendChild(text); }
+        if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
       });
     }
     function deleteSelectedEdge() {
@@ -6271,7 +6410,7 @@
         const runActive = !!running;
         return {
           ok: true, mode: 'visual_fallback_only', source: 'visual_fallback', buffer: true, running: runActive, timestamp_ms: Date.now(),
-          edge_key: key, format: fmt,
+          edge_key: key, format: rememberEdgeRuntimeFormat(key, fmt, fmt),
           general: runActive ? { format: fmt.label, rms: -rnd(12, 34), peak: -rnd(1.2, 10), frameSizeSamples: fmt.frameSamples || 480, frameMs: (fmt.frameSamples || 480) * 1000 / fmt.sampleRate } : { format: 'N/A', rms: null, peak: null, frameSizeSamples: null, frameMs: null },
           ports: [{ key: 'buffer', dir: 'buffer', name: 'buffer', channels: fmt.channels, sampleRate: fmt.sampleRate, bitDepth: fmt.bits, waveform: fallbackInspectorWave(0, runActive), spectrum: fallbackInspectorSpectrum(0, runActive) }],
           pcm16: []
@@ -6600,7 +6739,7 @@
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (idx % 2 === 0) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = '48 kHz'; svg.appendChild(text); }
+          if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -6765,6 +6904,7 @@
             data.source = 'backend';
             data.server_edge_key = data.edge_key || '';
             data.edge_key = key;
+            data.format = rememberEdgeRuntimeFormat(key, data.format || edgeBufferFormatV40c(ep), edgeBufferFormatV40c(ep));
             return data;
           }
         } catch (e) { }
@@ -7076,16 +7216,19 @@
       }
       function applyInspectorBufferLiveDataToUiV40c(ep) {
         const live = inspectorLiveState || {};
+        const key = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : selectedEdgeKey;
+        const fallbackFmt = edgeBufferFormatV40c(ep);
+        const fmt = rememberEdgeRuntimeFormat(key, live.format || cachedEdgeRuntimeFormat(key) || fallbackFmt, fallbackFmt) || fallbackFmt;
         const isLive = !!(running && live.running && live.buffer);
-        const fmt = live.format || edgeBufferFormatV40c(ep);
         const g = live.general || {};
+        const showFormat = !!(running || cachedEdgeRuntimeFormat(key));
         const ioIn = $('#ioIn'), ioOut = $('#ioOut'), rmsIn = $('#rmsIn'), peakOut = $('#peakOut'), peakBar = $('#peakBar'), frame = $('#frameSizeInfo');
-        if (ioIn) ioIn.textContent = isLive ? (fmt.label || g.format || 'N/A') : 'N/A';
+        if (ioIn) ioIn.textContent = showFormat ? (fmt.label || g.format || fallbackFmt.label || 'N/A') : 'N/A';
         if (ioOut) ioOut.textContent = '';
         if (rmsIn) rmsIn.textContent = isLive ? dbText(g.rms) : 'N/A';
         if (peakOut) peakOut.textContent = isLive ? dbText(g.peak) : 'N/A';
         if (peakBar) peakBar.style.width = isLive && Number.isFinite(Number(g.peak)) ? clamp((60 + Number(g.peak)) / 60 * 100, 5, 100) + '%' : '0%';
-        if (frame) frame.textContent = isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs || 0).toFixed(2)} ms` : 'N/A';
+        if (frame) frame.textContent = showFormat && (g.frameSizeSamples || fmt.frameSamples) ? `${g.frameSizeSamples || fmt.frameSamples} samples / ${Number(g.frameMs || ((fmt.frameSamples || 480) * 1000 / (fmt.sampleRate || 48000))).toFixed(2)} ms` : 'N/A';
       }
       async function refreshBufferInspectorBackendV40c(ep = currentInspectedEdgePartsV40c()) {
         if (!ep) return false;
@@ -7163,7 +7306,7 @@
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (idx % 2 === 0) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = '48 kHz'; svg.appendChild(text); }
+          if (running) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -10736,6 +10879,8 @@
 
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
+    setupPanelMenuAutoClose();
+    setupBackendNotificationPolling();
 
     // bounded dashboard strip + checkbox-order driven panel layout.
     {
