@@ -1,0 +1,77 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Unoptimized backend build for LLDB breakpoints.",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g3 -fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized release-style build. This preset is separate from the existing scripts/build_backend.sh flow.",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "profile",
+      "displayName": "Profile",
+      "description": "Optimized backend build with symbols and frame pointers for sampling profilers.",
+      "binaryDir": "${sourceDir}/build/profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g -DNDEBUG -fno-omit-frame-pointer"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Build Release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "profile",
+      "displayName": "Build Profile",
+      "configurePreset": "profile"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "displayName": "Test Debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "profile",
+      "displayName": "Test Profile",
+      "configurePreset": "profile",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
