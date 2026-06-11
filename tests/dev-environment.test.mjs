@@ -40,7 +40,7 @@ assert.equal(backendDebug.type, 'lldb');
 assert.equal(backendDebug.preLaunchTask, 'cmake: build debug');
 
 const frontendDebug = launch.configurations.find(config => config.name === 'Frontend: Debug Chrome');
-assert.equal(frontendDebug.type, 'pwa-chrome');
+assert.equal(frontendDebug.type, 'chrome');
 assert.equal(frontendDebug.preLaunchTask, 'wait: backend');
 
 const tasks = readJson('.vscode/tasks.json');
