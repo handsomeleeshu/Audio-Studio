@@ -740,6 +740,11 @@
     const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
     const rnd = (min,max)=> Math.random()*(max-min)+min;
     const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
+    const AUDIO_STUDIO_STOPPED_ANIMATION_DELAY_MS = 1000;
+    const AUDIO_STUDIO_STOPPED_DASHBOARD_POLL_MS = 5000;
+    const AUDIO_STUDIO_RUNNING_DASHBOARD_POLL_MS = 3000;
+    const AUDIO_STUDIO_STOPPED_CORE_POLL_MS = 5000;
+    const AUDIO_STUDIO_RUNNING_CORE_POLL_MS = 3000;
 
     const API_SESSION_ID = 'standalone_html_demo';
     async function apiPost(path, body = {}) {
@@ -5501,13 +5506,29 @@
     }
     function fmt(s){s=Math.floor(s);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
     function resizeCanvas(c){ const r=c.getBoundingClientRect(); const d=window.devicePixelRatio||1; if(c.width!==Math.round(r.width*d)||c.height!==Math.round(r.height*d)){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d); c.getContext('2d').setTransform(d,0,0,d,0,0);} }
-    let t=0;
+	    let t=0;
+	    let animationTimer=0;
+	    let animationFrame=0;
     function drawWave(canvas, colorA='#00d8ff', colorB='#b65cff'){
       resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h); ctx.strokeStyle='rgba(90,126,170,.25)'; ctx.lineWidth=1; for(let x=0;x<w;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()} for(let y=0;y<h;y+=28){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()} ctx.beginPath(); ctx.strokeStyle=colorA; ctx.lineWidth=1.5; for(let x=0;x<w;x++){ const y=h/2 + Math.sin((x+t)*.08)*h*.17 + Math.sin((x+t)*.31)*h*.06 + rnd(-h*.12,h*.12); if(x===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke(); ctx.beginPath(); ctx.strokeStyle=colorB; ctx.globalAlpha=.65; for(let x=0;x<w;x++){ const y=h*.62 + Math.sin((x+t)*.035)*h*.13 + Math.sin((x+t)*.12)*h*.04; if(x===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke(); ctx.globalAlpha=1;}
     function drawSpectrum(canvas){
       resizeCanvas(canvas); const ctx=canvas.getContext('2d'); const w=canvas.clientWidth,h=canvas.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='#05101d'; ctx.fillRect(0,0,w,h); const bars=96; const bw=w/bars; for(let i=0;i<bars;i++){ const val=(Math.sin(i*.16+t*.02)+1)*.25 + Math.random()*.18 + (1-i/bars)*.35; const bh=clamp(val*h,4,h*.92); const g=ctx.createLinearGradient(0,h-bh,0,h); g.addColorStop(0,'#b65cff'); g.addColorStop(1,'#00d8ff'); ctx.fillStyle=g; ctx.fillRect(i*bw+1,h-bh,bw-2,bh); }
     }
-    function animate(){ if(running){ t+=2; drawWave($('#mainWave')); } drawInspectorProbeCanvases(); requestAnimationFrame(animate); }
+	    function scheduleAnimationLoop(){
+	      if(animationTimer || animationFrame) return;
+	      if(running) animationFrame=requestAnimationFrame(animate);
+	      else animationTimer=setTimeout(animate,AUDIO_STUDIO_STOPPED_ANIMATION_DELAY_MS);
+	    }
+	    function wakeAnimationLoop(){
+	      if(animationTimer){clearTimeout(animationTimer); animationTimer=0;}
+	      scheduleAnimationLoop();
+	    }
+	    function animate(){
+	      animationFrame=0;
+	      animationTimer=0;
+	      if(running){ t+=2; drawWave($('#mainWave')); drawInspectorProbeCanvases(); }
+	      scheduleAnimationLoop();
+	    }
     function inferNodePipelineId(n){
       if(n.pipelineId) return n.pipelineId;
       const s=String(n.id||'');
@@ -7709,10 +7730,22 @@
       let dspCoreLoadingStateV65a={ok:false,running:false,core_count:Number($('#coreSelect')?.value||4),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:0};
       let dspCoreLoadingRequestBusyV65a=false;
       let dspCoreLoadingLastErrorLoggedV65a=false;
+      let dspCorePollTimerV65a=0;
 
       function dspCoreCountV65a(){
         const n=Number($('#coreSelect')?.value || dspCoreLoadingStateV65a.core_count || 4);
         return Math.max(1,Math.min(64,Number.isFinite(n)?Math.round(n):4));
+      }
+      function dspCorePollDelayV65a(){
+        return running ? AUDIO_STUDIO_RUNNING_CORE_POLL_MS : AUDIO_STUDIO_STOPPED_CORE_POLL_MS;
+      }
+      function scheduleDspCoreLoadingPollV65a(){
+        if(dspCorePollTimerV65a) return;
+        dspCorePollTimerV65a=setTimeout(async ()=>{
+          dspCorePollTimerV65a=0;
+          await refreshDspCoreLoadingV65a();
+          scheduleDspCoreLoadingPollV65a();
+        },dspCorePollDelayV65a());
       }
       function dspCoreLoadingUrlV65a(){
         return `/api/dsp/core/loading?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&cores=${dspCoreCountV65a()}&dsp=${encodeURIComponent($('#dspSelect')?.value||'HiFi5s')}`;
@@ -7808,7 +7841,7 @@
           backendEdit('dsp_core_count_changed',{cores:dspCoreCountV65a()});
         }
       });
-      setInterval(refreshDspCoreLoadingV65a,700);
+      scheduleDspCoreLoadingPollV65a();
       requestAnimationFrame(()=>{renderCoreLoadingV65a(); refreshDspCoreLoadingV65a();});
       window.audioStudioDspCoreLoadingV65a={refreshDspCoreLoadingV65a,renderCoreLoadingV65a,dspCoreCountV65a,backendOwned:true,noFrontendFake:true};
     }
@@ -8029,11 +8062,23 @@
       let backendAudioIoStateV69={ok:false,channels:[],lastError:false};
       let dashboardRefreshBusyV69=false;
       let telemetryMissingLoggedV69=false;
+      let dashboardPollTimerV69=0;
 
       function fmtNumV69(v,d=1){const n=Number(v);return Number.isFinite(n)?n.toFixed(d):'N/A';}
       function pctV69(v){const n=Number(v);return Number.isFinite(n)?clamp(n,0,100):0;}
       function logKindV69(k){return ['ok','warn','err','info'].includes(k)?k:'info';}
       function renderBackendUnavailableV69(el,msg){if(el) el.innerHTML=`<div class="backend-empty-v69">${escapeHtml(msg)}</div>`;}
+      function dashboardPollDelayV69(){
+        return running ? AUDIO_STUDIO_RUNNING_DASHBOARD_POLL_MS : AUDIO_STUDIO_STOPPED_DASHBOARD_POLL_MS;
+      }
+      function scheduleDashboardLivePollV69(){
+        if(dashboardPollTimerV69) return;
+        dashboardPollTimerV69=setTimeout(async ()=>{
+          dashboardPollTimerV69=0;
+          await refreshBackendDashboardLiveV69();
+          scheduleDashboardLivePollV69();
+        },dashboardPollDelayV69());
+      }
 
       function eventLogUrlV69(){return `/api/event-log/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&limit=120&_=${Date.now()}`;}
       function systemHealthUrlV69(){return `/api/system/health/live?session_id=${encodeURIComponent(API_SESSION_ID)}&running=${running?1:0}&cores=${encodeURIComponent($('#coreSelect')?.value||4)}&nodes=${state.nodes.length}&_=${Date.now()}`;}
@@ -8155,7 +8200,7 @@
         return ok;
       };
       updateRandom=async function(){
-        if(!running){ await refreshBackendDashboardLiveV69(); renderAll(false); return; }
+        if(!running) return false;
         const fromBackend=await syncTelemetryFromBackend();
         if(!fromBackend && !telemetryMissingLoggedV69){
           telemetryMissingLoggedV69=true;
@@ -8166,7 +8211,7 @@
         const playTime=$('#playTime'); if(playTime) playTime.textContent=`${fmt(playSec)} / 02:15`;
         renderAll(true);
       };
-      setInterval(refreshBackendDashboardLiveV69,900);
+      scheduleDashboardLivePollV69();
       setTimeout(refreshBackendDashboardLiveV69,50);
       window.audioStudioBackendDashboardLiveV69={refreshBackendDashboardLiveV69,refreshEventLogBackendV69,refreshSystemHealthBackendV69,refreshAudioIoBackendV69,backendOnly:true};
     }
@@ -8438,7 +8483,7 @@
       $$('[data-hide]').forEach(b=>b.addEventListener('click',()=>setPanelVisible(b.dataset.hide,false)));
       $('#validateBtn').addEventListener('click',async ()=>{ const res=await apiPost('/api/pipeline/validate',pipelineSnapshot()); const warnings=res?.warnings||[]; const errors=res?.errors||[]; $('#warnCount').textContent=String(warnings.length); $('#errCount').textContent=String(errors.length); addLog(errors.length?'warn':'ok','Pipeline validated','Backend callback: /api/pipeline/validate'); toast(errors.length?'Validate failed':'Validate success');});
       $('#buildBtn').addEventListener('click',async ()=>{ buildState='building'; running=false; $('#playBtn').textContent='▶'; $('.badge.ok').textContent='◌ BUILDING'; toast('Building...'); addLog('info','Build started','Calling /api/pipeline/build'); const res=await apiPost('/api/pipeline/build',pipelineSnapshot()); setTimeout(()=>{buildState=res?.ok===false?'failed':'success'; $('.badge.ok').textContent=buildState==='success'?'● BUILD SUCCESS':'● BUILD FAILED'; if(res?.core_map){/* reserved for real DSP mapping */} else state.nodes.forEach(n=>n.core=Math.floor(Math.random()*4)); renderAll(true); addLog(buildState==='success'?'ok':'warn',buildState==='success'?'Build successful':'Build failed','Backend callback: /api/pipeline/build'); toast(buildState==='success'?'Build success':'Build failed');},300);});
-      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; inspectorBackendContextKey=''; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); refreshInspectorBackend(); drawEdges(); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
+      $('#runBtn').addEventListener('click',async ()=>{if(buildState!=='success'){toast('Please Build first');return;} const res=await apiPost('/api/runtime/run',{session_id:API_SESSION_ID,snapshot:pipelineSnapshot()}); running=res?.ok===false?false:true; if(running) wakeAnimationLoop(); inspectorBackendContextKey=''; $('#playBtn').textContent=running?'Ⅱ':'▶'; renderAll(true); refreshInspectorBackend(); drawEdges(); updateHistoryButtons(); addLog(running?'ok':'warn',running?'Pipeline is running':'Run rejected','Backend callback: /api/runtime/run'); toast(running?'Run':'Run rejected');});
       $('#stopBtn').addEventListener('click',async ()=>{await apiPost('/api/runtime/stop',{session_id:API_SESSION_ID}); running=false; inspectorBackendContextKey=''; if(bufferDumpState.active) await stopBufferDump('pipeline_stopped'); $('#playBtn').textContent='▶'; drawEdges(); renderNodes(); refreshInspectorBackend(); updateHistoryButtons(); addLog('warn','Pipeline stopped','Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点');});
       $('#playBtn').addEventListener('click',()=>{ if(running){ $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn')?.addEventListener('click',undoEdit);
