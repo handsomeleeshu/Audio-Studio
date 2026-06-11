@@ -89,7 +89,7 @@
     @media(max-width:1500px){.brand{flex-basis:620px;min-width:500px;max-width:620px}.company-logo-wrap{flex-basis:166px;min-width:166px}.company-logo{width:160px;height:46px}.brand-divider{margin-left:8px;margin-right:8px}.brand-title{font-size:19px}.brand-version{font-size:10px}}@media(max-width:1320px){.app{grid-template-columns:230px minmax(500px,1fr) 320px}.bottom{grid-template-columns:1fr 240px 1.2fr 240px}.brand{flex-basis:300px;min-width:260px;max-width:300px}.company-logo-wrap,.brand-divider{display:none}.brand-title{font-size:18px}.top-field{min-width:82px}.btn{padding:9px 11px}.right-panel{padding:8px}}
 
 
-    /* v47: bounded right-bottom dashboard strip.
+    /* bounded right-bottom dashboard strip.
        Keep the left Algorithm Library unchanged. The information windows live
        in one bounded layout at canvas+inspector bottom, and the user scrolls
        horizontally inside this layout instead of letting cards overflow page. */
@@ -174,7 +174,7 @@
     }
 
 
-    /* v48: PER-ALGORITHM COST table improvements. */
+    /* PER-ALGORITHM COST table improvements. */
     #costPanel{display:flex;flex-direction:column;min-height:0;}
     #costPanel .card-head{flex:0 0 auto;}
     .cost-table-scroll-v48{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:4px;scrollbar-color:#24415f #07101d;scrollbar-width:thin;}
@@ -197,7 +197,7 @@
     }
 
 
-    /* v49: backend-only PER-ALGORITHM COST display polish. */
+    /* backend-only PER-ALGORITHM COST display polish. */
     #costPanel .cost-table-scroll-v48{overflow-y:auto;overflow-x:hidden;min-height:0;}
     #costTable.cost-table-v49-backend-only{table-layout:fixed;width:100%;border-collapse:collapse;}
     #costTable.cost-table-v49-backend-only th,
@@ -218,7 +218,7 @@
     #costTable.cost-table-v49-backend-only tfoot td{height:24px;}
 
 
-    /* v50: stable compact PER-ALGORITHM COST table. */
+    /* stable compact PER-ALGORITHM COST table. */
     #costPanel .cost-table-scroll-v48,
     #costPanel .cost-table-scroll-v50{
       overflow-y:auto;
@@ -276,7 +276,7 @@
     #costTable.cost-table-v50 tfoot td{height:24px!important;border-bottom:0;font-weight:800!important;}
 
   
-    /* v54: hard override for PER-ALGORITHM COST IDX/LAT/Core layout. */
+    /* hard override for PER-ALGORITHM COST IDX/LAT/Core layout. */
     #costPanel #costTable.cost-table-v54{table-layout:fixed!important;width:100%!important;border-collapse:collapse;}
     #costPanel #costTable.cost-table-v54 col.cost-col-name-v54{width:27%!important;}
     #costPanel #costTable.cost-table-v54 col.cost-col-idx-v54{width:7%!important;}
@@ -303,7 +303,7 @@
 
   
 
-    /* v56: fixed PER-ALGORITHM COST total row + non-sortable IDX. */
+    /* fixed PER-ALGORITHM COST total row + non-sortable IDX. */
     #costPanel{display:flex!important;flex-direction:column!important;min-height:0!important;}
     #costPanel .cost-table-scroll-v56{
       flex:1 1 auto!important;
@@ -380,7 +380,7 @@
     #costPanel .cost-total-table-v56 td.cost-total-cpu-v56{padding-left:12px!important;}
 
 
-    /* v59: PER-ALGORITHM COST table geometry correction.
+    /* PER-ALGORITHM COST table geometry correction.
        - Use one fixed colgroup for header/body/footer so CPU never shifts into IDX.
        - IDX is a real non-sortable column with enough width for the full label.
        - Sort arrows are inline near the column label, not pushed to the far edge.
@@ -425,7 +425,7 @@
     #costPanel .cost-total-table-v59 td.cost-total-cpu-v59{padding-left:6px!important;}
 
 
-    /* v61: PER-ALGORITHM COST stopped-state IDX guard.
+    /* PER-ALGORITHM COST stopped-state IDX guard.
        Keep v60 ratios and ensure stopped/N/A rows still render a real IDX cell. */
     #costPanel #costTable.cost-table-v61,
     #costPanel .cost-total-table-v61{table-layout:fixed!important;width:100%!important;border-collapse:collapse!important;}
@@ -447,7 +447,7 @@
     #costPanel #costTable.cost-table-v61 .cost-cpu-cell-v61 .cost-cpu-bar-v50{max-width:100%!important;}
 
 
-    /* v62: stopped-state IDX column guard + exact v60 column ratio tokens.
+    /* stopped-state IDX column guard + exact v60 column ratio tokens.
        Keep the ratio exactly as requested and make the tokens visible to tests. */
     #costPanel #costTable.cost-table-v59 col.cost-col-name-v54{width:25%!important}
     #costPanel #costTable.cost-table-v59 col.cost-col-idx-v54{width:10%!important}
@@ -466,7 +466,7 @@
     #costPanel #costTable.cost-table-v59 td.cost-cpu-cell-td-v62 .cost-cpu-cell-v59{max-width:100%!important;overflow:hidden!important;}
 
 
-    /* v64: recover from v63 and keep IDX header display-only.
+    /* recover from v63 and keep IDX header display-only.
        No MutationObserver, no layout rewrite. Keep v59/v60/v62 table geometry. */
     #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64,
     #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 *{cursor:default!important;}
@@ -478,7 +478,7 @@
     #costPanel #costTable.cost-table-v59 th.cost-idx-head-v64 .cost-th-text-v50{max-width:100%!important;overflow:visible!important;text-overflow:clip!important;}
 
 
-    /* v65a: DSP CORE LOADING keeps the same visual style, but only the core list scrolls. */
+    /* DSP CORE LOADING keeps the same visual style, but only the core list scrolls. */
     #corePanel{display:flex!important;flex-direction:column!important;min-height:0!important;overflow:hidden!important;}
     #corePanel .card-head{flex:0 0 auto!important;}
     #coreRows{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;padding-right:4px;scrollbar-color:#24415f #07101d;scrollbar-width:thin;}
@@ -488,7 +488,7 @@
     #corePanel .total{flex:0 0 auto!important;margin-top:8px!important;}
 
 
-    /* v66: per-window title/menu colors. */
+    /* per-window title/menu colors. */
     .panel-title-color-v66,
     .card-head.panel-title-color-v66{
       position:relative;
@@ -533,14 +533,14 @@
     }
 
   
-    /* v67c: hide the local Audio File panel visually but keep compatibility DOM so legacy init handlers never abort page startup. */
+    /* hide the local Audio File panel visually but keep compatibility DOM so legacy init handlers never abort page startup. */
     .right-panel.audio-file-removed-v67c{gap:0!important;}
     .right-panel.audio-file-removed-v67c .audio-file{display:none!important;}
     .right-panel.audio-file-removed-v67c .inspector{flex:1 1 auto!important;height:100%!important;min-height:0!important;}
     .right-panel.audio-file-removed-v67c .inspector-body{flex:1 1 auto!important;min-height:0!important;overflow:auto!important;}
   
 
-    /* v68: make dashboard close buttons win over panel-specific display overrides.
+    /* make dashboard close buttons win over panel-specific display overrides.
        PER-ALGORITHM COST has older #costPanel display:flex!important rules;
        this higher-specificity rule keeps the top-right × hide action effective. */
     #costPanel.hidden-panel,
@@ -550,7 +550,7 @@
       pointer-events:none!important;
     }
 
-    /* v74: Algorithm Library close button should hide the left panel too. */
+    /* Algorithm Library close button should hide the left panel too. */
     #leftPanel.hidden-panel{
       display:none!important;
       visibility:hidden!important;
@@ -558,7 +558,7 @@
     }
 
 
-    /* v69: backend-owned EVENT LOG / SYSTEM HEALTH / AUDIO I/O live panels. */
+    /* backend-owned EVENT LOG / SYSTEM HEALTH / AUDIO I/O live panels. */
     .backend-dashboard-live-v69 #healthPanel,
     .backend-dashboard-live-v69 #meterPanel,
     .backend-dashboard-live-v69 #logPanel{display:flex;flex-direction:column;min-height:0;}
@@ -575,7 +575,7 @@
     .backend-dashboard-live-v69 .health-row small{display:block;color:var(--muted);font-size:10px;margin-top:2px;}
 
 
-    /* v66fresh: backend-driven high-resolution Real-Time Signal Probe. */
+    /* backend-driven high-resolution Real-Time Signal Probe. */
     #probePanel.realtime-probe-v66fresh{display:flex;flex-direction:column;min-height:0;}
     #probePanel.realtime-probe-v66fresh .card-head{flex:0 0 auto;}
     #probePanel.realtime-probe-v66fresh #mainWave{flex:1 1 auto;min-height:0;height:auto!important;}
@@ -1451,13 +1451,12 @@
       raf(()=>{ sc.scrollLeft=s.left||0; sc.scrollTop=s.top||0; renderMinimap(); drawEdges(); });
     }
 
-    // v73: backend-owned topbar target settings and JSON-driven DSP frequency options.
+    // backend-owned topbar target settings and JSON-driven DSP frequency options.
     // Project JSON provides available DSP main frequencies; the selected target
     // tuple is persisted through /api/target/config so Validate/Build/Run use
     // backend-confirmed settings instead of frontend-only select values.
-    if(!window.__audioStudioTopbarTargetBackendV73Installed){
-      window.__audioStudioTopbarTargetBackendV73Installed=true;
-      let targetConfigRevisionV73=0;
+    {
+let targetConfigRevisionV73=0;
       function normalizeMhzListV73(values){
         if(!Array.isArray(values)) return [];
         return [...new Set(values.map(v=>Number(v)).filter(v=>Number.isFinite(v)&&v>0))].sort((a,b)=>a-b);
@@ -1572,6 +1571,7 @@
       installTopbarTargetBackendV73();
       window.audioStudioTargetConfigV73={renderDspFrequencySelectV73,currentDspFrequencyMHzV73,refreshTopbarTargetFromBackendV73,syncTopbarTargetToBackendV73,topbarTargetPayloadV73,installTopbarTargetBackendV73};
       window.currentDspFrequencyMHzV73=currentDspFrequencyMHzV73;
+    
     }
 
     function renderPipelineSelect() {
@@ -2995,11 +2995,9 @@
     };
 
 
-    // v39g: stable buffer inspector renderer + backend PCM dump pump.
-    if(!window.__audioStudioBufferV39gInstalled){
-      window.__audioStudioBufferV39gInstalled=true;
-
-      if(typeof bufferDumpState === 'undefined'){
+    // stable buffer inspector renderer + backend PCM dump pump.
+    {
+if(typeof bufferDumpState === 'undefined'){
         bufferDumpState={active:false,edgeKey:'',fileName:'',handle:null,writable:null,bytes:0,chunks:[],fallback:false,format:null,lastTimestamp:0,timer:null,writeChain:Promise.resolve(),pumpBusy:false};
       } else {
         bufferDumpState.timer=bufferDumpState.timer||null;
@@ -3358,14 +3356,13 @@
       startBufferDump = startBufferDumpV39g;
       stopBufferDump = stopBufferDumpV39g;
       renderBufferDumpUi = renderBufferDumpUiV39g;
+    
     }
 
 
-    // v40: product-mode multi-buffer dump. No frontend local fake PCM.
-    if(!window.__audioStudioBufferDumpV40Installed){
-      window.__audioStudioBufferDumpV40Installed=true;
-
-      const bufferDumpSessionsV40 = new Map();
+    // product-mode multi-buffer dump. No frontend local fake PCM.
+    {
+const bufferDumpSessionsV40 = new Map();
 
       function dumpQueryParamV40(v=''){
         return encodeURIComponent(String(v ?? ''));
@@ -3840,573 +3837,15 @@
 
       // Pipeline Stop must close all active buffer dumps.
       $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40('pipeline_stop'); }, true);
+    
     }
 
 
-    // v40b: stable product-mode multi-buffer dump. No frontend fake PCM dump.
-    if(!window.__audioStudioBufferDumpV40bInstalled){
-      window.__audioStudioBufferDumpV40bInstalled=true;
-
-      const bufferDumpSessionsV40b = new Map();
-      let bufferDumpPipelineEpochV40b = 1;
-
-      function dumpQueryParamV40b(v=''){
-        return encodeURIComponent(String(v ?? ''));
-      }
-      function formatDumpBytesV40b(bytes=0){
-        const n=Math.max(0,Number(bytes)||0);
-        if(n < 1024) return `${Math.round(n)} B`;
-        if(n < 1024*1024) return `${(n/1024).toFixed(n < 10*1024 ? 1 : 0)} KB`;
-        return `${(n/1024/1024).toFixed(2)} MB`;
-      }
-      function isInspectingBufferV40b(){
-        return !!selectedEdgeKey && !selectedNodeId;
-      }
-      function currentInspectedEdgePartsV40b(){
-        if(!selectedEdgeKey) return null;
-        const ep=parseEdgeKey(selectedEdgeKey);
-        return state.edges.some(e=>edgeKeyForEdge(e)===selectedEdgeKey) ? ep : null;
-      }
-      function bufferBaseNameV40b(ep){
-        if(!ep) return 'buffer_dump';
-        return `${ep.from}_${ep.fromPort}_to_${ep.to}_${ep.toPort}`.replace(/[^A-Za-z0-9_.-]+/g,'_');
-      }
-      function bufferDefaultFileNameV40b(ep){
-        return `${bufferBaseNameV40b(ep)}.wav`;
-      }
-      function bufferNameV40b(ep){
-        return ep ? `${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}` : '';
-      }
-      function edgeBufferFormatV40b(ep){
-        if(typeof edgeBufferFormat === 'function') return edgeBufferFormat(ep);
-        const fromNode=nodeById(ep?.from);
-        const toNode=nodeById(ep?.to);
-        const outPort=nodePortList(fromNode||{},'out').find(p=>p.name===ep?.fromPort) || {};
-        const inPort=nodePortList(toNode||{},'in').find(p=>p.name===ep?.toPort) || {};
-        const ch=Number(outPort.max_ch || inPort.max_ch || String(fromNode?.ch||toNode?.ch||'2').replace(/\D/g,'') || 2);
-        return {channels:Math.max(1,ch),sampleRate:48000,bits:16,frameSamples:480,label:`${Math.max(1,ch)}ch · 48 kHz · 16-bit`};
-      }
-      function formatSignatureV40b(fmt){
-        return `${Number(fmt?.channels||0)}:${Number(fmt?.sampleRate||0)}:${Number(fmt?.bits||0)}`;
-      }
-      function sessionForEdgeV40b(key, ep, create=true){
-        if(!key) return null;
-        let s=bufferDumpSessionsV40b.get(key);
-        if(!s && create){
-          s={
-            edgeKey:key,
-            ep:ep || parseEdgeKey(key),
-            active:false,
-            switching:false,
-            finalizing:false,
-            fileName:'',
-            explicitFileName:false,
-            handle:null,
-            writable:null,
-            fallback:false,
-            bytes:0,
-            chunks:[],
-            format:ep ? edgeBufferFormatV40b(ep) : {channels:2,sampleRate:48000,bits:16,frameSamples:480,label:'2ch · 48 kHz · 16-bit'},
-            formatSig:'',
-            timer:null,
-            writeChain:Promise.resolve(),
-            finalizePromise:Promise.resolve(),
-            pumpBusy:false,
-            pipelineEpoch:bufferDumpPipelineEpochV40b,
-            resetOnNextStart:false
-          };
-          s.formatSig=formatSignatureV40b(s.format);
-          bufferDumpSessionsV40b.set(key,s);
-        }
-        if(s && ep) s.ep=ep;
-        return s;
-      }
-      function selectedSessionV40b(ep=currentInspectedEdgePartsV40b()){
-        return sessionForEdgeV40b(selectedEdgeKey, ep, true);
-      }
-      function displayTargetNameV40b(s, ep){
-        return s?.explicitFileName && s.fileName ? s.fileName : bufferDefaultFileNameV40b(ep || s?.ep);
-      }
-      function isEdgeDumpingV40b(key){
-        return !!bufferDumpSessionsV40b.get(key)?.active;
-      }
-      function activeDumpCountV40b(){
-        let n=0;
-        bufferDumpSessionsV40b.forEach(s=>{ if(s.active) n++; });
-        return n;
-      }
-      function setInspectorModeV40b(mode){
-        const visible = mode==='buffer' ? new Set(['general','probe','dump']) : new Set(['general','parameters','probe','notes']);
-        $$('#inspectorTabs button').forEach(b=>{ b.style.display=visible.has(b.dataset.inspectorTab)?'':'none'; });
-        $$('.inspector-section').forEach(sec=>{
-          const key=sec.dataset.inspectorSection;
-          sec.style.display=visible.has(key)?'':'none';
-        });
-        if(!visible.has(inspectorActiveTab)) inspectorActiveTab='general';
-        setInspectorTab(inspectorActiveTab,false);
-      }
-      function setGeneralLabelsForBufferV40b(){
-        const rows=$$('#inspectorGeneral .kv');
-        rows.forEach(r=>r.style.display='');
-        if(rows[0]) rows[0].querySelector('span').textContent='Format';
-        if(rows[1]) rows[1].style.display='none';
-        if(rows[2]) rows[2].querySelector('span').textContent='RMS';
-        if(rows[3]) rows[3].querySelector('span').textContent='Peak';
-        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
-      }
-      function resetGeneralLabelsForNodeV40b(){
-        const rows=$$('#inspectorGeneral .kv');
-        rows.forEach(r=>r.style.display='');
-        if(rows[0]) rows[0].querySelector('span').textContent='Input';
-        if(rows[1]) rows[1].querySelector('span').textContent='Output';
-        if(rows[2]) rows[2].querySelector('span').textContent='RMS In';
-        if(rows[3]) rows[3].querySelector('span').textContent='Peak Out';
-        if(rows[4]) rows[4].querySelector('span').textContent='Frame Size';
-      }
-      function bufferLiveQueryV40b(ep,key=selectedEdgeKey){
-        const fmt=edgeBufferFormatV40b(ep);
-        return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40b(key)}&from=${dumpQueryParamV40b(ep.from+'.'+ep.fromPort)}&to=${dumpQueryParamV40b(ep.to+'.'+ep.toPort)}&running=${running?1:0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples||480}`;
-      }
-      async function fetchBackendBufferFrameV40b(ep,key=selectedEdgeKey){
-        const data=await apiGet(bufferLiveQueryV40b(ep,key));
-        if(!data || data.ok===false || !Array.isArray(data.pcm16) || (running && !data.pcm16.length)) return null;
-        data.source='backend';
-        data.server_edge_key=data.edge_key || '';
-        data.edge_key=key;
-        return data;
-      }
-      async function fetchBufferProbeFrameV40b(ep,key=selectedEdgeKey){
-        const data=await apiGet(bufferLiveQueryV40b(ep,key));
-        if(data && data.ok!==false){
-          data.source='backend';
-          data.server_edge_key=data.edge_key || '';
-          data.edge_key=key;
-          return data;
-        }
-        const fmt=edgeBufferFormatV40b(ep);
-        const runActive=!!running;
-        return {
-          ok:true,mode:'visual_fallback_only',source:'visual_fallback',buffer:true,running:runActive,timestamp_ms:Date.now(),
-          edge_key:key,format:fmt,
-          general:runActive?{format:fmt.label,rms:-rnd(12,34),peak:-rnd(1.2,10),frameSizeSamples:fmt.frameSamples||480,frameMs:(fmt.frameSamples||480)*1000/fmt.sampleRate}:{format:'N/A',rms:null,peak:null,frameSizeSamples:null,frameMs:null},
-          ports:[{key:'buffer',dir:'buffer',name:'buffer',channels:fmt.channels,sampleRate:fmt.sampleRate,bitDepth:fmt.bits,waveform:fallbackInspectorWave(0,runActive),spectrum:fallbackInspectorSpectrum(0,runActive)}],
-          pcm16:[]
-        };
-      }
-      function updateBufferDumpWrittenUiV40b(s=selectedSessionV40b()){
-        const el=$('#dumpWrittenValue');
-        if(el) el.textContent=formatDumpBytesV40b(s?.bytes||0);
-      }
-      function markDumpButtonBusyNowV40b(text='Starting...'){
-        const btn=$('#bufferDumpToggleBtn');
-        if(btn){
-          btn.disabled=true;
-          btn.textContent=text;
-          btn.style.opacity='.48';
-          btn.style.filter='grayscale(.35)';
-        }
-      }
-      function renderBufferProbeV40b(ep){
-        const list=$('#inspectorProbeList');
-        if(!list) return;
-        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
-        const fmt=liveFmt || edgeBufferFormatV40b(ep);
-        const label=(running && liveFmt) ? (fmt.label || `${fmt.channels}ch · ${fmt.sampleRate||48000} Hz · ${fmt.bits||16}-bit`) : 'N/A';
-        const count=$('#probePortCount');
-        if(count) count.textContent='1 buffer';
-        list.innerHTML=`<div class="probe-port-card" data-probe-card="buffer">
-          <div class="probe-port-head"><span>BUFFER</span><small>${escapeHtml(label)}</small></div>
-          <div class="panel-head" style="padding:8px 0 0"><span>LIVE WAVEFORM</span><small>buffer</small></div>
-          <canvas class="canvas-small inspector-probe-wave" id="wave_buffer" data-probe-key="buffer"></canvas>
-          <div class="panel-head" style="padding:4px 0 0"><span>LIVE SPECTRUM</span><small>20Hz-20kHz</small></div>
-          <canvas class="canvas-small inspector-probe-spectrum" id="spec_buffer" data-probe-key="buffer"></canvas>
-        </div>`;
-        drawInspectorProbeCanvases();
-      }
-      function renderBufferDumpUiV40b(ep){
-        const body=$('#inspectorDumpBody');
-        if(!body) return;
-        const s=selectedSessionV40b(ep);
-        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
-        const formatText=liveFmt?.label || liveFmt?.format || (s?.active && s.format?.label ? s.format.label : 'N/A');
-        const active=!!s?.active;
-        const busy=!!(s?.switching || s?.finalizing);
-        const targetName=displayTargetNameV40b(s,ep);
-        const activeCount=activeDumpCountV40b();
-        const toggleClass=active?'red':'green';
-        let toggleText=active?'Stop Dump':'Start Dump';
-        if(s?.switching) toggleText=active?'Stopping...':'Starting...';
-        if(s?.finalizing) toggleText='Finalizing...';
-        const chooseDisabled=(active||busy)?'disabled':'';
-        body.innerHTML=`<div class="dump-card">
-          <div class="dump-row"><span>Format</span><b>${escapeHtml(formatText)}</b></div>
-          <div class="dump-row"><span>Target File</span><b class="dump-file-name" title="${escapeHtml(targetName)}">${escapeHtml(targetName)}</b></div>
-          <div class="dump-row"><span>Written</span><b id="dumpWrittenValue">${formatDumpBytesV40b(s?.bytes||0)}</b></div>
-          <div class="dump-actions">
-            <button class="btn cyan" id="chooseDumpFileBtn" ${chooseDisabled}>Choose WAV File</button>
-            <button class="btn ${toggleClass}" id="bufferDumpToggleBtn" ${busy?'disabled':''}>${toggleText}</button>
-          </div>
-          <div class="dump-status">${active?`<b>Dumping...</b> client wav writer · ${activeCount} buffer(s) active.`:'Start Dump requires pipeline running and backend buffer API.'}</div>
-        </div>`;
-        $('#chooseDumpFileBtn')?.addEventListener('click',()=>{ if(!s?.active && !s?.switching && !s?.finalizing) chooseBufferDumpFileV40b(ep,s); });
-        $('#bufferDumpToggleBtn')?.addEventListener('click',()=>{ active ? stopBufferDumpV40b(s,'manual') : startBufferDumpV40b(ep); });
-        updateBufferDumpWrittenUiV40b(s);
-      }
-      function wavHeaderV40b(dataBytes,fmt){
-        const channels=fmt.channels||2, sampleRate=fmt.sampleRate||48000, bits=fmt.bits||16;
-        const blockAlign=channels*bits/8, byteRate=sampleRate*blockAlign;
-        const b=new ArrayBuffer(44), v=new DataView(b);
-        const s=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
-        s(0,'RIFF'); v.setUint32(4,36+dataBytes,true); s(8,'WAVE'); s(12,'fmt ');
-        v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,channels,true); v.setUint32(24,sampleRate,true); v.setUint32(28,byteRate,true); v.setUint16(32,blockAlign,true); v.setUint16(34,bits,true);
-        s(36,'data'); v.setUint32(40,dataBytes,true);
-        return b;
-      }
-      function pcm16BytesV40b(pcm16=[]){
-        const a=new Int16Array(pcm16.length);
-        pcm16.forEach((v,i)=>a[i]=Math.max(-32768,Math.min(32767,Number(v)||0)));
-        return a.buffer;
-      }
-      async function chooseBufferDumpFileV40b(ep=currentInspectedEdgePartsV40b(), s=selectedSessionV40b(ep)){
-        if(!ep || !s){toast('Please select a buffer first');return false;}
-        const suggested=bufferDefaultFileNameV40b(ep);
-        if(window.showSaveFilePicker){
-          try{
-            s.handle=await window.showSaveFilePicker({suggestedName:suggested,types:[{description:'WAV audio',accept:{'audio/wav':['.wav']}}]});
-            s.fileName=s.handle.name || suggested;
-            s.explicitFileName=true;
-            s.fallback=false;
-            renderBufferDumpUiV40b(ep);
-            return true;
-          }catch(e){
-            if(e?.name==='AbortError') return false;
-            console.warn('showSaveFilePicker failed',e);
-          }
-        }
-        s.handle=null;
-        s.fileName=suggested;
-        s.explicitFileName=true;
-        s.fallback=true;
-        toast('Browser fallback: WAV will download when Stop Dump is clicked');
-        renderBufferDumpUiV40b(ep);
-        return true;
-      }
-      function queueDumpWriteV40b(s, bytes){
-        s.writeChain=(s.writeChain||Promise.resolve()).then(async()=>{
-          if(s.writable) await s.writable.write(bytes);
-          else s.chunks.push(bytes);
-        }).catch(e=>{
-          addLog('warn','Buffer dump write failed',e.message||String(e));
-          throw e;
-        });
-        return s.writeChain;
-      }
-      async function appendDumpPcmFrameV40b(s,live){
-        if(!s?.active || !live || !running) return false;
-        if(live.source!=='backend' || !Array.isArray(live.pcm16) || !live.pcm16.length) return false;
-        const bytes=pcm16BytesV40b(live.pcm16);
-        if(!bytes.byteLength) return false;
-        s.bytes += bytes.byteLength;
-        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40b(s);
-        await queueDumpWriteV40b(s,bytes);
-        if(selectedEdgeKey===s.edgeKey) updateBufferDumpWrittenUiV40b(s);
-        return true;
-      }
-      function shouldAppendExistingDumpV40b(s, firstLive){
-        if(!s || s.resetOnNextStart || s.pipelineEpoch!==bufferDumpPipelineEpochV40b) return false;
-        if(!s.bytes || s.bytes<=0) return false;
-        const nextSig=formatSignatureV40b(firstLive?.format || s.format);
-        return nextSig && nextSig===s.formatSig;
-      }
-      async function openDumpWriterV40b(s, appendExisting){
-        if(s.handle && !s.fallback){
-          if(appendExisting && s.bytes>0){
-            s.writable=await s.handle.createWritable({keepExistingData:true});
-            await s.writable.seek(44+s.bytes);
-          }else{
-            s.writable=await s.handle.createWritable();
-            await s.writable.write(wavHeaderV40b(0,s.format));
-          }
-        }else{
-          if(appendExisting && s.chunks?.length){
-            s.chunks[0]=wavHeaderV40b(s.bytes,s.format);
-          }else{
-            s.chunks=[wavHeaderV40b(0,s.format)];
-            s.bytes=0;
-          }
-        }
-      }
-      async function startBufferDumpV40b(ep=currentInspectedEdgePartsV40b()){
-        if(!running){toast('Only running pipeline can start buffer dump'); return;}
-        if(!ep){toast('Please select a buffer first'); return;}
-        const key=selectedEdgeKey;
-        const s=sessionForEdgeV40b(key,ep,true);
-        if(!s || s.active || s.switching) return;
-
-        s.switching=true;
-        renderBufferDumpUiV40b(ep);
-        markDumpButtonBusyNowV40b('Choosing...');
-        drawEdges();
-
-        if(!s.explicitFileName && !s.handle){
-          const ok=await chooseBufferDumpFileV40b(ep,s);
-          if(!ok && window.showSaveFilePicker){
-            s.switching=false;
-            renderBufferDumpUiV40b(ep);
-            drawEdges();
-            return;
-          }
-        }
-        if(!s.fileName){
-          s.fileName=bufferDefaultFileNameV40b(ep);
-        }
-
-        s.active=true;
-        s.edgeKey=key;
-        s.ep=ep;
-        s.format=edgeBufferFormatV40b(ep);
-        s.pumpBusy=false;
-        if(s.timer){ clearInterval(s.timer); s.timer=null; }
-        if(s.writable){ try{ await s.writable.close(); }catch(e){} s.writable=null; }
-        renderBufferDumpUiV40b(ep);
-        drawEdges();
-
-        if(s.finalizePromise) {
-          try { await s.finalizePromise; } catch(e) {}
-        }
-
-        const firstLive=await fetchBackendBufferFrameV40b(ep,key);
-        if(!firstLive){
-          s.active=false;
-          s.switching=false;
-          renderBufferDumpUiV40b(ep);
-          drawEdges();
-          const msg='Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
-          toast(msg);
-          addLog('warn','Buffer dump blocked',msg);
-          return;
-        }
-
-        const appendExisting=shouldAppendExistingDumpV40b(s, firstLive);
-        s.format=firstLive.format || s.format;
-        s.formatSig=formatSignatureV40b(s.format);
-        if(!appendExisting){
-          s.bytes=0;
-          s.chunks=[];
-        }
-        s.writeChain=Promise.resolve();
-        s.lastFrameSeq=0;
-        s.resetOnNextStart=false;
-        s.pipelineEpoch=bufferDumpPipelineEpochV40b;
-
-        inspectorLiveState=firstLive;
-        applyInspectorBufferLiveDataToUiV40b(ep);
-        renderBufferProbeV40b(ep);
-
-        await openDumpWriterV40b(s,appendExisting);
-
-        apiPost('/api/inspector/buffer/inspect',{session_id:API_SESSION_ID,edge_key:key,from:`${ep.from}.${ep.fromPort}`,to:`${ep.to}.${ep.toPort}`,format:s.format,dump:true,append:appendExisting});
-        addLog('ok',appendExisting?'Buffer dump resumed':'Buffer dump started',`${bufferNameV40b(ep)} · ${appendExisting?'append':'new'} WAV · backend PCM`);
-
-        await appendDumpPcmFrameV40b(s,firstLive);
-
-        const pump=async()=>{
-          if(!s.active || !running || s.pumpBusy) return;
-          s.pumpBusy=true;
-          try{
-            const live=await fetchBackendBufferFrameV40b(s.ep,key);
-            if(!live) return;
-            if(selectedEdgeKey===key){
-              inspectorLiveState=live;
-              applyInspectorBufferLiveDataToUiV40b(s.ep);
-              drawInspectorProbeCanvases();
-            }
-            await appendDumpPcmFrameV40b(s,live);
-          }finally{
-            s.pumpBusy=false;
-          }
-        };
-        s.timer=setInterval(pump,80);
-        s.switching=false;
-        renderBufferDumpUiV40b(ep);
-        drawEdges();
-      }
-      async function stopBufferDumpV40b(s=selectedSessionV40b(), reason=''){
-        if(!s || s.switching || !s.active) return;
-        const ep=s.ep || parseEdgeKey(s.edgeKey);
-        s.switching=true;
-        if(s.timer){ clearInterval(s.timer); s.timer=null; }
-        const fmt=s.format || {channels:2,sampleRate:48000,bits:16};
-        const fileName=s.fileName || displayTargetNameV40b(s,ep);
-
-        s.active=false;
-        renderBufferDumpUiV40b(ep);
-        drawEdges();
-
-        s.finalizing=true;
-        s.finalizePromise=(async()=>{
-          try{
-            if(s.writeChain) await s.writeChain;
-            if(s.writable){
-              await s.writable.write({type:'seek',position:0});
-              await s.writable.write(wavHeaderV40b(s.bytes,fmt));
-              await s.writable.close();
-            }else{
-              if(!s.chunks?.length) s.chunks=[wavHeaderV40b(0,fmt)];
-              s.chunks[0]=wavHeaderV40b(s.bytes,fmt);
-              const blob=new Blob(s.chunks,{type:'audio/wav'});
-              const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fileName; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-            }
-            addLog('ok','Buffer dump stopped',`${fileName} · ${formatDumpBytesV40b(s.bytes)}`);
-          }catch(e){
-            addLog('warn','Buffer dump stop failed',e.message||String(e));
-          }finally{
-            s.writable=null;
-            s.timer=null;
-            s.writeChain=Promise.resolve();
-            s.pumpBusy=false;
-            s.switching=false;
-            s.finalizing=false;
-            if(selectedEdgeKey===s.edgeKey) {
-              renderBufferDumpUiV40b(ep);
-              updateBufferDumpWrittenUiV40b(s);
-            }
-            drawEdges();
-          }
-        })();
-        return s.finalizePromise;
-      }
-      async function stopAllBufferDumpsV40b(reason=''){
-        const active=[...bufferDumpSessionsV40b.values()].filter(s=>s.active);
-        await Promise.all(active.map(s=>stopBufferDumpV40b(s,reason)));
-      }
-      function markPipelineStoppedForDumpV40b(){
-        bufferDumpPipelineEpochV40b++;
-        bufferDumpSessionsV40b.forEach(s=>{
-          s.resetOnNextStart=true;
-          s.pipelineEpoch=bufferDumpPipelineEpochV40b;
-        });
-      }
-      function applyInspectorBufferLiveDataToUiV40b(ep){
-        const live=inspectorLiveState || {};
-        const isLive=!!(running && live.running && live.buffer);
-        const fmt=live.format || edgeBufferFormatV40b(ep);
-        const g=live.general || {};
-        const ioIn=$('#ioIn'), ioOut=$('#ioOut'), rmsIn=$('#rmsIn'), peakOut=$('#peakOut'), peakBar=$('#peakBar'), frame=$('#frameSizeInfo');
-        if(ioIn) ioIn.textContent=isLive ? (fmt.label || g.format || 'N/A') : 'N/A';
-        if(ioOut) ioOut.textContent='';
-        if(rmsIn) rmsIn.textContent=isLive ? dbText(g.rms) : 'N/A';
-        if(peakOut) peakOut.textContent=isLive ? dbText(g.peak) : 'N/A';
-        if(peakBar) peakBar.style.width=isLive && Number.isFinite(Number(g.peak)) ? clamp((60+Number(g.peak))/60*100,5,100)+'%' : '0%';
-        if(frame) frame.textContent=isLive && g.frameSizeSamples ? `${g.frameSizeSamples} samples / ${Number(g.frameMs||0).toFixed(2)} ms` : 'N/A';
-      }
-      async function refreshBufferInspectorBackendV40b(ep=currentInspectedEdgePartsV40b()){
-        if(!ep) return false;
-        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
-        const data=await fetchBufferProbeFrameV40b(ep,selectedEdgeKey);
-        inspectorLiveState=data;
-        if(data?.source==='backend') inspectorBackendLiveFallbackLogged=false;
-        else if(running && !inspectorBackendLiveFallbackLogged){
-          inspectorBackendLiveFallbackLogged=true;
-          addLog('warn','Buffer Inspector visual fallback','GET /api/inspector/buffer/live unavailable for visual probe');
-        }
-        applyInspectorBufferLiveDataToUiV40b(ep);
-        renderBufferProbeV40b(ep);
-        renderBufferDumpUiV40b(ep);
-        return data?.source==='backend';
-      }
-      function renderBufferInspectorV40b(){
-        const ep=currentInspectedEdgePartsV40b();
-        if(!ep) return false;
-        setInspectorModeV40b('buffer');
-        setGeneralLabelsForBufferV40b();
-        const liveFmt=(running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : edgeBufferFormatV40b(ep);
-        $('#selIcon').textContent='▰';
-        $('#selName').textContent='Buffer';
-        $('#selSub').textContent=`${bufferNameV40b(ep)} · ${running && liveFmt?.label ? liveFmt.label : edgeBufferFormatV40b(ep).label}`;
-        $('#probeName').textContent=`(${ep.from}.${ep.fromPort} Buffer)`;
-        selectedSessionV40b(ep);
-        applyInspectorBufferLiveDataToUiV40b(ep);
-        renderBufferProbeV40b(ep);
-        renderBufferDumpUiV40b(ep);
-        if(typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
-        return true;
-      }
-
-      drawEdges = function(){
-        syncWorldGeometry();
-        const svg=$('#edgeSvg'); if(!svg) return; svg.innerHTML='';
-        svg.setAttribute('viewBox',`0 0 ${state.world.w} ${state.world.h}`);
-        svg.setAttribute('preserveAspectRatio','none');
-        const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-        defs.innerHTML=`<linearGradient id="edgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#00d8ff"/><stop offset="100%" stop-color="#b65cff"/></linearGradient><linearGradient id="dumpGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffcc45"/><stop offset="100%" stop-color="#ffa826"/></linearGradient><linearGradient id="selectedEdgeGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="2200" y2="0"><stop offset="0%" stop-color="#ffffff"/><stop offset="45%" stop-color="#00f5ff"/><stop offset="100%" stop-color="#66fffb"/></linearGradient><marker id="arrow" markerWidth="10" markerHeight="12" refX="9.4" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,6 L0,12 Z" fill="#00d8ff"/></marker><marker id="selectedArrow" markerWidth="13" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L13,7.5 L0,15 Z" fill="#ffffff"/></marker>`;
-        svg.appendChild(defs);
-        state.edges.forEach((edge,idx)=>{
-          const ep=edgeParts(edge);
-          const a=nodeById(ep.from), b=nodeById(ep.to); if(!a||!b) return;
-          const d=edgePath(a,b,ep.fromPort,ep.toPort);
-          const key=edgeKeyFromParts(ep.from,ep.fromPort,ep.to,ep.toPort);
-          const selected=isEdgeSelectedKey(key);
-          const dumping=isEdgeDumpingV40b(key);
-          const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-          let stroke='url(#edgeGrad)', width='3', marker='url(#arrow)';
-          if(dumping){ stroke='url(#dumpGrad)'; width=selected?'8':'6'; marker='url(#selectedArrow)'; }
-          if(selected){ stroke='url(#selectedEdgeGrad)'; width=dumping?'9':'7'; marker='url(#selectedArrow)'; }
-          p.setAttribute('d',d);
-          p.setAttribute('fill','none');
-          p.setAttribute('stroke',stroke);
-          p.setAttribute('stroke-width',width);
-          p.setAttribute('marker-end',marker);
-          p.setAttribute('class',`edge-glow ${selected?'selected selected-buffer':''} ${dumping?'dumping':''}`);
-          p.style.filter = selected
-            ? 'drop-shadow(0 0 16px rgba(255,255,255,.95)) drop-shadow(0 0 26px rgba(0,245,255,.75))'
-            : (dumping ? 'drop-shadow(0 0 16px rgba(255,204,69,.96)) drop-shadow(0 0 24px rgba(255,168,38,.55))' : '');
-          const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
-          hit.setAttribute('d',d); hit.setAttribute('class','edge-hit');
-          const bindEdgeSelect=(el)=>{
-            el.addEventListener('pointerdown',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
-            el.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key);});
-            el.addEventListener('dblclick',e=>{e.preventDefault(); e.stopPropagation(); selectEdgeForEdit(ep,key); deleteSelectedEdge();});
-          };
-          bindEdgeSelect(p);
-          bindEdgeSelect(hit);
-          svg.appendChild(p);
-          svg.appendChild(hit);
-          if(running){
-            const dot=document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('r',dumping?'4':'3'); dot.setAttribute('class','edge-particle');
-            const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion'); anim.setAttribute('dur',`${2.1+rnd(0,.7)}s`); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path',d); anim.setAttribute('begin',`${idx*.12}s`); dot.appendChild(anim); svg.appendChild(dot);
-          }
-          if(idx%2===0){ const pa=portPoint(a,'out',ep.fromPort), pb=portPoint(b,'in',ep.toPort); const tx=(pa.x+pb.x)/2, ty=(pa.y+pb.y)/2-8; const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',tx); text.setAttribute('y',ty); text.setAttribute('class','edge-label'); text.textContent='48 kHz'; svg.appendChild(text); }
-        });
-      };
-
-      const __renderInspectorBeforeBufferV40b = renderInspector;
-      renderInspector = function(){
-        if(isInspectingBufferV40b() && renderBufferInspectorV40b()) return;
-        setInspectorModeV40b('node');
-        resetGeneralLabelsForNodeV40b();
-        return __renderInspectorBeforeBufferV40b();
-      };
-
-      const __refreshInspectorBackendBeforeBufferV40b = refreshInspectorBackend;
-      refreshInspectorBackend = async function(){
-        if(isInspectingBufferV40b()) return refreshBufferInspectorBackendV40b();
-        return __refreshInspectorBackendBeforeBufferV40b();
-      };
-
-      startBufferDump = startBufferDumpV40b;
-      stopBufferDump = async function(reason='manual'){ return stopBufferDumpV40b(selectedSessionV40b(),reason); };
-      renderBufferDumpUi = renderBufferDumpUiV40b;
-
-      $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40b('pipeline_stop').finally(markPipelineStoppedForDumpV40b); }, true);
-    }
 
 
-    // v40c: stable multi-buffer dump, no auto file-picker, no frontend fake PCM dump.
-    if(!window.__audioStudioBufferDumpV40cInstalled){
-      window.__audioStudioBufferDumpV40cInstalled=true;
-
-      const bufferDumpSessionsV40c = new Map();
+    // stable multi-buffer dump, no auto file-picker, no frontend fake PCM dump.
+    {
+const bufferDumpSessionsV40c = new Map();
       let bufferDumpPipelineEpochV40c = 1;
 
       function dumpQueryParamV40c(v=''){ return encodeURIComponent(String(v ?? '')); }
@@ -4959,6 +4398,7 @@
       renderBufferDumpUi = renderBufferDumpUiV40c;
 
       $('#stopBtn')?.addEventListener('click',()=>{ stopAllBufferDumpsV40c('pipeline_stop').finally(markPipelineStoppedForDumpV40c); }, true);
+    
     }
 
     function renderCostTable(){
@@ -4967,10 +4407,9 @@
     }
 
 
-    // v48: backend-backed, sortable and scrollable PER-ALGORITHM COST panel.
-    if(!window.__audioStudioPerAlgorithmCostV48Installed){
-      window.__audioStudioPerAlgorithmCostV48Installed=true;
-      const algorithmCostLiveV48={received:false,timestamp:0,items:new Map(),sortKey:'cpu',sortDir:'desc'};
+    // backend-backed, sortable and scrollable PER-ALGORITHM COST panel.
+    {
+const algorithmCostLiveV48={received:false,timestamp:0,items:new Map(),sortKey:'cpu',sortDir:'desc'};
       const costColumnsV48=[
         ['name','Name'],['cpu','CPU%'],['mem','MEM'],['lat','LAT'],['core','Core']
       ];
@@ -5128,186 +4567,20 @@
         }
       },true);
       window.audioStudioAlgorithmCostV48={refreshAlgorithmCostsV48,renderCostTableV48,centerAndFlashCostNodeV48,sortCostTableV48};
+    
     }
 
 
 
-    // v49: backend-only PER-ALGORITHM COST fix.
+    // backend-only PER-ALGORITHM COST fix.
     // Do not synthesize frontend fake runtime cost. Missing backend data is shown
-    // as 0% / N/A, while fake numbers are generated only by backend mock APIs.
-    if(!window.__audioStudioPerAlgorithmCostV49BackendOnlyInstalled){
-      window.__audioStudioPerAlgorithmCostV49BackendOnlyInstalled=true;
-      const algorithmCostLiveV49={items:new Map(),sortKey:'cpu',sortDir:'desc',lastClickedKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
-      const costColumnsV49=[['name','Name'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
-      function ensureCostTableScrollV49(){
-        const table=$('#costTable'), panel=$('#costPanel');
-        if(!table || !panel) return;
-        if(!table.parentElement?.classList?.contains('cost-table-scroll-v48')){
-          const wrap=document.createElement('div');
-          wrap.className='cost-table-scroll-v48';
-          panel.insertBefore(wrap,table);
-          wrap.appendChild(table);
-        }
-        table.classList.add('cost-table-v49-backend-only');
-        table.classList.remove('cost-table-v49');
-      }
-      function visibleCostNodesV49(){
-        const select=$('#pipelineSelect');
-        const selected=select?.value || 'ALL';
-        const groupsApi=window.audioStudioWorkingPipelineGroupsV44;
-        if(selected!=='ALL' && groupsApi?.currentWorkingGroupsV44){
-          const g=groupsApi.currentWorkingGroupsV44().find(x=>x.id===selected);
-          if(g?.nodes?.length) return [...g.nodes];
-        }
-        return [...state.nodes];
-      }
-      function normalizeCostItemV49(raw,n){
-        if(!raw) return null;
-        const id=raw.node_id || raw.nodeId || n?.id;
-        const cpu=Number(raw.cpu ?? 0);
-        const memRaw=raw.mem_kb ?? raw.memKb;
-        const latRaw=raw.latency_ms ?? raw.latencyMs;
-        return {
-          node_id:id,
-          cpu:Number.isFinite(cpu) ? clamp(cpu,0,100) : 0,
-          mem_kb:memRaw===null || memRaw===undefined || !Number.isFinite(Number(memRaw)) ? null : Number(memRaw),
-          latency_ms:latRaw===null || latRaw===undefined || !Number.isFinite(Number(latRaw)) ? null : Number(latRaw),
-          core:Number(raw.core ?? n?.core ?? 0)
-        };
-      }
-      function cpuColorV49(cpu){
-        const c=clamp(Number(cpu)||0,0,100);
-        const hue=Math.round(125 - c*1.25);
-        return `hsl(${hue}, 92%, 56%)`;
-      }
-      function currentCostV49(n){ return running ? (algorithmCostLiveV49.items.get(n.id) || null) : null; }
-      function costValueV49(n,key){
-        const item=currentCostV49(n);
-        if(key==='name') return String(n.name || n.id || '').toLowerCase();
-        if(key==='core') return Number(n.core ?? item?.core ?? 0);
-        if(key==='cpu') return Number(item?.cpu ?? 0);
-        if(key==='mem') return item?.mem_kb===null || item?.mem_kb===undefined ? null : Number(item.mem_kb);
-        if(key==='lat') return item?.latency_ms===null || item?.latency_ms===undefined ? null : Number(item.latency_ms);
-        return 0;
-      }
-      function compareCostV49(a,b){
-        const key=algorithmCostLiveV49.sortKey, dir=algorithmCostLiveV49.sortDir==='asc'?1:-1;
-        const av=costValueV49(a,key), bv=costValueV49(b,key);
-        if(av===null && bv===null) return String(a.name).localeCompare(String(b.name));
-        if(av===null) return 1;
-        if(bv===null) return -1;
-        if(typeof av==='string' || typeof bv==='string') return dir*String(av).localeCompare(String(bv));
-        if(av===bv) return String(a.name).localeCompare(String(b.name));
-        return dir*(av-bv);
-      }
-      function headerCostV49(){
-        return `<colgroup><col class="cost-col-name"><col class="cost-col-cpu"><col class="cost-col-mem"><col class="cost-col-lat"><col class="cost-col-core"></colgroup><thead><tr>`+
-          costColumnsV49.map(([key,label])=>{
-            const active=algorithmCostLiveV49.sortKey===key;
-            const icon=active ? (algorithmCostLiveV49.sortDir==='desc'?'▼':'▲') : '';
-            return `<th data-cost-sort="${key}" class="${active?'sort-active-v48':''}" title="Click to sort ${label}">${label}<span class="cost-sort-icon-v49">${icon}</span></th>`;
-          }).join('')+'</tr></thead>';
-      }
-      function renderCostTableV49(){
-        ensureCostTableScrollV49();
-        const table=$('#costTable'); if(!table) return;
-        const nodes=visibleCostNodesV49().sort(compareCostV49);
-        const rows=nodes.map(n=>{
-          const item=currentCostV49(n);
-          const cpu=Number(item?.cpu ?? 0);
-          const color=cpuColorV49(cpu);
-          const mem=item?.mem_kb===null||item?.mem_kb===undefined?'<span class="cost-na-v48">N/A</span>':`${Math.round(Number(item.mem_kb))} KB`;
-          const lat=item?.latency_ms===null||item?.latency_ms===undefined?'<span class="cost-na-v48">N/A</span>':Number(item.latency_ms).toFixed(2);
-          const core=Number(n.core ?? item?.core ?? 0);
-          return `<tr data-cost-node-id="${escapeHtml(n.id)}"><td><span class="cost-name-v48" data-cost-center="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name || n.id)}</span></td><td><div class="cost-cpu-cell-v49"><div class="cost-cpu-bar-v49"><i style="width:${clamp(cpu,0,100)}%;background:${color};color:${color}"></i></div><span class="cost-cpu-value-v49">${cpu.toFixed(1)}%</span></div></td><td>${mem}</td><td>${lat}</td><td>${escapeHtml(core)}</td></tr>`;
-        }).join('');
-        const totalCpu=nodes.reduce((s,n)=>s+Number(currentCostV49(n)?.cpu ?? 0),0);
-        const memVals=nodes.map(n=>Number(currentCostV49(n)?.mem_kb)).filter(Number.isFinite);
-        const totalMem=running && memVals.length ? `${(memVals.reduce((a,b)=>a+b,0)/1024).toFixed(1)} MB` : 'N/A';
-        table.innerHTML=headerCostV49()+`<tbody>${rows || '<tr><td colspan="5" class="cost-na-v48">No algorithms in selected pipeline group</td></tr>'}</tbody><tfoot><tr class="cost-total-v48"><td><b>Total</b></td><td><b>${totalCpu.toFixed(1)}%</b></td><td colspan="3"><b>${escapeHtml(totalMem)}</b></td></tr></tfoot>`;
-      }
-      function sortCostTableV49(key){
-        if(!key) return;
-        if(algorithmCostLiveV49.lastClickedKey===key) algorithmCostLiveV49.sortDir=algorithmCostLiveV49.sortDir==='desc'?'asc':'desc';
-        else { algorithmCostLiveV49.sortKey=key; algorithmCostLiveV49.sortDir='desc'; algorithmCostLiveV49.lastClickedKey=key; }
-        renderCostTableV49();
-        backendEdit('algorithm_cost_sort_v49_backend_only',{key,dir:algorithmCostLiveV49.sortDir});
-      }
-      async function fetchBackendCostsV49(nodes){
-        const ids=encodeURIComponent(nodes.map(n=>n.id).join(','));
-        const cores=encodeURIComponent(nodes.map(n=>n.core ?? 0).join(','));
-        const data=await apiGet(`/api/algorithm/cost/live?running=${running?1:0}&nodes=${ids}&cores=${cores}&_=${Date.now()}`);
-        algorithmCostLiveV49.items.clear();
-        if(!data || !Array.isArray(data.costs)) return false;
-        data.costs.forEach(raw=>{
-          const id=raw?.node_id || raw?.nodeId;
-          const n=nodes.find(x=>x.id===id);
-          const item=normalizeCostItemV49(raw,n);
-          if(item?.node_id) algorithmCostLiveV49.items.set(item.node_id,item);
-        });
-        return nodes.length===0 || algorithmCostLiveV49.items.size===nodes.length || algorithmCostLiveV49.items.size>0;
-      }
-      async function refreshAlgorithmCostsV49(){
-        const nodes=visibleCostNodesV49();
-        if(!running){ algorithmCostLiveV49.items.clear(); algorithmCostLiveV49.backendOk=false; algorithmCostLiveV49.lastUpdate=Date.now(); return false; }
-        let ok=false;
-        try{ ok=await fetchBackendCostsV49(nodes); }catch(e){ ok=false; }
-        algorithmCostLiveV49.backendOk=ok;
-        algorithmCostLiveV49.lastUpdate=Date.now();
-        if(!ok && algorithmCostLiveV49.missingLogCount<3){
-          algorithmCostLiveV49.missingLogCount++;
-          addLog('warn','Algorithm cost backend unavailable','GET /api/algorithm/cost/live returned no valid backend data; showing 0% / N/A');
-        }
-        return ok;
-      }
-      async function syncTelemetryBackendOnlyV49(){
-        const ids=encodeURIComponent(state.nodes.map(n=>n.id).join(','));
-        const data=await apiGet('/api/telemetry?nodes=' + ids + '&_=' + Date.now());
-        if(!data || !data.nodeCost) return false;
-        state.nodes.forEach(n=>{
-          const t=data.nodeCost[n.id];
-          if(!t) return;
-          n.rms=Number(t.rms ?? n.rms);
-          n.peak=Number(t.peak ?? n.peak);
-        });
-        if(Array.isArray(data.cores)) state.cores=data.cores.map(c=>Number(c.load ?? 0));
-        if(data.health){
-          healthState.latency=Number(data.health.latencyMs ?? healthState.latency);
-          healthState.buffer=Number(data.health.bufferOccupancy ?? healthState.buffer);
-          healthState.mem=Number(data.health.memoryMb ?? healthState.mem);
-          healthState.throughput=Number(data.health.throughput ?? healthState.throughput);
-          healthState.power=Number(data.health.powerW ?? healthState.power);
-          healthState.xruns=String(data.health.xruns ?? healthState.xruns);
-        }
-        if(data.meters){ ['inL','inR','outL','outR'].forEach(id=>{ if(data.meters[id]!==undefined) meterState[id]=Number(data.meters[id]); }); }
-        return true;
-      }
-      function centerAndFlashCostNodeV49(nodeId){
-        const n=nodeById(nodeId); if(!n){toast('Algorithm node not found in current layout');return false;}
-        clearSelection(); selectedNodeId=n.id; selectedNodeIds=new Set([n.id]); selectedEdgeKey=''; selectedEdgeKeys=new Set(); renderAll(false);
-        const sc=getScrollEl(); const z=state.zoom || 1;
-        if(sc){ sc.scrollLeft=Math.max(0,(n.x+64)*z-sc.clientWidth/2); sc.scrollTop=Math.max(0,(n.y+60)*z-sc.clientHeight/2); renderMinimap(); }
-        requestAnimationFrame(()=>{ const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId); if(!el)return; el.classList.remove('cost-flash-v48'); void el.offsetWidth; el.classList.add('cost-flash-v48'); setTimeout(()=>el.classList.remove('cost-flash-v48'),950); });
-        backendEdit('algorithm_cost_center_node_v49_backend_only',{node_id:n.id,node_name:n.name}); toast(`Centered ${n.name}`); return true;
-      }
-      syncTelemetryFromBackend=async function(){ const telemetryOk=await syncTelemetryBackendOnlyV49(); await refreshAlgorithmCostsV49(); return telemetryOk; };
-      renderCostTable=renderCostTableV49;
-      document.addEventListener('click',e=>{
-        const th=e.target?.closest?.('#costTable th[data-cost-sort]');
-        if(th){ e.preventDefault(); e.stopPropagation(); sortCostTableV49(th.dataset.costSort); return; }
-        const name=e.target?.closest?.('#costTable [data-cost-center]');
-        if(name && (e.ctrlKey || e.metaKey)){ e.preventDefault(); e.stopPropagation(); centerAndFlashCostNodeV49(name.dataset.costCenter); }
-      },true);
-	      window.audioStudioAlgorithmCostV49={refreshAlgorithmCostsV49,renderCostTableV49,sortCostTableV49,centerAndFlashCostNodeV49,syncTelemetryBackendOnlyV49,backendOnly:true};
-    }
 
 
 
-    // v50: stable backend-only PER-ALGORITHM COST display and sorting.
+    // stable backend-only PER-ALGORITHM COST display and sorting.
     // This override keeps backend-only data policy from v49: no frontend fake cost.
-    if(!window.__audioStudioPerAlgorithmCostV50Installed){
-      window.__audioStudioPerAlgorithmCostV50Installed=true;
-      const algorithmCostLiveV50={items:new Map(),sortKey:'cpu',sortDir:'desc',lastUserSortKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
+    {
+const algorithmCostLiveV50={items:new Map(),sortKey:'cpu',sortDir:'desc',lastUserSortKey:'',backendOk:false,lastUpdate:0,missingLogCount:0};
       const costColumnsV50=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
       function ensureCostTableScrollV50(){
         const table=$('#costTable'), panel=$('#costPanel');
@@ -5320,7 +4593,7 @@
           wrap.appendChild(table);
         }
         wrap.classList.add('cost-table-scroll-v50');
-        table.classList.remove('cost-table-v49-backend-only','cost-table-v49');
+        table.classList.remove('cost-table-v49');
         table.classList.add('cost-table-v50');
       }
       function visibleCostNodesV50(){
@@ -5459,14 +4732,17 @@
         requestAnimationFrame(()=>{const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId); if(!el)return; el.classList.remove('cost-flash-v48'); void el.offsetWidth; el.classList.add('cost-flash-v48'); setTimeout(()=>el.classList.remove('cost-flash-v48'),950);});
         backendEdit('algorithm_cost_center_node_v50',{node_id:n.id,node_name:n.name}); toast(`Centered ${n.name}`); return true;
       }
-	      const __syncTelemetryBeforeCostV50=syncTelemetryFromBackend;
-	      const telemetryOnlyV49=window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49;
-	      syncTelemetryFromBackend=async function(){
-	        let ok=false;
-	        try{ok=telemetryOnlyV49 ? await telemetryOnlyV49() : await __syncTelemetryBeforeCostV50();}catch(e){ok=false;}
-	        await refreshAlgorithmCostsV50();
-	        return ok;
-	      };
+      const __syncTelemetryBeforeCost=syncTelemetryFromBackend;
+      async function syncTelemetryBackendOnly(){
+        let ok=false;
+        try{ok=await __syncTelemetryBeforeCost();}catch(e){ok=false;}
+        return ok;
+      }
+      syncTelemetryFromBackend=async function(){
+        const ok=await syncTelemetryBackendOnly();
+        await refreshAlgorithmCostsV50();
+        return ok;
+      };
       renderCostTable=renderCostTableV50;
       document.addEventListener('pointerdown',e=>{
         const th=e.target?.closest?.('#costTable th[data-cost-sort-v50]');
@@ -5478,7 +4754,8 @@
         const name=e.target?.closest?.('#costTable [data-cost-center-v50]');
         if(name && (e.ctrlKey||e.metaKey)){e.preventDefault();e.stopPropagation();centerAndFlashCostNodeV50(name.dataset.costCenterV50);}
       },true);
-      window.audioStudioAlgorithmCostV50={refreshAlgorithmCostsV50,renderCostTableV50,sortCostTableV50,centerAndFlashCostNodeV50,backendOnly:true};
+      window.audioStudioAlgorithmCostV50={refreshAlgorithmCostsV50,renderCostTableV50,sortCostTableV50,centerAndFlashCostNodeV50,syncTelemetryBackendOnly,backendOnly:true};
+    
     }
 
     function renderCoreLoading(){
@@ -5928,11 +5205,9 @@
       toast(`${n.name} 端口方向已对调`);
     }
 
-    // v41c: connected Auto Arrange fix. Cross-pipeline edges merge bands; no 5-node wrap.
-    if(!window.__audioStudioAutoArrangeV41cInstalled){
-      window.__audioStudioAutoArrangeV41cInstalled=true;
-
-      function topoLayerNodesV41c(nodes, edges){
+    // connected Auto Arrange fix. Cross-pipeline edges merge bands; no 5-node wrap.
+    {
+function topoLayerNodesV41c(nodes, edges){
         const nodeIds=new Set(nodes.map(n=>n.id));
         const order=new Map(nodes.map((n,i)=>[n.id,i]));
         const outs=new Map(nodes.map(n=>[n.id,[]]));
@@ -6207,16 +5482,15 @@
         if(!silent) toast('Auto layout finished');
         addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Connected SCC layout: ${arrangedGroups.length} band(s), ${state.nodes.length} node(s)`);
       };
+    
     }
 
 
-    // v42: disconnected-component Auto Arrange fix.
+    // disconnected-component Auto Arrange fix.
     // Each unconnected subgraph is arranged in its own vertical band, even when
     // the subgraphs belong to the same pipeline after manual splitting.
-    if(!window.__audioStudioAutoArrangeV42Installed){
-      window.__audioStudioAutoArrangeV42Installed=true;
-
-      function buildDisconnectedLayoutGroupsV42(){
+    {
+function buildDisconnectedLayoutGroupsV42(){
         const nodes=[...state.nodes];
         const nodeBy=new Map(nodes.map(n=>[n.id,n]));
         const nodeOrder=new Map(nodes.map((n,i)=>[n.id,i]));
@@ -6343,16 +5617,16 @@
         if(!silent) toast('Auto layout finished');
         addLog('info',silent?'Initial auto layout finished':'Auto layout finished',`Disconnected components: ${arrangedGroups.length} band(s), ${state.nodes.length} node(s)`);
       };
+    
     }
 
 
 
-    // v43: clipboard and Ctrl/Cmd multi-select support for pipeline layout.
+    // clipboard and Ctrl/Cmd multi-select support for pipeline layout.
     // Supports Ctrl/Cmd-click multi-select on nodes and connections, plus
     // Ctrl/Cmd+C, Ctrl/Cmd+X, Ctrl/Cmd+V for selected layout items.
-    if(!window.__audioStudioClipboardV43Installed){
-      window.__audioStudioClipboardV43Installed=true;
-      const clipboardStateV43 = {payload:null,pasteCount:0,clickGuardUntil:0};
+    {
+const clipboardStateV43 = {payload:null,pasteCount:0,clickGuardUntil:0};
 
       function isEditableTargetV43(target){
         const tag=target?.tagName?.toLowerCase();
@@ -6591,16 +5865,16 @@
       }
       installClipboardHandlersV43();
       window.audioStudioClipboardV43={copySelectionV43,cutSelectionV43,pasteSelectionV43};
+    
     }
 
 
-    // v44: working pipeline list generated from current connected components.
+    // working pipeline list generated from current connected components.
     // The dropdown now reflects the live layout groups rather than only the
     // original saved JSON pipeline list. Save/export will later decide how
     // New / Split / Merge / Modified groups are named and written back to JSON.
-    if(!window.__audioStudioWorkingPipelineListV44Installed){
-      window.__audioStudioWorkingPipelineListV44Installed=true;
-      const workingGroupPrefixV44='__working_group_v44__:';
+    {
+const workingGroupPrefixV44='__working_group_v44__:';
       let currentWorkingGroupIdV44='ALL';
       let lastWorkingGroupSignatureV44='';
 
@@ -6847,16 +6121,16 @@
         return out;
       };
       window.audioStudioWorkingPipelineGroupsV44={currentWorkingGroupsV44,renderWorkingPipelineSelectV44,focusWorkingGroupV44};
+    
     }
 
 
-    // v51: algorithm instance Index + working-group display filter.
+    // algorithm instance Index + working-group display filter.
     // 1) Assign a live 1-based Index to each same-type algorithm instance.
     // 2) Selecting a Pipeline working group now filters the canvas so only that
     //    group is rendered; All restores the full layout.
-    if(!window.__audioStudioInstanceIndexAndGroupFilterV51Installed){
-      window.__audioStudioInstanceIndexAndGroupFilterV51Installed=true;
-      let activeWorkingGroupIdV51='ALL';
+    {
+let activeWorkingGroupIdV51='ALL';
       let filterNodeIdsOverrideV51=null;
       let renderingFilteredGraphV51=false;
       let lastWorkingGroupSignatureV51='';
@@ -7060,16 +6334,16 @@
       renderPipelineSelectV51();
       updateInspectorIndexRowV51();
       window.audioStudioInstanceIndexAndGroupFilterV51={renderPipelineSelectV51,assignAlgorithmInstanceIndexesV51,visibleNodeIdSetV51,visibleNodesV51};
+    
     }
 
 
-    // v54: harden PER-ALGORITHM COST IDX header + stable six-column layout.
+    // harden PER-ALGORITHM COST IDX header + stable six-column layout.
     // v53 was too dependent on matching the previous renderer's exact strings; this
     // post-processes the rendered table every time, so old v50/v52/v53 DOM cannot keep
     // hiding IDX or truncating LAT/Core.
-    if(!window.__audioStudioPerAlgorithmCostIdxLayoutV54Installed){
-      window.__audioStudioPerAlgorithmCostIdxLayoutV54Installed=true;
-      const costColumnsV54=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+    {
+const costColumnsV54=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
       function costIndexValueForNodeV54(n){
         const idx=Number(n?.instanceIndex ?? n?.algorithmIndex ?? 1);
         return Number.isFinite(idx) && idx>0 ? Math.floor(idx) : 1;
@@ -7177,16 +6451,16 @@
       },true);
       window.addEventListener('load',()=>requestAnimationFrame(applyCostTableLayoutV54));
       window.audioStudioCostIdxLayoutV54={applyCostTableLayoutV54,costIndexValueForNodeV54};
+    
     }
 
 
     
 
-    // v56: fixed PER-ALGORITHM COST total row outside the scroll body.
+    // fixed PER-ALGORITHM COST total row outside the scroll body.
     // IDX is a display-only instance index column and must not participate in sorting.
-    if(!window.__audioStudioCostTotalFixedV56Installed){
-      window.__audioStudioCostTotalFixedV56Installed=true;
-      function parsePercentV56(text=''){
+    {
+function parsePercentV56(text=''){
         const m=String(text).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);
         return m ? Number(m[0]) : NaN;
       }
@@ -7311,17 +6585,17 @@
       },true);
       window.addEventListener('load',()=>requestAnimationFrame(ensureFixedCostTotalV56));
       window.audioStudioCostTotalFixedV56={ensureFixedCostTotalV56,backendOnly:true,idxSortable:false};
+    
     }
 
 
 
-    // v59: final PER-ALGORITHM COST column alignment and inline sort arrow.
+    // final PER-ALGORITHM COST column alignment and inline sort arrow.
     // v57/v58 should not be merged. This post-processor can safely sit after
     // v50/v54/v56 and after a local v58 test package, and re-normalizes the
     // rendered table after every render/sort.
-    if(!window.__audioStudioPerAlgorithmCostLayoutV59Installed){
-      window.__audioStudioPerAlgorithmCostLayoutV59Installed=true;
-      const costColumnsV59=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
+    {
+const costColumnsV59=[['name','Name'],['idx','IDX'],['cpu','CPU'],['mem','MEM'],['lat','LAT'],['core','Core']];
       function costIndexForNodeV59(n){
         const idx=Number(n?.instanceIndex ?? n?.algorithmIndex ?? 1);
         return Number.isFinite(idx) && idx>0 ? Math.floor(idx) : 1;
@@ -7484,16 +6758,16 @@
       requestAnimationFrame(applyCostTableLayoutV59);
       window.audioStudioPerAlgorithmCostLayoutV59={applyCostTableLayoutV59,costIndexForNodeV59};
       window.__audioStudioPerAlgorithmCostColumnRatioV60='Name 25 / IDX 10 / CPU 26 / MEM 15 / LAT 12 / Core 12';
+    
     }
 
 
-    // v61: stopped-state IDX cell guard for PER-ALGORITHM COST.
+    // stopped-state IDX cell guard for PER-ALGORITHM COST.
     // In stopped / backend-N/A state, older render paths can produce five body
     // cells: Name + CPU + MEM + LAT + Core. This makes CPU occupy the IDX column.
     // Always normalize to six cells and show IDX as N/A when cost data is N/A.
-    if(!window.__audioStudioPerAlgorithmCostStoppedIdxV61Installed){
-      window.__audioStudioPerAlgorithmCostStoppedIdxV61Installed=true;
-      function colgroupHtmlV61(){
+    {
+function colgroupHtmlV61(){
         return '<col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54">';
       }
       function ensureCostColgroupV61(table){
@@ -7604,15 +6878,15 @@
       window.addEventListener('load',()=>requestAnimationFrame(applyCostStoppedIdxV61));
       requestAnimationFrame(applyCostStoppedIdxV61);
       window.audioStudioPerAlgorithmCostStoppedIdxV61={applyCostStoppedIdxV61};
+    
     }
 
 
-    // v62: robust stopped/N/A IDX column fix.
+    // robust stopped/N/A IDX column fix.
     // The stopped-state renderer can emit only 5 body cells (Name + CPU + MEM + LAT + Core).
     // Normalize the actual source DOM after every render and mutation so CPU never occupies IDX.
-    if(!window.__audioStudioPerAlgorithmCostStoppedIdxV62Installed){
-      window.__audioStudioPerAlgorithmCostStoppedIdxV62Installed=true;
-      function colgroupHtmlV62(){
+    {
+function colgroupHtmlV62(){
         return '<col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54">';
       }
       function idxTextForNodeV62(n){
@@ -7725,14 +6999,14 @@
 	      }
       [0,50,200,500,1000].forEach(ms=>setTimeout(applyCostStoppedIdxFixV62,ms));
       window.audioStudioPerAlgorithmCostStoppedIdxV62={applyCostStoppedIdxFixV62};
+    
     }
 
 
-    // v64: safe recovery after v63. Keep IDX display-only and normalize after render
+    // safe recovery after v63. Keep IDX display-only and normalize after render
     // without MutationObserver or recursive DOM writes, so the page can open normally.
-    if(!window.__audioStudioPerAlgorithmCostSortHeaderRecoveryV64Installed){
-      window.__audioStudioPerAlgorithmCostSortHeaderRecoveryV64Installed=true;
-      function isIdxHeaderV64(th){
+    {
+function isIdxHeaderV64(th){
         if(!th) return false;
         return th.cellIndex===1 || (th.textContent||'').replace(/[▲▼]/g,'').trim().toUpperCase()==='IDX';
       }
@@ -7785,16 +7059,16 @@
       window.addEventListener('load',()=>requestAnimationFrame(applyCostSortHeaderRecoveryV64));
       requestAnimationFrame(applyCostSortHeaderRecoveryV64);
       window.audioStudioPerAlgorithmCostSortHeaderRecoveryV64={applyCostSortHeaderRecoveryV64,cleanupIdxSortHeaderV64,idxSortable:false};
+    
     }
 
 
-    // v65a: backend-owned DSP CORE LOADING.
+    // backend-owned DSP CORE LOADING.
     // The frontend no longer computes fake core temperature/power or core loads.
     // It only renders data returned by /api/dsp/core/loading. When the backend is
     // unavailable, the panel shows N/A placeholders instead of generating fake data.
-    if(!window.__audioStudioDspCoreLoadingV65aInstalled){
-      window.__audioStudioDspCoreLoadingV65aInstalled=true;
-      let dspCoreLoadingStateV65a={ok:false,running:false,core_count:Number($('#coreSelect')?.value||4),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:0};
+    {
+let dspCoreLoadingStateV65a={ok:false,running:false,core_count:Number($('#coreSelect')?.value||4),cores:[],summary:{totalLoad:null,headroom:null},timestamp_ms:0};
       let dspCoreLoadingRequestBusyV65a=false;
       let dspCoreLoadingLastErrorLoggedV65a=false;
       let dspCorePollTimerV65a=0;
@@ -7911,16 +7185,16 @@
       scheduleDspCoreLoadingPollV65a();
       requestAnimationFrame(()=>{renderCoreLoadingV65a(); refreshDspCoreLoadingV65a();});
       window.audioStudioDspCoreLoadingV65a={refreshDspCoreLoadingV65a,renderCoreLoadingV65a,dspCoreCountV65a,backendOwned:true,noFrontendFake:true};
+    
     }
 
 
-    // v45: keep Algorithm Library synced with selected pipeline component.
+    // keep Algorithm Library synced with selected pipeline component.
     // When a node is selected in the pipeline layout, expand its category if
     // needed, scroll the matching Algorithm Library item to the middle, then
     // pulse-highlight it briefly.
-    if(!window.__audioStudioLibraryFocusV45Installed){
-      window.__audioStudioLibraryFocusV45Installed=true;
-      let lastLibraryFocusKeyV45='';
+    {
+let lastLibraryFocusKeyV45='';
       let libraryFocusTimerV45=null;
 
       function injectLibraryFocusStyleV45(){
@@ -8047,7 +7321,7 @@
       const __renderAllBeforeLibraryFocusV45=renderAll;
       renderAll=function(rebuildNodes=true){
         const out=__renderAllBeforeLibraryFocusV45(rebuildNodes);
-        // v74: ordinary selection/render must not auto-expand, scroll, or flash
+        // ordinary selection/render must not auto-expand, scroll, or flash
         // the Algorithm Library. Library focus is now an explicit Shift+click action.
         return out;
       };
@@ -8062,14 +7336,14 @@
       },true);
       window.audioStudioLibraryFocusV45={focusAlgorithmLibraryForNodeV45,scheduleLibraryFocusForSelectedNodeV45,findLibraryComponentForNodeV45};
       window.audioStudioLibraryFocusV69={isLibraryFocusGestureV69,shiftClickOnly:true,noRenderAutoFocus:true};
+    
     }
 
 
-    // v66: give every sub-window title a stable unique color, and keep the
+    // give every sub-window title a stable unique color, and keep the
     // panel visibility menu labels in the same color as the corresponding title.
-    if(!window.__audioStudioWindowTitleColorsV66Installed){
-      window.__audioStudioWindowTitleColorsV66Installed=true;
-      const windowTitleColorsV66=[
+    {
+const windowTitleColorsV66=[
         {panel:'leftPanel',  name:'Algorithm Library', title:'#leftPanel > .panel-head',               color:'#00d8ff', glow:'rgba(0,216,255,.40)'},
         {panel:'rightPanel', name:'Inspector',         title:'#rightPanel .inspector > .panel-head',   color:'#b65cff', glow:'rgba(182,92,255,.38)'},
         {panel:'costPanel',  name:'Per-Algorithm Cost',title:'#costPanel > .card-head',                color:'#ffcc45', glow:'rgba(255,204,69,.36)'},
@@ -8107,23 +7381,23 @@
         new MutationObserver(applyWindowTitleColorsV66).observe(panelMenuV66,{childList:true,subtree:true,attributes:true,attributeFilter:['data-panel','checked']});
       }
       window.audioStudioWindowTitleColorsV66={windowTitleColorsV66,applyWindowTitleColorsV66};
+    
     }
 
 
-    // v67c: Audio File is visually removed while hidden compatibility controls prevent legacy init code from aborting.
-    if(!window.__audioStudioRemoveAudioFileV67cInstalled){
-      window.__audioStudioRemoveAudioFileV67cInstalled=true;
-      document.getElementById('rightPanel')?.classList.add('audio-file-removed-v67c');
+    // Audio File is visually removed while hidden compatibility controls prevent legacy init code from aborting.
+    {
+document.getElementById('rightPanel')?.classList.add('audio-file-removed-v67c');
       document.querySelector('#rightPanel .audio-file')?.classList.add('audio-file-removed-v67c');
+    
     }
 
 
-    // v69: backend-owned EVENT LOG, SYSTEM HEALTH and AUDIO I/O panels.
+    // backend-owned EVENT LOG, SYSTEM HEALTH and AUDIO I/O panels.
     // The frontend renders only backend API frames here; it does not synthesize
     // fake dashboard data. Mock data is generated by backend Fake*Controller classes.
-    if(!window.__audioStudioBackendDashboardLiveV69Installed){
-      window.__audioStudioBackendDashboardLiveV69Installed=true;
-      document.body.classList.add('backend-dashboard-live-v69');
+    {
+document.body.classList.add('backend-dashboard-live-v69');
       let backendEventLogStateV69={ok:false,events:[],lastError:false};
 	      let backendHealthStateV69={ok:false,summary:null,rows:[],lastError:false};
 	      let backendAudioIoStateV69={ok:false,channels:[],lastError:false};
@@ -8306,15 +7580,15 @@
       scheduleDashboardLivePollV69();
       setTimeout(refreshBackendDashboardLiveV69,50);
       window.audioStudioBackendDashboardLiveV69={refreshBackendDashboardLiveV69,refreshEventLogBackendV69,refreshSystemHealthBackendV69,refreshAudioIoBackendV69,backendOnly:true};
+    
     }
 
 
-    // v66fresh: backend-driven high-resolution Real-Time Signal Probe.
+    // backend-driven high-resolution Real-Time Signal Probe.
     // No frontend fake waveform/spectrum is generated here; data comes only from
     // /api/realtime/probe/live and mode/channel changes are sent to backend.
-	    if(!window.__audioStudioRealTimeProbeV66FreshInstalled){
-	      window.__audioStudioRealTimeProbeV66FreshInstalled=true;
-	      const rtProbeV66Fresh={mode:'time',chA:0,chB:1,last:null,busy:false,lastFetch:0,backendOk:false,menu:null};
+	    {
+const rtProbeV66Fresh={mode:'time',chA:0,chB:1,last:null,busy:false,lastFetch:0,backendOk:false,menu:null};
 	      let rtProbePollTimerV66Fresh=0;
 	      function rtProbeIsBufferSelectedV66Fresh(){ return !!selectedEdgeKey && !selectedNodeId && typeof currentInspectedEdgeParts==='function' && !!currentInspectedEdgeParts(); }
 	      function rtProbeEdgeV66Fresh(){ return rtProbeIsBufferSelectedV66Fresh()?currentInspectedEdgeParts():null; }
@@ -8489,6 +7763,7 @@
 	      rtProbeSetupControlsV66Fresh();
 	      scheduleRtProbePollV66Fresh();
 	      window.audioStudioRealTimeProbeV66Fresh={rtProbeRefreshBackendV66Fresh,rtProbeDrawV66Fresh,backendOnly:true,fftSize:4096};
+	    
 	    }
 
     function exportJson(){
@@ -8501,7 +7776,7 @@
       const hidden=!visible;
       el.classList.toggle('hidden-panel',hidden);
       if(hidden){
-        // v68: inline !important is needed because older dashboard CSS uses
+        // inline !important is needed because older dashboard CSS uses
         // #costPanel{display:flex!important}, which beats .hidden-panel.
         el.style.setProperty('display','none','important');
         el.setAttribute('aria-hidden','true');
@@ -8515,11 +7790,10 @@
     }
 
 
-    // v68: robust dashboard close-button delegation.
+    // robust dashboard close-button delegation.
     // Keep close working even after future DOM refreshes or panel menu rebuilds.
-    if(!window.__audioStudioDashboardCloseV68Installed){
-      window.__audioStudioDashboardCloseV68Installed=true;
-      document.addEventListener('click',e=>{
+    {
+document.addEventListener('click',e=>{
         const btn=e.target?.closest?.('[data-hide]');
         if(!btn) return;
         const panelId=btn.dataset.hide;
@@ -8532,6 +7806,7 @@
         closePanel:id=>setPanelVisible(id,false),
         openPanel:id=>setPanelVisible(id,true)
       };
+    
     }
     function init(){
       pipelineLayoutCache=loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); setupInspectorTabs(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawInspectorProbeCanvases(); $('#playBtn').textContent='▶'; addLog('ok','Build successful','Smart Speaker v3 / HiFi5'); addLog('info','Pipeline validated','0 warnings, 0 errors');
@@ -8614,10 +7889,9 @@
     window.addEventListener('resize',()=>{updateWorldBounds(); if(!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true);});
     init();
 
-    // v47: bounded dashboard strip + checkbox-order driven panel layout.
-    if(!window.__audioStudioDashboardStripV47Installed){
-      window.__audioStudioDashboardStripV47Installed=true;
-      const dashboardPanelOrderV47=['costPanel','corePanel','probePanel','logPanel','healthPanel','meterPanel'];
+    // bounded dashboard strip + checkbox-order driven panel layout.
+    {
+const dashboardPanelOrderV47=['costPanel','corePanel','probePanel','logPanel','healthPanel','meterPanel'];
       let dashboardCheckedOrderV47=[...dashboardPanelOrderV47];
       function dashboardContainerV47(){ return document.querySelector('.bottom'); }
       function isDashboardPanelV47(id){ return dashboardPanelOrderV47.includes(id); }
@@ -8704,6 +7978,7 @@
       renderDashboardStripV47();
       requestAnimationFrame(()=>renderDashboardStripV47());
       window.audioStudioDashboardStripV47={renderDashboardStripV47,dashboardCheckedOrderV47};
+    
     }
 
   </script>

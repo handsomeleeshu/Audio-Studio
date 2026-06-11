@@ -48,12 +48,14 @@ assert.ok(
   'running telemetry ticks must not rebuild pipeline node DOM/SVG layout'
 );
 assert.ok(
-  html.includes('syncTelemetryBackendOnlyV49,backendOnly:true'),
-  'v49 should expose a telemetry-only path for later cost renderers'
+  html.includes('syncTelemetryBackendOnly,backendOnly:true'),
+  'algorithm cost should expose a canonical telemetry-only path for runtime ticks'
 );
 assert.ok(
-  html.includes('const telemetryOnlyV49=window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49'),
-  'v50 should avoid chaining through v49 cost refresh during telemetry ticks'
+  html.includes('const __syncTelemetryBeforeCost=syncTelemetryFromBackend') &&
+    html.includes('const ok=await syncTelemetryBackendOnly();') &&
+    !html.includes('window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49'),
+  'cost telemetry must use the canonical telemetry-only path without chaining through removed v49 code'
 );
 assert.ok(
   html.includes('EVENT_LOG_REFRESH_DEBOUNCE_MS_V69') && html.includes('scheduleEventLogRefreshV69(EVENT_LOG_RUNNING_POLL_MS_V69)'),
