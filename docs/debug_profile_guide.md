@@ -218,6 +218,31 @@ Common frontend hotspots to inspect:
 - Inspector rendering after node or buffer selection.
 - Real-time probe canvas drawing.
 
+For repeatable command-line measurements, run:
+
+```bash
+npm run profile:frontend
+```
+
+The harness starts the local mock backend when needed, launches headless Chrome
+through the Chrome DevTools Protocol, records idle UI metrics by default, and
+writes JSON reports to:
+
+```text
+profiles/frontend/
+```
+
+Useful variants:
+
+```bash
+AUDIO_STUDIO_PROFILE_SCENARIO=running npm run profile:frontend
+AUDIO_STUDIO_PROFILE_SCENARIO=both AUDIO_STUDIO_PROFILE_MS=30000 npm run profile:frontend
+```
+
+The report includes `Performance.getMetrics` deltas, Long Task totals,
+requestAnimationFrame frame intervals, DOM node count, JS heap size, request
+counts by API path, and active interval delays observed during page startup.
+
 ## Release Safety
 
 The debug/profile setup is isolated from release behavior:
