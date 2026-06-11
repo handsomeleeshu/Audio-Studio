@@ -3428,6 +3428,26 @@
       flex: 0 0 8px;
       margin-left: 6px;
     }
+
+
+    /* Dynamic runtime load color mapping for DSP Core and System Health. */
+    #corePanel .loadbar i,
+    #healthPanel .health-progress i {
+      background: var(--load-gradient, linear-gradient(90deg, #28e85d, #ffd24a)) !important;
+      box-shadow: 0 0 10px var(--load-glow, rgba(0, 216, 255, .18)) !important;
+      transition: width .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
+    }
+
+    #corePanel .loadbar i.load-na-v96,
+    #healthPanel .health-progress i.load-na-v96 {
+      opacity: .42;
+      box-shadow: none !important;
+    }
+
+    #corePanel #totalLoad,
+    #corePanel #headroom {
+      transition: color .18s ease, text-shadow .18s ease;
+    }
   </style>
 </head>
 
@@ -11468,6 +11488,109 @@
 
     setupResponsivePanelLayout();
 
+
+
+    // Dynamic runtime load color mapping for DSP Core and System Health.
+    // Keep these bars visually aligned with PER-ALGORITHM COST: low load is green,
+    // mid load moves to yellow, high load moves to orange/red. No backend values are
+    // invented here; this only colors already-rendered backend percentages.
+    {
+      function loadPercentNumberV96(v) {
+        if (v === null || v === undefined) return null;
+        const s = String(v).trim();
+        if (!s || s.toUpperCase().includes('N/A')) return null;
+        const m = s.match(/-?\d+(?:\.\d+)?/);
+        if (!m) return null;
+        const n = Number(m[0]);
+        return Number.isFinite(n) ? clamp(n, 0, 100) : null;
+      }
+      function loadColorModelV96(percent) {
+        const p = loadPercentNumberV96(percent);
+        if (p === null) {
+          return { start: '#24415f', end: '#24415f', glow: 'rgba(143,162,191,.14)', text: '#8fa2bf', na: true };
+        }
+        if (p >= 85) return { start: '#ff5151', end: '#ff8a22', glow: 'rgba(255,81,81,.34)', text: '#ff8a22', na: false };
+        if (p >= 70) return { start: '#ff8a22', end: '#ffa826', glow: 'rgba(255,138,34,.30)', text: '#ffa826', na: false };
+        if (p >= 50) return { start: '#ffcc45', end: '#ffa826', glow: 'rgba(255,204,69,.28)', text: '#ffcc45', na: false };
+        return { start: '#a8ff21', end: '#31f26b', glow: 'rgba(49,242,107,.24)', text: '#31f26b', na: false };
+      }
+      function applyLoadColorV96(fill, percent) {
+        if (!fill) return false;
+        const model = loadColorModelV96(percent);
+        fill.style.setProperty('--load-gradient', `linear-gradient(90deg, ${model.start}, ${model.end})`);
+        fill.style.setProperty('--load-glow', model.glow);
+        fill.classList.toggle('load-na-v96', !!model.na);
+        fill.dataset.loadColorPercentV96 = loadPercentNumberV96(percent) === null ? 'N/A' : String(Math.round(loadPercentNumberV96(percent)));
+        return true;
+      }
+      function applyLoadTextColorV96(el, percent, opts = {}) {
+        if (!el) return false;
+        const raw = loadPercentNumberV96(percent);
+        if (raw === null) {
+          el.style.color = '#8fa2bf';
+          el.style.textShadow = 'none';
+          return true;
+        }
+        const colorBasis = opts.inverse ? 100 - raw : raw;
+        const model = loadColorModelV96(colorBasis);
+        el.style.color = model.text;
+        el.style.textShadow = `0 0 16px ${model.glow}`;
+        return true;
+      }
+      function percentFromTextV96(elOrText) {
+        return loadPercentNumberV96(typeof elOrText === 'string' ? elOrText : (elOrText?.textContent || ''));
+      }
+      function percentFromInlineWidthV96(el) {
+        const raw = el?.style?.width || el?.getAttribute?.('style') || '';
+        const m = String(raw).match(/width\s*:\s*(-?\d+(?:\.\d+)?)%|(-?\d+(?:\.\d+)?)%/i);
+        const n = m ? Number(m[1] || m[2]) : NaN;
+        return Number.isFinite(n) ? clamp(n, 0, 100) : null;
+      }
+      function colorizeDspCoreLoadingBarsV96() {
+        document.querySelectorAll('#coreRows .core-row').forEach(row => {
+          const percent = percentFromTextV96(row.querySelector('b'));
+          applyLoadColorV96(row.querySelector('.loadbar i'), percent);
+        });
+        applyLoadTextColorV96(document.getElementById('totalLoad'), percentFromTextV96(document.getElementById('totalLoad')));
+        // Headroom is inverse of load: high headroom is healthy/green, low headroom is warning/red.
+        applyLoadTextColorV96(document.getElementById('headroom'), percentFromTextV96(document.getElementById('headroom')), { inverse: true });
+      }
+      function colorizeSystemHealthBarsV96() {
+        document.querySelectorAll('#healthRows .health-progress').forEach(progress => {
+          const fill = progress.querySelector('i');
+          const valueText = progress.previousElementSibling?.querySelector('b')?.textContent || '';
+          const percent = String(valueText).toUpperCase().includes('N/A') ? null : percentFromInlineWidthV96(fill);
+          applyLoadColorV96(fill, percent);
+        });
+      }
+      function colorizeDashboardLoadBarsV96() {
+        colorizeDspCoreLoadingBarsV96();
+        colorizeSystemHealthBarsV96();
+      }
+
+      const __renderCoreLoadingBeforeLoadColorsV96 = renderCoreLoading;
+      renderCoreLoading = function () {
+        const out = __renderCoreLoadingBeforeLoadColorsV96?.();
+        colorizeDspCoreLoadingBarsV96();
+        return out;
+      };
+      const __renderHealthBeforeLoadColorsV96 = renderHealth;
+      renderHealth = function () {
+        const out = __renderHealthBeforeLoadColorsV96?.();
+        colorizeSystemHealthBarsV96();
+        return out;
+      };
+      const __renderRuntimeTelemetryBeforeLoadColorsV96 = renderRuntimeTelemetry;
+      renderRuntimeTelemetry = function () {
+        const out = __renderRuntimeTelemetryBeforeLoadColorsV96?.();
+        colorizeDashboardLoadBarsV96();
+        return out;
+      };
+
+      requestAnimationFrame(colorizeDashboardLoadBarsV96);
+      setTimeout(colorizeDashboardLoadBarsV96, 0);
+      window.audioStudioLoadBarColorsV96 = { loadPercentNumberV96, loadColorModelV96, applyLoadColorV96, colorizeDashboardLoadBarsV96 };
+    }
   </script>
 </body>
 
