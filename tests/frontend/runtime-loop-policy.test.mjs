@@ -39,5 +39,13 @@ assert.ok(
   html.includes('rtProbeShouldDrawBlankV66Fresh'),
   'realtime probe should avoid redrawing blank canvas every poll when inactive'
 );
+assert.ok(
+  html.includes('function renderRuntimeTelemetry()'),
+  'running telemetry ticks should have a lightweight runtime render path'
+);
+assert.ok(
+  !/updateRandom[\s\S]{0,1200}renderAll\(true\)/.test(html),
+  'running telemetry ticks must not rebuild pipeline node DOM/SVG layout'
+);
 
 console.log('runtime-loop-policy.test passed');

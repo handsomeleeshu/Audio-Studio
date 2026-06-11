@@ -5499,17 +5499,38 @@
       if(rebuildNodes) renderNodes(); else {$$('.pipeline-node').forEach(el=>el.classList.toggle('selected',isNodeSelected(el.dataset.id)));}
       redrawEdgesAfterLayout(); renderInspector(); renderCostTable(); renderCoreLoading(); renderHealth(); renderMeters();
     }
-    async function updateRandom(){
-      if(!running) return;
-      const fromBackend = await syncTelemetryFromBackend();
-      if(!fromBackend){
-        state.nodes.forEach(n=>{ n.cpu=clamp(n.cpu+rnd(-.25,.35),.1,15); n.lat=clamp(n.lat+rnd(-.03,.05),.03,4.5); n.rms=clamp(n.rms+rnd(-.8,.8),-36,-6); n.peak=clamp(n.peak+rnd(-.8,.4),-16,-.2); });
+    function renderNodeRuntimeStats(){
+      $$('.pipeline-node').forEach(el=>{
+        const n=nodeById(el.dataset.id);
+        if(!n) return;
+        const values=el.querySelectorAll('.node-stat b');
+        if(values[0]) values[0].textContent=`${n.cpu.toFixed(1)}%`;
+        if(values[1]) values[1].textContent=`${n.lat.toFixed(2)} ms`;
+        if(values[2]) values[2].textContent=`${n.mem} KB`;
+        const core=el.querySelector('.core-tag');
+        if(core) core.textContent=`Core ${n.core}`;
+      });
+    }
+    function renderRuntimeTelemetry(){
+      renderNodeRuntimeStats();
+      renderCostTable();
+      renderCoreLoading();
+      renderHealth();
+      renderMeters();
+      const inspected=nodeById(selectedNodeId)||state.nodes[0];
+      if(inspected) applyInspectorLiveDataToUi(inspected);
+    }
+	    async function updateRandom(){
+	      if(!running) return;
+	      const fromBackend = await syncTelemetryFromBackend();
+	      if(!fromBackend){
+	        state.nodes.forEach(n=>{ n.cpu=clamp(n.cpu+rnd(-.25,.35),.1,15); n.lat=clamp(n.lat+rnd(-.03,.05),.03,4.5); n.rms=clamp(n.rms+rnd(-.8,.8),-36,-6); n.peak=clamp(n.peak+rnd(-.8,.4),-16,-.2); });
         state.cores=state.cores.map(v=>clamp(v+rnd(-4,5),8,92));
       }
       playSec=(playSec+.5)%135; const pct=playSec/135*100; $('#playProgress').style.width=pct+'%'; $('#playTime').textContent=`${fmt(playSec)} / 02:15`;
-      renderAll(true);
-      if(Math.random()<.08) addLog(Math.random()<.75?'info':'warn', fromBackend?'Backend telemetry updated':'Runtime parameter synced', fromBackend?'GET /api/telemetry':'Random fallback telemetry');
-    }
+	      renderRuntimeTelemetry();
+	      if(Math.random()<.08) addLog(Math.random()<.75?'info':'warn', fromBackend?'Backend telemetry updated':'Runtime parameter synced', fromBackend?'GET /api/telemetry':'Random fallback telemetry');
+	    }
     function fmt(s){s=Math.floor(s);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
     function resizeCanvas(c){ const r=c.getBoundingClientRect(); const d=window.devicePixelRatio||1; if(c.width!==Math.round(r.width*d)||c.height!==Math.round(r.height*d)){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d); c.getContext('2d').setTransform(d,0,0,d,0,0);} }
 	    let t=0;
@@ -8247,7 +8268,7 @@
         playSec=(playSec+.5)%135; const pct=playSec/135*100;
         const progress=$('#playProgress'); if(progress) progress.style.width=pct+'%';
         const playTime=$('#playTime'); if(playTime) playTime.textContent=`${fmt(playSec)} / 02:15`;
-        renderAll(true);
+        renderRuntimeTelemetry();
       };
       scheduleDashboardLivePollV69();
       setTimeout(refreshBackendDashboardLiveV69,50);
