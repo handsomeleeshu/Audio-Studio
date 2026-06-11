@@ -5082,6 +5082,7 @@
       return `M ${x1} ${y1} C ${x1 + p1.side * dx} ${y1}, ${x2 + p2.side * dx} ${y2}, ${x2} ${y2}`;
     }
     let edgeLayoutRedrawFrame = 0;
+    let viewportRedrawFrame = 0;
     function redrawEdgesAfterLayout() {
       drawEdges();
       if (edgeLayoutRedrawFrame) return;
@@ -5089,6 +5090,14 @@
       edgeLayoutRedrawFrame = raf(() => {
         edgeLayoutRedrawFrame = 0;
         drawEdges();
+      });
+    }
+    function scheduleViewportRedraw() {
+      if (viewportRedrawFrame) return;
+      const raf = window.requestAnimationFrame || (cb => setTimeout(cb, 0));
+      viewportRedrawFrame = raf(() => {
+        viewportRedrawFrame = 0;
+        renderMinimap();
       });
     }
     function selectEdgeForEdit(ep, key) {
@@ -5515,6 +5524,11 @@
       const ports = inspectorBackendPorts(n).map(p => `${queryToken(p.dir)}:${queryToken(p.name)}:${Number(p.max_ch || 1)}`).join(',');
       return `/api/inspector/live?node_id=${queryToken(n.id)}&node_name=${queryToken(n.name)}&module_type=${queryToken(n.moduleTypeId || '')}&running=${running ? 1 : 0}&ports=${ports}`;
     }
+    function inspectorSelectionStillTargetsNode(n) {
+      if (!n || isInspectingBuffer()) return false;
+      const current = nodeById(selectedNodeId) || state.nodes[0];
+      return !!current && current.id === n.id;
+    }
     function fallbackInspectorWave(portIndex = 0, active = false) {
       const phase = Date.now() * 0.006 + portIndex * .87;
       return Array.from({ length: 96 }, (_, i) => {
@@ -5579,6 +5593,7 @@
       if (!n) return false;
       syncInspectorBackendContext(n);
       const data = await apiGet(inspectorLiveQuery(n));
+      if (!inspectorSelectionStillTargetsNode(n)) return false;
       if (!data || data.ok === false) {
         inspectorLiveState = makeFrontendFallbackInspectorLiveData(n);
         if (running && !inspectorBackendLiveFallbackLogged) {
@@ -6971,6 +6986,31 @@
         const fmt = edgeBufferFormatV40c(ep);
         return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40c(key)}&from=${dumpQueryParamV40c(ep.from + '.' + ep.fromPort)}&to=${dumpQueryParamV40c(ep.to + '.' + ep.toPort)}&running=${running ? 1 : 0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples || 480}`;
       }
+      function makeBufferInspectorUnavailableStateV40c(ep, key = selectedEdgeKey) {
+        const fmt = edgeBufferFormatV40c(ep);
+        return {
+          ok: true,
+          mode: 'backend_unavailable',
+          source: 'unavailable',
+          buffer: true,
+          running: false,
+          timestamp_ms: Date.now(),
+          edge_key: key,
+          format: null,
+          general: { format: 'N/A', rms: null, peak: null, frameSizeSamples: null, frameMs: null },
+          ports: [{
+            key: 'buffer',
+            dir: 'buffer',
+            name: 'buffer',
+            channels: fmt.channels,
+            sampleRate: fmt.sampleRate,
+            bitDepth: fmt.bits,
+            waveform: [],
+            spectrum: []
+          }],
+          pcm16: []
+        };
+      }
       async function fetchBackendBufferFrameV40c(ep, key = selectedEdgeKey) {
         try {
           const data = await apiGet(bufferLiveQueryV40c(ep, key));
@@ -6990,28 +7030,25 @@
             data.source = 'backend';
             data.server_edge_key = data.edge_key || '';
             data.edge_key = key;
-            data.format = rememberEdgeRuntimeFormat(key, data.format || edgeBufferFormatV40c(ep), edgeBufferFormatV40c(ep));
+            data.format = data.format ? rememberEdgeRuntimeFormat(key, data.format, edgeBufferFormatV40c(ep)) : null;
             return data;
           }
         } catch (e) { }
-        const fmt = edgeBufferFormatV40c(ep);
-        const runActive = !!running;
-        return {
-          ok: true, mode: 'visual_fallback_only', source: 'visual_fallback', buffer: true, running: runActive, timestamp_ms: Date.now(),
-          edge_key: key, format: fmt,
-          general: runActive ? { format: fmt.label, rms: -rnd(12, 34), peak: -rnd(1.2, 10), frameSizeSamples: fmt.frameSamples || 480, frameMs: (fmt.frameSamples || 480) * 1000 / fmt.sampleRate } : { format: 'N/A', rms: null, peak: null, frameSizeSamples: null, frameMs: null },
-          ports: [{ key: 'buffer', dir: 'buffer', name: 'buffer', channels: fmt.channels, sampleRate: fmt.sampleRate, bitDepth: fmt.bits, waveform: fallbackInspectorWave(0, runActive), spectrum: fallbackInspectorSpectrum(0, runActive) }],
-          pcm16: []
-        };
+        return makeBufferInspectorUnavailableStateV40c(ep, key);
       }
       function updateBufferDumpWrittenUiV40c(s = selectedSessionV40c()) {
         const el = $('#dumpWrittenValue');
         if (el) el.textContent = formatDumpBytesV40c(s?.bytes || 0);
       }
+      function bufferBackendLiveFormatV40c(ep, key) {
+        if (!running || !inspectorLiveState?.buffer || inspectorLiveState?.source !== 'backend' || !inspectorLiveState?.running || inspectorLiveState?.edge_key !== key || !inspectorLiveState?.format) return null;
+        return inspectorLiveState.format;
+      }
       function renderBufferProbeV40c(ep) {
         const list = $('#inspectorProbeList');
         if (!list) return;
-        const liveFmt = (running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const key = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : selectedEdgeKey;
+        const liveFmt = bufferBackendLiveFormatV40c(ep, key);
         const fmt = liveFmt || edgeBufferFormatV40c(ep);
         const label = (running && liveFmt) ? (fmt.label || `${fmt.channels}ch · ${fmt.sampleRate || 48000} Hz · ${fmt.bits || 16}-bit`) : 'N/A';
         const count = $('#probePortCount');
@@ -7029,7 +7066,8 @@
         const body = $('#inspectorDumpBody');
         if (!body) return;
         const s = selectedSessionV40c(ep);
-        const liveFmt = (running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : null;
+        const key = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : selectedEdgeKey;
+        const liveFmt = bufferBackendLiveFormatV40c(ep, key);
         const formatText = liveFmt?.label || liveFmt?.format || (s?.active && s.format?.label ? s.format.label : 'N/A');
         const active = !!s?.active;
         const busy = !!(s?.starting || s?.stopping || s?.finalizing);
@@ -7303,32 +7341,38 @@
       function applyInspectorBufferLiveDataToUiV40c(ep) {
         const live = inspectorLiveState || {};
         const key = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : selectedEdgeKey;
+        const liveMatches = !!(live.buffer && live.edge_key === key);
+        const isLive = !!(running && live.running && live.source === 'backend' && liveMatches);
         const fallbackFmt = edgeBufferFormatV40c(ep);
-        const fmt = rememberEdgeRuntimeFormat(key, live.format || cachedEdgeRuntimeFormat(key) || fallbackFmt, fallbackFmt) || fallbackFmt;
-        const isLive = !!(running && live.running && live.buffer);
-        const g = live.general || {};
-        const showFormat = !!(running || cachedEdgeRuntimeFormat(key));
+        const fmt = (isLive && live.format) ? rememberEdgeRuntimeFormat(key, live.format, fallbackFmt) : null;
+        const g = isLive ? (live.general || {}) : {};
         const ioIn = $('#ioIn'), ioOut = $('#ioOut'), rmsIn = $('#rmsIn'), peakOut = $('#peakOut'), peakBar = $('#peakBar'), frame = $('#frameSizeInfo');
-        if (ioIn) ioIn.textContent = showFormat ? (fmt.label || g.format || fallbackFmt.label || 'N/A') : 'N/A';
+        const formatText = isLive ? (fmt?.label || g.format || 'N/A') : 'N/A';
+        const frameSamples = isLive ? Number(g.frameSizeSamples) : NaN;
+        const frameMs = isLive ? Number(g.frameMs) : NaN;
+        const frameRate = isLive ? Number(fmt?.sampleRate || live.format?.sampleRate || live.format?.sample_rate) : NaN;
+        const frameMsText = Number.isFinite(frameMs) ? frameMs : (Number.isFinite(frameRate) && frameRate > 0 && Number.isFinite(frameSamples) ? frameSamples * 1000 / frameRate : NaN);
+        if (ioIn) ioIn.textContent = isLive ? ((formatText && formatText !== 'N/A') ? formatText : 'N/A') : 'N/A';
         if (ioOut) ioOut.textContent = '';
         if (rmsIn) rmsIn.textContent = isLive ? dbText(g.rms) : 'N/A';
         if (peakOut) peakOut.textContent = isLive ? dbText(g.peak) : 'N/A';
         if (peakBar) peakBar.style.width = isLive && Number.isFinite(Number(g.peak)) ? clamp((60 + Number(g.peak)) / 60 * 100, 5, 100) + '%' : '0%';
-        if (frame) frame.textContent = showFormat && (g.frameSizeSamples || fmt.frameSamples) ? `${g.frameSizeSamples || fmt.frameSamples} samples / ${Number(g.frameMs || ((fmt.frameSamples || 480) * 1000 / (fmt.sampleRate || 48000))).toFixed(2)} ms` : 'N/A';
+        if (frame) frame.textContent = isLive && Number.isFinite(frameSamples) && frameSamples > 0 && Number.isFinite(frameMsText) ? `${frameSamples} samples / ${frameMsText.toFixed(2)} ms` : 'N/A';
       }
       async function refreshBufferInspectorBackendV40c(ep = currentInspectedEdgePartsV40c()) {
         if (!ep) return false;
+        const key = selectedEdgeKey;
         if (typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
-        const data = await fetchBufferProbeFrameV40c(ep, selectedEdgeKey);
+        const data = await fetchBufferProbeFrameV40c(ep, key);
+        if (!isInspectingBufferV40c() || selectedEdgeKey !== key) return false;
         inspectorLiveState = data;
         if (data?.source === 'backend') inspectorBackendLiveFallbackLogged = false;
         else if (running && !inspectorBackendLiveFallbackLogged) {
           inspectorBackendLiveFallbackLogged = true;
-          addLog('warn', 'Buffer Inspector visual fallback', 'GET /api/inspector/buffer/live unavailable for visual probe');
+          addLog('warn', 'Buffer Inspector unavailable', 'GET /api/inspector/buffer/live unavailable; General shows N/A until backend live data returns');
         }
-        applyInspectorBufferLiveDataToUiV40c(ep);
-        renderBufferProbeV40c(ep);
-        renderBufferDumpUiV40c(ep);
+        renderBufferInspectorV40c();
+        drawInspectorProbeCanvases();
         return data?.source === 'backend';
       }
       function renderBufferInspectorV40c() {
@@ -7336,15 +7380,32 @@
         if (!ep) return false;
         setInspectorModeV40c('buffer');
         setGeneralLabelsForBufferV40c();
-        const liveFmt = (running && inspectorLiveState?.buffer && inspectorLiveState?.format) ? inspectorLiveState.format : edgeBufferFormatV40c(ep);
+        const key = selectedEdgeKey;
+        const s = selectedSessionV40c(ep);
+        const liveFmt = bufferBackendLiveFormatV40c(ep, key) || edgeBufferFormatV40c(ep);
         $('#selIcon').textContent = '▰';
         $('#selName').textContent = 'Buffer';
         $('#selSub').textContent = `${bufferNameV40c(ep)} · ${running && liveFmt?.label ? liveFmt.label : edgeBufferFormatV40c(ep).label}`;
         $('#probeName').textContent = `(${ep.from}.${ep.fromPort} Buffer)`;
-        selectedSessionV40c(ep);
+        const renderKey = [
+          'BUFFER_V40c',
+          key,
+          liveFmt?.label || edgeBufferFormatV40c(ep).label,
+          s?.active ? 'active' : 'idle',
+          s?.starting ? 'starting' : '',
+          s?.stopping ? 'stopping' : '',
+          s?.finalizing ? 'finalizing' : '',
+          displayTargetNameV40c(s, ep)
+        ].join('|');
+        if (inspectorRenderKey !== renderKey) {
+          inspectorRenderKey = renderKey;
+          renderBufferProbeV40c(ep);
+          renderBufferDumpUiV40c(ep);
+          setInspectorTab(inspectorActiveTab, false);
+        } else {
+          updateBufferDumpWrittenUiV40c(s);
+        }
         applyInspectorBufferLiveDataToUiV40c(ep);
-        renderBufferProbeV40c(ep);
-        renderBufferDumpUiV40c(ep);
         if (typeof syncInspectorBufferContext === 'function') syncInspectorBufferContext(ep);
         return true;
       }
@@ -7408,6 +7469,18 @@
       refreshInspectorBackend = async function () {
         if (isInspectingBufferV40c()) return refreshBufferInspectorBackendV40c();
         return __refreshInspectorBackendBeforeBufferV40c();
+      };
+
+      const __renderRuntimeTelemetryBeforeBufferV40c = renderRuntimeTelemetry;
+      renderRuntimeTelemetry = function () {
+        if (!isInspectingBufferV40c()) return __renderRuntimeTelemetryBeforeBufferV40c();
+        renderNodeRuntimeStats();
+        renderCostTable();
+        renderCoreLoading();
+        renderHealth();
+        renderMeters();
+        const ep = currentInspectedEdgePartsV40c();
+        if (ep) applyInspectorBufferLiveDataToUiV40c(ep);
       };
 
       startBufferDump = startBufferDumpV40c;
@@ -10876,7 +10949,7 @@
       const wrap = $('#canvasWrap');
       const sc = getScrollEl();
       setupMinimapNavigation();
-      sc?.addEventListener('scroll', () => { renderMinimap(); drawEdges(); });
+      sc?.addEventListener('scroll', scheduleViewportRedraw, { passive: true });
       sc?.addEventListener('wheel', handleCanvasWheelZoom, { passive: false });
       wrap.addEventListener('wheel', handleCanvasWheelZoom, { passive: false });
       wrap.addEventListener('gesturestart', e => { e.preventDefault(); safariGestureStartZoom = state.zoom; }, { passive: false });
