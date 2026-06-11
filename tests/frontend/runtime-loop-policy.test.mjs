@@ -47,5 +47,13 @@ assert.ok(
   !/updateRandom[\s\S]{0,1200}renderAll\(true\)/.test(html),
   'running telemetry ticks must not rebuild pipeline node DOM/SVG layout'
 );
+assert.ok(
+  html.includes('syncTelemetryBackendOnlyV49,backendOnly:true'),
+  'v49 should expose a telemetry-only path for later cost renderers'
+);
+assert.ok(
+  html.includes('const telemetryOnlyV49=window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49'),
+  'v50 should avoid chaining through v49 cost refresh during telemetry ticks'
+);
 
 console.log('runtime-loop-policy.test passed');

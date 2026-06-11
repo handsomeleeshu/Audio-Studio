@@ -5293,7 +5293,7 @@
         const name=e.target?.closest?.('#costTable [data-cost-center]');
         if(name && (e.ctrlKey || e.metaKey)){ e.preventDefault(); e.stopPropagation(); centerAndFlashCostNodeV49(name.dataset.costCenter); }
       },true);
-      window.audioStudioAlgorithmCostV49={refreshAlgorithmCostsV49,renderCostTableV49,sortCostTableV49,centerAndFlashCostNodeV49,backendOnly:true};
+	      window.audioStudioAlgorithmCostV49={refreshAlgorithmCostsV49,renderCostTableV49,sortCostTableV49,centerAndFlashCostNodeV49,syncTelemetryBackendOnlyV49,backendOnly:true};
     }
 
 
@@ -5454,13 +5454,14 @@
         requestAnimationFrame(()=>{const el=[...document.querySelectorAll('.pipeline-node')].find(x=>x.dataset.id===nodeId); if(!el)return; el.classList.remove('cost-flash-v48'); void el.offsetWidth; el.classList.add('cost-flash-v48'); setTimeout(()=>el.classList.remove('cost-flash-v48'),950);});
         backendEdit('algorithm_cost_center_node_v50',{node_id:n.id,node_name:n.name}); toast(`Centered ${n.name}`); return true;
       }
-      const __syncTelemetryBeforeCostV50=syncTelemetryFromBackend;
-      syncTelemetryFromBackend=async function(){
-        let ok=false;
-        try{ok=await __syncTelemetryBeforeCostV50();}catch(e){ok=false;}
-        await refreshAlgorithmCostsV50();
-        return ok;
-      };
+	      const __syncTelemetryBeforeCostV50=syncTelemetryFromBackend;
+	      const telemetryOnlyV49=window.audioStudioAlgorithmCostV49?.syncTelemetryBackendOnlyV49;
+	      syncTelemetryFromBackend=async function(){
+	        let ok=false;
+	        try{ok=telemetryOnlyV49 ? await telemetryOnlyV49() : await __syncTelemetryBeforeCostV50();}catch(e){ok=false;}
+	        await refreshAlgorithmCostsV50();
+	        return ok;
+	      };
       renderCostTable=renderCostTableV50;
       document.addEventListener('pointerdown',e=>{
         const th=e.target?.closest?.('#costTable th[data-cost-sort-v50]');
