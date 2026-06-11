@@ -3,12 +3,33 @@ import fs from 'node:fs';
 
 const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
 
-// Standalone HTML frontend should be present, but the brand was intentionally
-// changed from the old all-caps "AUDIO STUDIO" to the current "Audio Studio"
-// header design.
-assert.ok(html.includes('Audio Studio'), 'standalone Audio Studio UI should be present');
-assert.ok(html.includes('VeriSilicon Advanced Sound System'), 'brand subtitle should be present');
-assert.ok(html.includes('brand-logo'), 'AS logo block should be present');
+function compactSource(s) {
+  return String(s).replace(/\s+/g, ' ');
+}
+
+function visibleTextFromHtml(s) {
+  return String(s)
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const source = compactSource(html);
+const visibleText = visibleTextFromHtml(html);
+
+// Standalone HTML frontend should be present. These checks intentionally use
+// normalized source / visible text rather than exact HTML snippets, so running
+// a formatter cannot break the integration test.
+assert.ok(/Audio\s+Studio/.test(visibleText), 'standalone Audio Studio UI should be present');
+assert.ok(
+  /VeriSilicon\s+Advanced\s+Sound\s+System/.test(visibleText),
+  'brand subtitle should be present'
+);
+assert.ok(/class\s*=\s*["'][^"']*brand-logo/.test(source), 'AS logo block should be present');
 
 assert.ok(!/react-app\.js/i.test(html), 'standalone frontend must not load react-app.js');
 assert.ok(!/unpkg\.com\/react/i.test(html), 'standalone frontend must not load React from CDN');

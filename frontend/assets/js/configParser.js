@@ -6,10 +6,12 @@ const VIRTUAL_IO_MODULE_TYPES = [
     name: 'File Input',
     category: 'INPUT / OUTPUT',
     io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }] },
-    static_schema: { fields: [
-      { key: 'source', type: 'enum', enum: ['local_file', 'demo_sine', 'demo_speech'], default: 'local_file' },
-      { key: 'loop', type: 'bool', default: true }
-    ] },
+    static_schema: {
+      fields: [
+        { key: 'source', type: 'enum', enum: ['local_file', 'demo_sine', 'demo_speech'], default: 'local_file' },
+        { key: 'loop', type: 'bool', default: true }
+      ]
+    },
     runtime_params: [
       { param_id: 'gain', param_name: 'Gain', value_type: 'float', default: 0, unit: 'dB', range: { min: -60, max: 12, step: 0.5 } }
     ]
@@ -19,10 +21,12 @@ const VIRTUAL_IO_MODULE_TYPES = [
     name: 'Mic Input',
     category: 'INPUT / OUTPUT',
     io: { in_ports: [], out_ports: [{ name: 'mic0', max_ch: 1 }, { name: 'mic1', max_ch: 1 }, { name: 'mic2', max_ch: 1 }, { name: 'mic3', max_ch: 1 }] },
-    static_schema: { fields: [
-      { key: 'device', type: 'enum', enum: ['browser_mic', 'virtual_mic_array'], default: 'browser_mic' },
-      { key: 'channels', type: 'uint', default: 4, range: { min: 1, max: 8, step: 1 } }
-    ] },
+    static_schema: {
+      fields: [
+        { key: 'device', type: 'enum', enum: ['browser_mic', 'virtual_mic_array'], default: 'browser_mic' },
+        { key: 'channels', type: 'uint', default: 4, range: { min: 1, max: 8, step: 1 } }
+      ]
+    },
     runtime_params: [
       { param_id: 'pre_gain', param_name: 'Pre Gain', value_type: 'float', default: 0, unit: 'dB', range: { min: -20, max: 20, step: 0.5 } }
     ]
@@ -32,9 +36,11 @@ const VIRTUAL_IO_MODULE_TYPES = [
     name: 'Audio Output',
     category: 'INPUT / OUTPUT',
     io: { in_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }], out_ports: [] },
-    static_schema: { fields: [
-      { key: 'sink', type: 'enum', enum: ['browser_playback', 'wav_render', 'virtual_speaker'], default: 'browser_playback' }
-    ] },
+    static_schema: {
+      fields: [
+        { key: 'sink', type: 'enum', enum: ['browser_playback', 'wav_render', 'virtual_speaker'], default: 'browser_playback' }
+      ]
+    },
     runtime_params: [
       { param_id: 'volume', param_name: 'Volume', value_type: 'float', default: 0, unit: 'dB', range: { min: -60, max: 12, step: 0.5 } },
       { param_id: 'mute', param_name: 'Mute', value_type: 'bool', default: false }
