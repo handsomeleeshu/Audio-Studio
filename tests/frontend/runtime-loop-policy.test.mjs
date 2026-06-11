@@ -63,5 +63,13 @@ assert.ok(
   !html.includes('.finally(()=>refreshEventLogBackendV69())'),
   'UI event posting must not trigger an immediate full event-log refresh for every log line'
 );
+assert.ok(
+  html.includes('applyZoom(false)'),
+  'node rebuild should not redraw edges before replacing node DOM'
+);
+assert.ok(
+  html.includes('let edgeLayoutRedrawFrame=0') && !html.includes('raf(()=>{ drawEdges(); raf(drawEdges); })'),
+  'edge redraw after layout should be coalesced instead of triple-drawing every render'
+);
 
 console.log('runtime-loop-policy.test passed');

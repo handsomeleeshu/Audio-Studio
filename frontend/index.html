@@ -1835,9 +1835,9 @@
         el.addEventListener('dragstart', e=>{e.dataTransfer.setData('text/plain', el.dataset.name);});
       });
     }
-    function renderNodes(){
-      applyZoom();
-      const layer=$('#nodesLayer'); layer.innerHTML='';
+	    function renderNodes(){
+	      applyZoom(false);
+	      const layer=$('#nodesLayer'); layer.innerHTML='';
       state.nodes.forEach(n=>{
         const inPorts=nodePortList(n,'in');
         const outPorts=nodePortList(n,'out');
@@ -2000,12 +2000,12 @@
         origPos.clear();
       });
     }
-    function applyZoom(){
-      const world=$('#pipelineWorld'); if(world) world.style.transform=`scale(${state.zoom})`;
-      syncWorldGeometry();
-      const label=$('#zoomLabel'); if(label) label.textContent=Math.round(state.zoom*100)+'%';
-      drawEdges();
-    }
+	    function applyZoom(redraw=true){
+	      const world=$('#pipelineWorld'); if(world) world.style.transform=`scale(${state.zoom})`;
+	      syncWorldGeometry();
+	      const label=$('#zoomLabel'); if(label) label.textContent=Math.round(state.zoom*100)+'%';
+	      if(redraw) drawEdges();
+	    }
     function setZoom(z){
       defaultViewportZoomApplied=true;
       state.zoom=clamp(z,.35,1.8);
@@ -2068,11 +2068,16 @@
       const dx=clamp(Math.abs(x2-x1)*0.45, 18, 110);
       return `M ${x1} ${y1} C ${x1+p1.side*dx} ${y1}, ${x2+p2.side*dx} ${y2}, ${x2} ${y2}`;
     }
-    function redrawEdgesAfterLayout(){
-      drawEdges();
-      const raf=window.requestAnimationFrame || (cb=>setTimeout(cb,0));
-      raf(()=>{ drawEdges(); raf(drawEdges); });
-    }
+	    let edgeLayoutRedrawFrame=0;
+	    function redrawEdgesAfterLayout(){
+	      drawEdges();
+	      if(edgeLayoutRedrawFrame) return;
+	      const raf=window.requestAnimationFrame || (cb=>setTimeout(cb,0));
+	      edgeLayoutRedrawFrame=raf(()=>{
+	        edgeLayoutRedrawFrame=0;
+	        drawEdges();
+	      });
+	    }
     function selectEdgeForEdit(ep,key){
       selectedNodeIds.clear();
       selectedEdgeKeys.clear();
