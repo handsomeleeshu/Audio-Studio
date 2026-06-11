@@ -316,6 +316,31 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     return {200, "application/json", std::string("{\"ok\":true,\"id\":") + std::to_string(ui_notification_seq) + "}"};
   }
   if (req.method == "POST" && req.path == "/api/project/save") return {200, "application/json", runtime_->pipelineEditEvent(std::string("{\"action\":\"project_save\",\"payload\":") + req.body + "}")};
+  if (req.method == "GET" && req.path == "/api/runtime/buffer/formats/live") {
+    auto q = parseQuery(req.query);
+    const std::string running_value = q["running"];
+    const bool run = running_value == "1" || running_value == "true" || running_value == "running";
+    auto edges = splitCsv(q["edges"]);
+    const int sample_rate = 48000;
+    const int channels = 2;
+    const int bits = 16;
+    const int frame_samples = 480;
+    std::ostringstream ss;
+    ss << "{\"ok\":true,\"source\":\"backend\",\"running\":" << (run ? "true" : "false") << ",\"formats\":[";
+    for (size_t i = 0; i < edges.size(); ++i) {
+      if (edges[i].empty()) continue;
+      if (i) ss << ",";
+      ss << "{\"edge_key\":\"" << jsonEscape(edges[i]) << "\""
+         << ",\"source\":\"backend\""
+         << ",\"channels\":" << channels
+         << ",\"sampleRate\":" << sample_rate
+         << ",\"bits\":" << bits
+         << ",\"frameSamples\":" << frame_samples
+         << ",\"label\":\"2ch · 48 kHz · 16-bit\"}";
+    }
+    ss << "]}";
+    return {200, "application/json", ss.str()};
+  }
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};

@@ -3718,7 +3718,8 @@
     function rememberEdgeRuntimeFormat(key, fmt, fallback = null) {
       if (!key || !fmt) return null;
       const normalized = normalizeRuntimeFormat(fmt, fallback);
-      edgeRuntimeFormatCache.set(key, normalized);
+
+      normalized.source = fmt && (fmt.source || fmt.backendOwned || fmt.backend_owned) ? 'backend' : (normalized.source || ''); edgeRuntimeFormatCache.set(key, normalized);
       return normalized;
     }
     function cachedEdgeRuntimeFormat(key) {
@@ -3749,8 +3750,9 @@
       }
     }
     function edgeSampleRateLabelForEdge(ep, key = '') {
-      const fmt = cachedEdgeRuntimeFormat(key) || inferredEdgeFormat(ep);
-      return formatSampleRateLabel(fmt?.sampleRate || fmt?.sample_rate || 48000);
+      const fmt = key ? cachedEdgeRuntimeFormat(key) : null;
+      if (!fmt || fmt.source !== 'backend') return '';
+      return formatSampleRateLabel(fmt.sampleRate || fmt.sample_rate);
     }
     function setupPanelMenuAutoClose() {
       const menu = $('#panelMenu');
@@ -5545,28 +5547,28 @@
         return clamp(v, 0, 1);
       });
     }
-    function makeFrontendFallbackInspectorLiveData(n) {
-      const runActive = !!running;
-      const ports = inspectorBackendPorts(n);
-      let inCh = 0, outCh = 0;
-      ports.forEach(p => { if (p.dir === 'out') outCh += Number(p.max_ch || 1); else inCh += Number(p.max_ch || 1); });
-      if (inCh <= 0) inCh = 1;
-      if (outCh <= 0) outCh = inCh;
+    function makeInspectorUnavailableLiveData(n) {
+      const ports = (typeof inspectorBackendPorts === 'function' ? inspectorBackendPorts(n || {}) : []).map(p => ({
+        key: `${p.dir || 'in'}:${p.name || 'in'}`,
+        dir: p.dir || 'in',
+        name: p.name || (p.dir === 'out' ? 'out' : 'in'),
+        channels: Number(p.max_ch || p.channels || 1) || 1,
+        sampleRate: null,
+        bitDepth: null,
+        rms: null,
+        peak: null,
+        waveform: [],
+        spectrum: []
+      }));
       return {
         ok: true,
-        mode: 'frontend_fallback',
-        running: runActive,
+        mode: 'backend_unavailable',
+        source: 'unavailable',
+        running: false,
         timestamp_ms: Date.now(),
-        node_id: n.id,
-        node_name: n.name,
-        general: runActive ? {
-          input: `${inCh}ch · 48 kHz · 16-bit`,
-          output: `${outCh}ch · 48 kHz · 16-bit`,
-          rmsIn: -rnd(12, 34),
-          peakOut: -rnd(1.2, 10),
-          frameSizeSamples: 256,
-          frameMs: 5.333
-        } : {
+        node_id: n?.id || '',
+        node_name: n?.name || '',
+        general: {
           input: 'N/A',
           output: 'N/A',
           rmsIn: null,
@@ -5574,18 +5576,7 @@
           frameSizeSamples: null,
           frameMs: null
         },
-        ports: ports.map((p, i) => ({
-          key: `${p.dir}:${p.name}`,
-          dir: p.dir,
-          name: p.name,
-          channels: Number(p.max_ch || 1),
-          sampleRate: 48000,
-          bitDepth: 16,
-          rms: runActive ? -rnd(10, 35) : null,
-          peak: runActive ? -rnd(.8, 12) : null,
-          waveform: fallbackInspectorWave(i, runActive),
-          spectrum: fallbackInspectorSpectrum(i, runActive)
-        }))
+        ports
       };
     }
     async function refreshInspectorBackend() {
@@ -5595,7 +5586,7 @@
       const data = await apiGet(inspectorLiveQuery(n));
       if (!inspectorSelectionStillTargetsNode(n)) return false;
       if (!data || data.ok === false) {
-        inspectorLiveState = makeFrontendFallbackInspectorLiveData(n);
+        inspectorLiveState = makeInspectorUnavailableLiveData(n);
         if (running && !inspectorBackendLiveFallbackLogged) {
           inspectorBackendLiveFallbackLogged = true;
           addLog('warn', 'Inspector backend fallback', 'GET /api/inspector/live unavailable; using frontend fake live data');
@@ -6490,6 +6481,33 @@
         const fmt = edgeBufferFormatV40(ep);
         return `/api/inspector/buffer/live?edge_key=${dumpQueryParamV40(key)}&from=${dumpQueryParamV40(ep.from + '.' + ep.fromPort)}&to=${dumpQueryParamV40(ep.to + '.' + ep.toPort)}&running=${running ? 1 : 0}&channels=${fmt.channels}&sample_rate=${fmt.sampleRate}&bits=${fmt.bits}&frame_samples=${fmt.frameSamples || 480}`;
       }
+      function makeBufferInspectorUnavailableStateV40(ep, key = selectedEdgeKey) {
+        const fmt = edgeBufferFormatV40(ep) || {};
+        return {
+          ok: true,
+          mode: 'backend_unavailable',
+          source: 'unavailable',
+          buffer: true,
+          running: false,
+          timestamp_ms: Date.now(),
+          edge_key: key,
+          format: null,
+          general: { format: 'N/A', rms: null, peak: null, frameSizeSamples: null, frameMs: null },
+          ports: [{
+            key: 'buffer',
+            dir: 'buffer',
+            name: 'buffer',
+            channels: Number(fmt.channels || 0) || null,
+            sampleRate: null,
+            bitDepth: null,
+            rms: null,
+            peak: null,
+            waveform: [],
+            spectrum: []
+          }],
+          pcm16: []
+        };
+      }
       async function fetchBackendBufferFrameV40(ep, key = selectedEdgeKey) {
         const data = await apiGet(bufferLiveQueryV40(ep, key));
         if (!data || data.ok === false || !Array.isArray(data.pcm16) || (running && !data.pcm16.length)) return null;
@@ -6506,16 +6524,9 @@
           data.edge_key = key;
           return data;
         }
-        // Probe can still use visual fallback, but Dump must not.
         const fmt = edgeBufferFormatV40(ep);
         const runActive = !!running;
-        return {
-          ok: true, mode: 'visual_fallback_only', source: 'visual_fallback', buffer: true, running: runActive, timestamp_ms: Date.now(),
-          edge_key: key, format: rememberEdgeRuntimeFormat(key, fmt, fmt),
-          general: runActive ? { format: fmt.label, rms: -rnd(12, 34), peak: -rnd(1.2, 10), frameSizeSamples: fmt.frameSamples || 480, frameMs: (fmt.frameSamples || 480) * 1000 / fmt.sampleRate } : { format: 'N/A', rms: null, peak: null, frameSizeSamples: null, frameMs: null },
-          ports: [{ key: 'buffer', dir: 'buffer', name: 'buffer', channels: fmt.channels, sampleRate: fmt.sampleRate, bitDepth: fmt.bits, waveform: fallbackInspectorWave(0, runActive), spectrum: fallbackInspectorSpectrum(0, runActive) }],
-          pcm16: []
-        };
+        return makeBufferInspectorUnavailableStateV40(ep, key);
       }
       function updateBufferDumpWrittenUiV40(s = selectedSessionV40()) {
         const el = $('#dumpWrittenValue');
@@ -6771,7 +6782,7 @@
         if (data?.source === 'backend') inspectorBackendLiveFallbackLogged = false;
         else if (running && !inspectorBackendLiveFallbackLogged) {
           inspectorBackendLiveFallbackLogged = true;
-          addLog('warn', 'Buffer Inspector visual fallback', 'GET /api/inspector/buffer/live unavailable for visual probe');
+          addLog('warn', 'Buffer Inspector unavailable', 'GET /api/inspector/buffer/live unavailable for visual probe');
         }
         applyInspectorBufferLiveDataToUiV40(ep);
         renderBufferProbeV40(ep);
