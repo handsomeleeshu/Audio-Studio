@@ -13,7 +13,9 @@ assert.ok(html.includes('selectedEdgeKeys = new Set(state.edges.map(edgeKeyForEd
 
 assert.ok(html.includes('function edgeParticleBeginV104'), 'stable particle begin helper should exist');
 assert.ok(html.includes('appendEdgeRuntimeParticleV104(svg, key, d)'), 'drawEdges should use stable particle helper');
-assert.ok(!html.includes('2.1 + rnd(0, .7)'), 'edge particle duration should not be random per redraw');
+const runtimeBranch = html.slice(html.indexOf('const edgeRuntimeStateV104 = edgePipelineRuntimeState(ep);'), html.indexOf('function deleteSelectedEdge'));
+assert.ok(runtimeBranch.includes('appendEdgeRuntimeParticleV104(svg, key, d)'), 'drawEdges runtime branch should use stable particle helper');
+assert.ok(!runtimeBranch.includes('rnd(0, .7)'), 'drawEdges runtime branch should not randomize particle duration per redraw');
 assert.ok(html.includes('appendEdgeSampleRateLabelV104(svg, a, b, ep, key)'), 'running edge sample-rate labels should be rendered');
 assert.ok(/function edgeSampleRateLabelForEdge[\s\S]*inferredEdgeFormat\(ep\)/.test(html), 'sample-rate label should fall back to inferred format when backend format is not cached');
 assert.ok(/const edgeRunningV104 = edgeRuntimeStateV104 === 'running'/.test(html), 'edge particles should follow pipeline-scoped runtime state');
