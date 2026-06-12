@@ -11,12 +11,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Quiet checkout current ref
-        run: |
-          git init -q .
-          git remote add origin https://github.com/handsomeleeshu/Audio-Studio.git
-          git fetch -q --depth=1 origin "$GITHUB_REF"
-          git checkout -q FETCH_HEAD
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
       - name: Show tool versions
         run: |
           node --version
