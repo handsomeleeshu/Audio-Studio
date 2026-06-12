@@ -11845,6 +11845,228 @@
       setTimeout(colorizeDashboardLoadBarsV96, 0);
       window.audioStudioLoadBarColorsV96 = { loadPercentNumberV96, loadColorModelV96, applyLoadColorV96, colorizeDashboardLoadBarsV96 };
     }
+
+
+    // Ctrl/Cmd+A visible-layout selection + runtime buffer edge labels/particles.
+    // The dynamic edge flow dot is driven by absolute requestAnimationFrame time
+    // instead of SVG animateMotion, so redraws no longer restart the animation.
+    {
+      const runtimeEdgeV101 = { raf: 0, lastFormatFetch: 0, busy: false, lastFormatSignature: '' };
+
+      function isEditableTargetV101(target) {
+        const tag = target?.tagName?.toLowerCase?.() || '';
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+      }
+      function visibleNodeIdsForSelectAllV101() {
+        const api = window.audioStudioInstanceIndexAndGroupFilterV51;
+        const visible = api && typeof api.visibleNodeIdSetV51 === 'function' ? api.visibleNodeIdSetV51() : null;
+        const ids = visible && typeof visible.has === 'function'
+          ? [...visible].filter(id => nodeById(id))
+          : state.nodes.map(n => n.id);
+        return new Set(ids);
+      }
+      function selectAllVisiblePipelineLayoutV101(reason = 'keyboard') {
+        const nodeIds = visibleNodeIdsForSelectAllV101();
+        const edgeKeys = new Set();
+        state.edges.forEach(edge => {
+          const ep = edgeParts(edge);
+          if (nodeIds.has(ep.from) && nodeIds.has(ep.to)) edgeKeys.add(edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort));
+        });
+        selectedNodeIds = nodeIds;
+        selectedEdgeKeys = edgeKeys;
+        selectedNodeId = [...selectedNodeIds][0] || '';
+        selectedEdgeKey = selectedNodeId ? '' : ([...selectedEdgeKeys][0] || '');
+        inspectorRenderKey = '';
+        renderSelectionChange({ redrawEdges: true, inspector: true, resetInspector: true });
+        drawEdges();
+        addLog('info', 'Select all layout', `${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s) selected`);
+        backendEdit('select_all_visible_layout', { reason, nodes: [...selectedNodeIds], edges: [...selectedEdgeKeys] });
+        toast(`Selected ${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s)`);
+        return true;
+      }
+      function handleSelectAllShortcutV101(e) {
+        if (isEditableTargetV101(e.target)) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const key = String(e.key || '').toLowerCase();
+        if (key !== 'a') return;
+        e.preventDefault();
+        e.stopPropagation();
+        selectAllVisiblePipelineLayoutV101('ctrl_a');
+      }
+      window.addEventListener('keydown', handleSelectAllShortcutV101, true);
+
+      function ensureRuntimeEdgeStyleV101() {
+        if (document.getElementById('runtimeEdgeStyleV101')) return;
+        const style = document.createElement('style');
+        style.id = 'runtimeEdgeStyleV101';
+        style.textContent = `
+          .edge-rate-label-v101{font-size:10px;fill:#92b7d7;paint-order:stroke;stroke:#07101d;stroke-width:3px;pointer-events:none;font-weight:800;letter-spacing:.02em}
+          .edge-particle-v101{fill:var(--cyan);filter:drop-shadow(0 0 7px var(--cyan));pointer-events:none}
+          .edge-particle-v101.dumping{fill:var(--yellow);filter:drop-shadow(0 0 9px rgba(255,204,69,.95))}
+        `;
+        document.head.appendChild(style);
+      }
+      function runtimeEdgeKeyListV101() {
+        return state.edges.map(edgeKeyForEdge).filter(Boolean);
+      }
+      async function refreshRuntimeBufferFormatsV101(force = false) {
+        if (!running) return false;
+        const now = Date.now();
+        if (!force && now - runtimeEdgeV101.lastFormatFetch < 1200) return false;
+        if (runtimeEdgeV101.busy) return false;
+        const keys = runtimeEdgeKeyListV101();
+        if (!keys.length) return false;
+        runtimeEdgeV101.lastFormatFetch = now;
+        runtimeEdgeV101.busy = true;
+        try {
+          const data = await apiGet('/api/runtime/buffer/formats/live?running=1&edges=' + encodeURIComponent(keys.join(',')) + '&_=' + now);
+          if (!data || data.ok === false || !Array.isArray(data.formats)) return false;
+          let changed = false;
+          data.formats.forEach(item => {
+            const key = item.edge_key || item.edgeKey;
+            if (!key) return;
+            const before = JSON.stringify(cachedEdgeRuntimeFormat(key) || {});
+            rememberEdgeRuntimeFormat(key, { ...item, source: 'backend' });
+            const after = JSON.stringify(cachedEdgeRuntimeFormat(key) || {});
+            if (before !== after) changed = true;
+          });
+          const sig = data.formats.map(x => `${x.edge_key || x.edgeKey}:${x.sampleRate || x.sample_rate || ''}`).sort().join('|');
+          if (sig && sig !== runtimeEdgeV101.lastFormatSignature) { changed = true; runtimeEdgeV101.lastFormatSignature = sig; }
+          if (changed) drawEdges();
+          return changed;
+        } finally {
+          runtimeEdgeV101.busy = false;
+        }
+      }
+      function edgeRuntimeFormatForLabelV101(ep, key = '') {
+        return (key && cachedEdgeRuntimeFormat(key)) || inferredEdgeFormat(ep) || normalizeRuntimeFormat({ sampleRate: 48000, channels: 2, bits: 16, frameSamples: 480 });
+      }
+      const __edgeSampleRateLabelBeforeV101 = typeof edgeSampleRateLabelForEdge === 'function' ? edgeSampleRateLabelForEdge : null;
+      edgeSampleRateLabelForEdge = function (ep, key = '') {
+        const previous = __edgeSampleRateLabelBeforeV101 ? __edgeSampleRateLabelBeforeV101(ep, key) : '';
+        if (previous) return previous;
+        const fmt = edgeRuntimeFormatForLabelV101(ep, key);
+        return formatSampleRateLabel(fmt?.sampleRate || fmt?.sample_rate || 48000);
+      };
+      function isRuntimeEdgeRunningV101(ep) {
+        try {
+          if (typeof edgePipelineRuntimeState === 'function') return edgePipelineRuntimeState(ep) === 'running';
+        } catch (e) { }
+        return !!running;
+      }
+      function edgePhaseSeedV101(key = '') {
+        let h = 0;
+        for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+        return (h % 997) / 997;
+      }
+      function annotateRuntimeEdgePathsV101() {
+        const svg = $('#edgeSvg');
+        if (!svg) return [];
+        svg.querySelectorAll('.edge-label').forEach(label => label.remove());
+        svg.querySelectorAll('.edge-particle').forEach(dot => dot.remove());
+        const paths = [...svg.querySelectorAll('path.edge-glow')];
+        const runningEdges = [];
+        state.edges.forEach(edge => {
+          const ep = edgeParts(edge);
+          const a = nodeById(ep.from), b = nodeById(ep.to);
+          if (!a || !b) return;
+          const d = edgePath(a, b, ep.fromPort, ep.toPort);
+          const key = edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort);
+          const path = paths.find(p => p.getAttribute('d') === d && !p.dataset.edgeKeyV101);
+          if (!path) return;
+          path.dataset.edgeKeyV101 = key;
+          path.dataset.edgePhaseV101 = String(edgePhaseSeedV101(key));
+          if (!isRuntimeEdgeRunningV101(ep)) return;
+          runningEdges.push({ key, ep, path, dumping: path.classList.contains('dumping') });
+        });
+        return runningEdges;
+      }
+      function renderRuntimeEdgeLabelsV101(runningEdges) {
+        const svg = $('#edgeSvg');
+        if (!svg) return;
+        runningEdges.forEach(({ key, ep, path }) => {
+          let tx = 0, ty = 0;
+          try {
+            const len = path.getTotalLength();
+            const mid = path.getPointAtLength(len * 0.5);
+            tx = mid.x;
+            ty = mid.y - 8;
+          } catch (e) {
+            const a = nodeById(ep.from), b = nodeById(ep.to);
+            if (!a || !b) return;
+            const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort);
+            tx = (pa.x + pb.x) / 2;
+            ty = (pa.y + pb.y) / 2 - 8;
+          }
+          const label = edgeSampleRateLabelForEdge(ep, key);
+          if (!label) return;
+          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          text.setAttribute('x', tx);
+          text.setAttribute('y', ty);
+          text.setAttribute('class', 'edge-label edge-rate-label-v101');
+          text.textContent = label;
+          svg.appendChild(text);
+        });
+      }
+      function renderStableRuntimeParticlesV101(runningEdges) {
+        const svg = $('#edgeSvg');
+        if (!svg) return;
+        runningEdges.forEach(({ key, path, dumping }) => {
+          const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          dot.setAttribute('r', dumping ? '4' : '3');
+          dot.setAttribute('class', `edge-particle edge-particle-v101 ${dumping ? 'dumping' : ''}`);
+          dot.dataset.edgeKeyV101 = key;
+          dot.dataset.edgeDurationV101 = dumping ? '1650' : '2300';
+          dot.dataset.edgePhaseV101 = path.dataset.edgePhaseV101 || String(edgePhaseSeedV101(key));
+          svg.appendChild(dot);
+        });
+      }
+      function updateEdgeFlowParticlesV101(now = performance.now()) {
+        const svg = $('#edgeSvg');
+        if (!svg) return;
+        svg.querySelectorAll('.edge-particle-v101[data-edge-key-v101]').forEach(dot => {
+          const key = dot.dataset.edgeKeyV101 || '';
+          const path = svg.querySelector(`path.edge-glow[data-edge-key-v101="${CSS.escape(key)}"]`);
+          if (!path) { dot.remove(); return; }
+          try {
+            const len = path.getTotalLength();
+            const dur = Math.max(500, Number(dot.dataset.edgeDurationV101 || 2300));
+            const phase = Number(dot.dataset.edgePhaseV101 || 0);
+            const t = ((now / dur) + phase) % 1;
+            const p = path.getPointAtLength(len * t);
+            dot.setAttribute('cx', p.x);
+            dot.setAttribute('cy', p.y);
+          } catch (e) { }
+        });
+      }
+      function startRuntimeParticleLoopV101() {
+        if (runtimeEdgeV101.raf) return;
+        const tick = (now) => {
+          updateEdgeFlowParticlesV101(now);
+          runtimeEdgeV101.raf = requestAnimationFrame(tick);
+        };
+        runtimeEdgeV101.raf = requestAnimationFrame(tick);
+      }
+      function enhanceRuntimeEdgesV101() {
+        ensureRuntimeEdgeStyleV101();
+        const runningEdges = annotateRuntimeEdgePathsV101();
+        if (runningEdges.length) refreshRuntimeBufferFormatsV101(false);
+        renderRuntimeEdgeLabelsV101(runningEdges);
+        renderStableRuntimeParticlesV101(runningEdges);
+        updateEdgeFlowParticlesV101(performance.now());
+        startRuntimeParticleLoopV101();
+      }
+      const __drawEdgesBeforeRuntimeEdgeV101 = drawEdges;
+      drawEdges = function () {
+        const out = __drawEdgesBeforeRuntimeEdgeV101?.();
+        enhanceRuntimeEdgesV101();
+        return out;
+      };
+      setInterval(() => { if (running) refreshRuntimeBufferFormatsV101(false); }, 1200);
+      requestAnimationFrame(enhanceRuntimeEdgesV101);
+      window.audioStudioSelectAllAndRuntimeEdgesV101 = { selectAllVisiblePipelineLayoutV101, visibleNodeIdsForSelectAllV101, refreshRuntimeBufferFormatsV101, updateEdgeFlowParticlesV101, renderStableRuntimeParticlesV101, stableFlowParticles: true };
+    }
+
   </script>
 </body>
 
