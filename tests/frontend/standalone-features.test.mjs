@@ -85,4 +85,8 @@ assert.ok(/String\(e\.key\s*\|\|\s*['"]['"]\)\.toLowerCase\(\)/.test(html) && /k
 assertTokens(['refreshRuntimeBufferFormatsV101', '/api/runtime/buffer/formats/live', 'edgeSampleRateLabelForEdge = function', 'edge-rate-label-v101']);
 assertTokens(['renderStableRuntimeParticlesV101', 'updateEdgeFlowParticlesV101', 'edge-particle-v101', 'getPointAtLength', 'stableFlowParticles:true']);
 
+
+
+assertTokens(['syncCostTotalFooterFromRows', 'totalsFromCostRows', 'parseCostTotalCpuPercent', 'parseCostTotalMemKb', 'cost-total-cpu-dom-rows', 'cost-total-mem-dom-rows', 'dom_cost_rows']);
+
 console.log('standalone-features.test passed');

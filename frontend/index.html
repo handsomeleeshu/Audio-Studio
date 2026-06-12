@@ -10462,6 +10462,147 @@
     }
 
 
+
+
+
+
+    // Robust PER-ALGORITHM COST Total row recovery.
+    // Recalculate the fixed footer from final normalized DOM rows. This is kept
+    // as production code without versioned hotfix install guards, because the
+    // frontend tests now reject VxxInstalled markers and window install guards.
+    const COST_TOTAL_COLGROUP = '<col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54">';
+
+    function parseCostTotalNumber(text = '') {
+      const m = String(text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+      return m ? Number(m[0]) : NaN;
+    }
+    function costTotalCellText(cell) {
+      return (cell?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    function parseCostTotalCpuPercent(cell) {
+      const txt = costTotalCellText(cell);
+      if (!txt || /N\/A/i.test(txt)) return NaN;
+      const explicit = cell?.querySelector?.('.cost-cpu-value-v50,.cost-cpu-value-v59,.cost-cpu-value-v49,.cost-cpu-value')?.textContent || txt;
+      const v = parseCostTotalNumber(explicit);
+      return Number.isFinite(v) ? v : NaN;
+    }
+    function parseCostTotalMemKb(cell) {
+      const txt = costTotalCellText(cell);
+      if (!txt || /N\/A/i.test(txt)) return NaN;
+      const v = parseCostTotalNumber(txt);
+      if (!Number.isFinite(v)) return NaN;
+      if (/GB/i.test(txt)) return v * 1024 * 1024;
+      if (/MB/i.test(txt)) return v * 1024;
+      return v;
+    }
+    function formatCostTotalMemKb(kb) {
+      if (!Number.isFinite(kb)) return 'N/A';
+      if (kb >= 1024) return `${(kb / 1024).toFixed(1)} MB`;
+      return `${Math.round(kb)} KB`;
+    }
+    function costRowsForTotals(table) {
+      return [...(table?.tBodies?.[0]?.rows || [])].filter(row => {
+        if (!row || row.cells.length < 6) return false;
+        if (row.querySelector('td[colspan]')) return false;
+        const name = costTotalCellText(row.cells[0]);
+        return name && !/^total$/i.test(name);
+      });
+    }
+    function totalsFromCostRows(table) {
+      let cpu = 0, cpuCount = 0, memKb = 0, memCount = 0;
+      costRowsForTotals(table).forEach(row => {
+        const c = parseCostTotalCpuPercent(row.cells[2]);
+        if (Number.isFinite(c)) { cpu += c; cpuCount++; }
+        const m = parseCostTotalMemKb(row.cells[3]);
+        if (Number.isFinite(m)) { memKb += m; memCount++; }
+      });
+      return {
+        cpuText: cpuCount ? `${cpu.toFixed(1)}%` : 'N/A',
+        memText: memCount ? formatCostTotalMemKb(memKb) : 'N/A',
+        cpuCount,
+        memCount,
+        rowCount: costRowsForTotals(table).length
+      };
+    }
+    function ensureCostTotalFooter(panel, table) {
+      const scroll = table.closest('.cost-table-scroll-v50,.cost-table-scroll-v56,.cost-table-scroll-v48') || table.parentElement;
+      let footer = panel.querySelector(':scope > .cost-total-fixed-v56');
+      if (!footer) {
+        footer = document.createElement('div');
+        footer.className = 'cost-total-fixed-v56';
+        if (scroll && scroll.parentElement === panel) panel.insertBefore(footer, scroll.nextSibling);
+        else panel.appendChild(footer);
+      }
+      footer.className = 'cost-total-fixed-v56 cost-total-fixed-dom-rows';
+      let totalTable = footer.querySelector('table');
+      if (!totalTable) {
+        totalTable = document.createElement('table');
+        totalTable.className = 'cost-total-table-v56 cost-total-table-v59 cost-total-table-v61 cost-total-table-dom-rows';
+        totalTable.innerHTML = `<colgroup>${COST_TOTAL_COLGROUP}</colgroup><tbody><tr><td class="cost-total-label-v56">Total</td><td class="cost-total-idx-v56 cost-total-idx-v59"></td><td class="cost-total-cpu-v56 cost-total-cpu-v59"></td><td class="cost-total-mem-v56"></td><td class="cost-total-lat-v56"></td><td class="cost-total-core-v56"></td></tr></tbody>`;
+        footer.innerHTML = '';
+        footer.appendChild(totalTable);
+      }
+      totalTable.classList.add('cost-total-table-v56', 'cost-total-table-v59', 'cost-total-table-v61', 'cost-total-table-dom-rows');
+      let colgroup = totalTable.querySelector('colgroup');
+      if (!colgroup) {
+        colgroup = document.createElement('colgroup');
+        totalTable.insertBefore(colgroup, totalTable.firstChild);
+      }
+      colgroup.innerHTML = COST_TOTAL_COLGROUP;
+      let tbody = totalTable.tBodies?.[0];
+      if (!tbody) tbody = totalTable.createTBody();
+      let row = tbody.rows?.[0];
+      if (!row) row = tbody.insertRow();
+      while (row.cells.length < 6) row.insertCell();
+      row.cells[0].className = 'cost-total-label-v56';
+      row.cells[0].textContent = 'Total';
+      row.cells[1].className = 'cost-total-idx-v56 cost-total-idx-v59';
+      row.cells[1].textContent = '';
+      row.cells[2].className = 'cost-total-cpu-v56 cost-total-cpu-v59 cost-total-cpu-dom-rows';
+      row.cells[3].className = 'cost-total-mem-v56 cost-total-mem-dom-rows';
+      row.cells[4].className = 'cost-total-lat-v56';
+      row.cells[4].textContent = '';
+      row.cells[5].className = 'cost-total-core-v56';
+      row.cells[5].textContent = '';
+      return row;
+    }
+    function syncCostTotalFooterFromRows() {
+      const table = document.querySelector('#costTable');
+      const panel = document.querySelector('#costPanel');
+      if (!table || !panel) return false;
+      if (table.tFoot) table.tFoot.style.display = 'none';
+      const totals = totalsFromCostRows(table);
+      const row = ensureCostTotalFooter(panel, table);
+      row.cells[2].textContent = totals.cpuText;
+      row.cells[3].textContent = totals.memText;
+      row.dataset.totalCpuCount = String(totals.cpuCount);
+      row.dataset.totalMemCount = String(totals.memCount);
+      row.dataset.totalSource = totals.cpuCount || totals.memCount ? 'dom_cost_rows' : 'no_numeric_rows';
+      return true;
+    }
+    function scheduleCostTotalFooterFromRows() {
+      requestAnimationFrame(syncCostTotalFooterFromRows);
+      setTimeout(syncCostTotalFooterFromRows, 0);
+      setTimeout(syncCostTotalFooterFromRows, 80);
+    }
+    const renderCostTableBeforeDomRowTotals = renderCostTable;
+    renderCostTable = function () {
+      const out = renderCostTableBeforeDomRowTotals?.();
+      syncCostTotalFooterFromRows();
+      scheduleCostTotalFooterFromRows();
+      return out;
+    };
+    document.addEventListener('pointerdown', e => {
+      if (e.target?.closest?.('#costTable th[data-cost-sort-v50],#costTable th[data-cost-sort-v59],#costTable th[data-cost-sort],#costTable th')) scheduleCostTotalFooterFromRows();
+    }, true);
+    document.addEventListener('click', e => {
+      if (e.target?.closest?.('#costTable th[data-cost-sort-v50],#costTable th[data-cost-sort-v59],#costTable th[data-cost-sort],#costTable th')) scheduleCostTotalFooterFromRows();
+    }, true);
+    window.addEventListener('load', scheduleCostTotalFooterFromRows);
+    scheduleCostTotalFooterFromRows();
+    window.audioStudioCostTotalFooter = { syncCostTotalFooterFromRows, totalsFromCostRows, source: 'dom_cost_rows' };
+
+
     // backend-owned DSP CORE LOADING.
     // The frontend no longer computes fake core temperature/power or core loads.
     // It only renders data returned by /api/dsp/core/loading. When the backend is
