@@ -1,59 +1,4 @@
 import fs from 'node:fs';
-
-function replaceOnce(text, from, to, label) {
-  if (!text.includes(from)) throw new Error(`Missing patch target: ${label}`);
-  return text.replace(from, to);
-}
-
-const indexPath = 'frontend/index.html';
-let html = fs.readFileSync(indexPath, 'utf8');
-
-html = replaceOnce(
-  html,
-  "      normalized.source = fmt && (fmt.source || fmt.backendOwned || fmt.backend_owned) ? 'backend' : (normalized.source || ''); edgeRuntimeFormatCache.set(key, normalized);",
-  `      normalized.source = fmt && (fmt.source || fmt.backendOwned || fmt.backend_owned) ? 'backend' : (normalized.source || '');
-      const backendSampleRate = Number(fmt?.sampleRate ?? fmt?.sample_rate);
-      if (normalized.source === 'backend' && Number.isFinite(backendSampleRate) && backendSampleRate > 0) {
-        normalized.backendSampleRate = backendSampleRate;
-      } else {
-        delete normalized.backendSampleRate;
-      }
-      edgeRuntimeFormatCache.set(key, normalized);`,
-  'rememberEdgeRuntimeFormat backend sample-rate ownership'
-);
-
-html = replaceOnce(
-  html,
-  `    function edgeSampleRateLabelForEdge(ep, key = '') {
-      const fmt = key ? cachedEdgeRuntimeFormat(key) : null;
-      if (!fmt || fmt.source !== 'backend') return '';
-      return formatSampleRateLabel(fmt.sampleRate || fmt.sample_rate);
-    }`,
-  `    function edgeSampleRateLabelForEdge(ep, key = '') {
-      const fmt = key ? cachedEdgeRuntimeFormat(key) : null;
-      if (!fmt || fmt.source !== 'backend') return 'N/A';
-      const rate = Number(fmt.backendSampleRate);
-      return Number.isFinite(rate) && rate > 0 ? formatSampleRateLabel(rate) : 'N/A';
-    }`,
-  'backend-only N/A edge sample-rate label'
-);
-
-fs.writeFileSync(indexPath, html);
-
-const runTestsPath = 'scripts/run_tests.sh';
-let runTests = fs.readFileSync(runTestsPath, 'utf8');
-if (!runTests.includes('tests/frontend/pipeline-selection-buffer-edge.test.mjs')) {
-  runTests = replaceOnce(
-    runTests,
-    '  tests/frontend/cost-total-startup-safe.test.mjs\n)',
-    '  tests/frontend/cost-total-startup-safe.test.mjs\n  tests/frontend/pipeline-selection-buffer-edge.test.mjs\n)',
-    'frontend test list sample-rate policy entry'
-  );
-  fs.writeFileSync(runTestsPath, runTests);
-}
-
-const testPath = 'tests/frontend/pipeline-selection-buffer-edge.test.mjs';
-const test = `import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
@@ -81,8 +26,3 @@ assert.ok(html.includes('normalized.backendSampleRate = backendSampleRate'), 'ba
 assert.ok(/const edgeRunningV104 = edgeRuntimeStateV104 === 'running'/.test(html), 'edge particles should follow pipeline-scoped runtime state');
 
 console.log('pipeline-selection-buffer-edge.test passed');
-`;
-fs.writeFileSync(testPath, test);
-
-fs.rmSync('scripts/apply_sample_rate_backend_only_fix.mjs', { force: true });
-fs.rmSync('.github/workflows/apply-sample-rate-backend-only.yml', { force: true });

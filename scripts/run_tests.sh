@@ -14,6 +14,7 @@ frontend_tests=(
   tests/frontend/cost-table-data-total-and-selection.test.mjs
   tests/frontend/cost-total-startup-safe-v103.test.mjs
   tests/frontend/cost-total-startup-safe.test.mjs
+  tests/frontend/pipeline-selection-buffer-edge.test.mjs
 )
 
 for test_file in "${frontend_tests[@]}"; do
