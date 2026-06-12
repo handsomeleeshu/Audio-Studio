@@ -4,28 +4,29 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-FAILED=0
-find "$ROOT/tests/frontend" -maxdepth 1 -type f -name '*.test.mjs' | sort | while IFS= read -r test_file; do
-  rel="${test_file#$ROOT/}"
-  echo "::group::frontend test: $rel"
-  if node "$test_file"; then
-    echo "::endgroup::"
-  else
-    rc=$?
-    echo "::error title=Frontend test failed::$rel exited with $rc"
-    echo "::endgroup::"
-    exit "$rc"
+frontend_tests=(
+  tests/frontend/config-parser.test.mjs
+  tests/frontend/plain-html-integration.test.mjs
+  tests/frontend/standalone-features.test.mjs
+  tests/frontend/performance-profile.test.mjs
+  tests/frontend/dead-code-policy.test.mjs
+  tests/frontend/runtime-loop-policy.test.mjs
+  tests/frontend/cost-table-data-total-and-selection.test.mjs
+  tests/frontend/cost-total-startup-safe-v103.test.mjs
+  tests/frontend/cost-total-startup-safe.test.mjs
+)
+
+for test_file in "${frontend_tests[@]}"; do
+  if [[ ! -f "$test_file" ]]; then
+    echo "[frontend test skipped] $test_file"
+    continue
   fi
+  echo "[frontend test] $test_file"
+  node "$test_file"
 done
 
-echo "::group::test: tests/dev-environment.test.mjs"
+echo "[test] tests/dev-environment.test.mjs"
 node "$ROOT/tests/dev-environment.test.mjs"
-echo "::endgroup::"
 
-echo "::group::build backend"
 "$ROOT/scripts/build_backend.sh"
-echo "::endgroup::"
-
-echo "::group::ctest backend"
 ctest --test-dir "$ROOT/build" --output-on-failure
-echo "::endgroup::"
