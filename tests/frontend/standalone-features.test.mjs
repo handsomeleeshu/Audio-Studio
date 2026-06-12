@@ -79,4 +79,10 @@ assert.ok(!html.includes('__audioStudioRemoveAudioFileV67bInstalled') && !html.i
 assert.ok(!/__audioStudio[A-Za-z0-9_]*V\d+[A-Za-z0-9_]*Installed/.test(html), 'production frontend must not keep versioned VxxInstalled markers');
 assert.ok(!/if\s*\(\s*!\s*window\.__audioStudio/.test(html), 'production frontend must not keep versioned hotfix install guards');
 
+
+assertTokens(['selectAllVisiblePipelineLayoutV101', 'handleSelectAllShortcutV101', 'visibleNodeIdsForSelectAllV101', 'Select all layout']);
+assert.ok(/String\(e\.key\s*\|\|\s*['"]['"]\)\.toLowerCase\(\)/.test(html) && /key\s*!==\s*['"]a['"]/.test(html), 'missing Ctrl/Cmd+A visible layout select-all handling');
+assertTokens(['refreshRuntimeBufferFormatsV101', '/api/runtime/buffer/formats/live', 'edgeSampleRateLabelForEdge = function', 'edge-rate-label-v101']);
+assertTokens(['renderStableRuntimeParticlesV101', 'updateEdgeFlowParticlesV101', 'edge-particle-v101', 'getPointAtLength', 'stableFlowParticles:true']);
+
 console.log('standalone-features.test passed');
