@@ -22,9 +22,4 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/build_backend.sh scripts/run_tests.sh
       - name: Run tests
-        run: |
-          set +e
-          ./scripts/run_tests.sh > /tmp/audio-studio-tests.log 2>&1
-          status=$?
-          cat /tmp/audio-studio-tests.log
-          exit $status
+        run: ./scripts/run_tests.sh
