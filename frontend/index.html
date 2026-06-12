@@ -1624,7 +1624,7 @@
     .toast {
       position: absolute;
       left: 50%;
-      top: 78px;
+      top: 156px;
       transform: translateX(-50%);
       background: #071320;
       border: 1px solid rgba(0, 216, 255, .5);
@@ -1642,7 +1642,7 @@
 
     .toast.show {
       opacity: 1;
-      top: 84px
+      top: 166px
     }
 
     .drop-hint {
@@ -4074,6 +4074,12 @@
     function isEdgeSelectedKey(key) {
       return selectedEdgeKeys.has(key) || selectedEdgeKey === key;
     }
+    function renderSelectionChange({ redrawEdges = true, inspector = true, resetInspector = false } = {}) {
+      $$('.pipeline-node').forEach(el => el.classList.toggle('selected', isNodeSelected(el.dataset.id)));
+      if (resetInspector) inspectorRenderKey = '';
+      if (redrawEdges) drawEdges();
+      if (inspector) renderInspector();
+    }
     function rectsIntersect(a, b) {
       return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
     }
@@ -4925,7 +4931,7 @@
         const measuredH = Math.ceil(el.getBoundingClientRect().height / (state.zoom || 1));
         if (Number.isFinite(measuredH) && measuredH > n.h) n.h = measuredH;
         makeDraggable(el, n);
-        el.addEventListener('click', e => { if (el.dataset.dragMoved === '1') return; if (!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; backendNodeAction(n, 'select'); renderAll(false); } });
+        el.addEventListener('click', e => { if (el.dataset.dragMoved === '1') return; if (!e.target.classList.contains('port') && !e.target.classList.contains('delete-node')) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; backendNodeAction(n, 'select'); renderSelectionChange({ resetInspector: true }); } });
         $('.delete-node', el).addEventListener('click', e => { e.stopPropagation(); deleteNode(n.id); });
         $$('.port', el).forEach(portEl => setupPortHandlers(portEl, n));
       });
@@ -5003,7 +5009,7 @@
       const nodeElementById = (id) => $$('.pipeline-node').find(x => x.dataset.id === id);
       el.addEventListener('pointerdown', e => {
         if (e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
-        if (running) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; lockedRunDrag = { x: e.clientX, y: e.clientY, warned: false }; renderAll(false); return; }
+        if (running) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; lockedRunDrag = { x: e.clientX, y: e.clientY, warned: false }; renderSelectionChange({ resetInspector: true }); return; }
 
         // If this node is part of a marquee selection, keep the selection and
         // drag all selected nodes together. If it is not selected, fall back to
@@ -5030,7 +5036,7 @@
         startX = e.clientX;
         startY = e.clientY;
         el.setPointerCapture?.(e.pointerId);
-        renderAll(false);
+        renderSelectionChange({ resetInspector: true });
       });
       el.addEventListener('pointermove', e => {
         if (running && lockedRunDrag) {
@@ -5174,8 +5180,7 @@
       inspectorRenderKey = '';
       inspectorBackendContextKey = '';
       backendEdit('connection_selected', ep);
-      drawEdges();
-      renderAll(false);
+      renderSelectionChange({ resetInspector: true });
       toast(`Selected connection: ${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);
     }
     function drawEdges() {
@@ -7850,7 +7855,7 @@
           algorithmCostLiveV50.sortDir = 'desc';
           algorithmCostLiveV50.lastUserSortKey = key;
         }
-        renderCostTableV50();
+        renderCostTable();
         backendEdit('algorithm_cost_sort_v50', { key, dir: algorithmCostLiveV50.sortDir });
       }
       async function fetchBackendCostsV50(nodes) {
@@ -10206,16 +10211,8 @@
       renderCostTable = function () {
         const out = __renderCostTableBeforeV62?.();
         applyCostStoppedIdxFixV62();
-        if (!running) {
-          requestAnimationFrame(applyCostStoppedIdxFixV62);
-          setTimeout(applyCostStoppedIdxFixV62, 0);
-        }
         return out;
       };
-      const costPanelV62 = document.querySelector('#costPanel');
-      if (costPanelV62) {
-        new MutationObserver(() => { if (!running) requestAnimationFrame(applyCostStoppedIdxFixV62); }).observe(costPanelV62, { childList: true, subtree: true });
-      }
       [0, 50, 200, 500, 1000].forEach(ms => setTimeout(applyCostStoppedIdxFixV62, ms));
       window.audioStudioPerAlgorithmCostStoppedIdxV62 = { applyCostStoppedIdxFixV62 };
 
@@ -10279,6 +10276,144 @@
       requestAnimationFrame(applyCostSortHeaderRecoveryV64);
       window.audioStudioPerAlgorithmCostSortHeaderRecoveryV64 = { applyCostSortHeaderRecoveryV64, cleanupIdxSortHeaderV64, idxSortable: false };
 
+    }
+
+    // single-pass PER-ALGORITHM COST final renderer.
+    // Runtime renders now call the backend-owned v50 data renderer once and
+    // normalize the final six-column table in one synchronous pass.
+    {
+      const COST_COLGROUP_V99 = '<col class="cost-col-name-v54"><col class="cost-col-idx-v54"><col class="cost-col-cpu-v54"><col class="cost-col-mem-v54"><col class="cost-col-lat-v54"><col class="cost-col-core-v54">';
+      const renderCostTableSourceV99 = window.audioStudioAlgorithmCostV50?.renderCostTableV50 || renderCostTable;
+
+      function costIndexTextV99(nodeId) {
+        if (!running) return 'N/A';
+        const n = nodeId ? nodeById(nodeId) : null;
+        const idx = Number(n?.instanceIndex ?? n?.algorithmIndex ?? 1);
+        return Number.isFinite(idx) && idx > 0 ? String(Math.floor(idx)) : 'N/A';
+      }
+      function parseCostNumberV99(text = '') {
+        const m = String(text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+        return m ? Number(m[0]) : NaN;
+      }
+      function parseCostMemKbV99(text = '') {
+        const s = String(text).trim();
+        if (!s || /N\/A/i.test(s)) return NaN;
+        const v = parseCostNumberV99(s);
+        if (!Number.isFinite(v)) return NaN;
+        return /MB/i.test(s) ? v * 1024 : v;
+      }
+      function ensureCostColgroupV99(table) {
+        let colgroup = table.querySelector(':scope > colgroup');
+        if (!colgroup) {
+          colgroup = document.createElement('colgroup');
+          table.insertBefore(colgroup, table.firstChild);
+        }
+        colgroup.innerHTML = COST_COLGROUP_V99;
+      }
+      function normalizeCostHeaderV99(table) {
+        const row = table.tHead?.rows?.[0];
+        if (!row || row.cells.length < 6) return;
+        [...row.cells].forEach((th, i) => {
+          th.classList.toggle('cost-idx-head-v56', i === 1);
+          th.classList.toggle('cost-idx-head-v59', i === 1);
+          th.classList.toggle('cost-idx-head-v64', i === 1);
+          th.classList.toggle('cost-cpu-head-v59', i === 2);
+          th.classList.toggle('cost-lat-head-v59', i === 4);
+          th.classList.toggle('cost-core-head-v59', i === 5);
+          if (i === 1) {
+            th.removeAttribute('data-cost-sort-v50');
+            th.removeAttribute('data-cost-sort-v59');
+            th.removeAttribute('data-cost-sort');
+            delete th.dataset.costSortV50;
+            delete th.dataset.costSortV59;
+            delete th.dataset.costSort;
+            th.title = 'Algorithm instance index';
+            th.querySelectorAll('.cost-sort-icon-v59,.cost-sort-icon-v50,.cost-sort-icon-v49,.cost-sort-icon-v48').forEach(icon => { icon.textContent = ''; });
+          }
+        });
+      }
+      function normalizeCostCpuCellV99(td) {
+        if (!td) return;
+        td.classList.add('cost-cpu-cell-td-v54', 'cost-cpu-cell-td-v59', 'cost-cpu-cell-td-v62');
+        let cell = td.querySelector('.cost-cpu-cell-v59,.cost-cpu-cell-v50,.cost-cpu-cell-v49');
+        if (!cell) {
+          const raw = td.innerHTML;
+          td.innerHTML = `<div class="cost-cpu-cell-v50 cost-cpu-cell-v59">${raw}</div>`;
+          cell = td.querySelector('.cost-cpu-cell-v59');
+        }
+        cell?.classList.add('cost-cpu-cell-v50', 'cost-cpu-cell-v59');
+        cell?.querySelector('.cost-cpu-bar-v50,.cost-cpu-bar-v49,.cpu-bar')?.classList.add('cost-cpu-bar-v50');
+        cell?.querySelector('.cost-cpu-value-v50,.cost-cpu-value-v49')?.classList.add('cost-cpu-value-v50');
+      }
+      function normalizeCostBodyV99(table) {
+        [...(table.tBodies?.[0]?.rows || [])].forEach(row => {
+          if (row.cells.length === 1 || row.querySelector('td[colspan]')) {
+            if (row.cells[0]) row.cells[0].colSpan = 6;
+            return;
+          }
+          const nodeId = row.dataset.costNodeId || row.getAttribute('data-cost-node-id') || '';
+          if (row.cells.length === 5) {
+            const idx = document.createElement('td');
+            idx.className = 'cost-idx-cell-v54 cost-idx-cell-v59 cost-idx-cell-v61 cost-idx-cell-v62';
+            row.insertBefore(idx, row.cells[1]);
+          }
+          if (row.cells.length < 6) return;
+          row.cells[0].classList.add('cost-name-cell-v54', 'cost-name-cell-v59');
+          row.cells[1].className = 'cost-idx-cell-v54 cost-idx-cell-v59 cost-idx-cell-v61 cost-idx-cell-v62';
+          row.cells[1].innerHTML = `<span class="cost-num-v50">${escapeHtml(costIndexTextV99(nodeId))}</span>`;
+          normalizeCostCpuCellV99(row.cells[2]);
+          row.cells[3].classList.add('cost-mem-cell-v54', 'cost-mem-cell-v59');
+          row.cells[4].classList.add('cost-lat-cell-v54', 'cost-lat-cell-v59');
+          row.cells[5].classList.add('cost-core-cell-v54', 'cost-core-cell-v59');
+        });
+      }
+      function syncCostTotalFooterV99(panel, table) {
+        if (table.tFoot) table.tFoot.style.display = 'none';
+        const scroll = table.closest('.cost-table-scroll-v50,.cost-table-scroll-v48') || table.parentElement;
+        scroll?.classList?.add('cost-table-scroll-v50', 'cost-table-scroll-v56');
+        let footer = panel.querySelector(':scope > .cost-total-fixed-v56');
+        if (!footer) {
+          footer = document.createElement('div');
+          footer.className = 'cost-total-fixed-v56';
+          if (scroll && scroll.parentElement === panel) panel.insertBefore(footer, scroll.nextSibling);
+          else panel.appendChild(footer);
+        }
+        let totalCpu = 0, totalMemKb = 0, memCount = 0;
+        [...(table.tBodies?.[0]?.rows || [])].forEach(row => {
+          if (row.cells.length < 6 || row.querySelector('td[colspan]')) return;
+          const cpu = parseCostNumberV99(row.cells[2]?.textContent || '');
+          if (Number.isFinite(cpu)) totalCpu += cpu;
+          const mem = parseCostMemKbV99(row.cells[3]?.textContent || '');
+          if (Number.isFinite(mem)) { totalMemKb += mem; memCount++; }
+        });
+        const totalMem = running && memCount ? `${(totalMemKb / 1024).toFixed(1)} MB` : 'N/A';
+        footer.className = 'cost-total-fixed-v56';
+        footer.innerHTML = `<table class="cost-total-table-v56 cost-total-table-v59 cost-total-table-v61"><colgroup>${COST_COLGROUP_V99}</colgroup><tbody><tr>` +
+          `<td class="cost-total-label-v56">Total</td>` +
+          `<td class="cost-total-idx-v56 cost-total-idx-v59"></td>` +
+          `<td class="cost-total-cpu-v56 cost-total-cpu-v59">${totalCpu.toFixed(1)}%</td>` +
+          `<td class="cost-total-mem-v56">${escapeHtml(totalMem)}</td>` +
+          `<td class="cost-total-lat-v56"></td>` +
+          `<td class="cost-total-core-v56"></td>` +
+          `</tr></tbody></table>`;
+      }
+      function applyCostTableFinalLayoutV99() {
+        const table = document.querySelector('#costTable');
+        const panel = document.querySelector('#costPanel');
+        if (!table || !panel) return false;
+        table.classList.add('cost-table-v50', 'cost-table-v54', 'cost-table-v56', 'cost-table-v59', 'cost-table-v61');
+        ensureCostColgroupV99(table);
+        normalizeCostHeaderV99(table);
+        normalizeCostBodyV99(table);
+        syncCostTotalFooterV99(panel, table);
+        return true;
+      }
+      renderCostTable = function () {
+        const out = renderCostTableSourceV99?.();
+        applyCostTableFinalLayoutV99();
+        return out;
+      };
+      window.audioStudioCostTableFinalRendererV99 = { applyCostTableFinalLayoutV99, renderCostTableSourceV99, singlePass: true };
     }
 
 
@@ -11084,7 +11219,7 @@
       $('#zoomIn').addEventListener('click', () => setZoom(state.zoom + .1));
       $('#deleteTool').addEventListener('click', () => { backendTool('delete_selected', { selectedNodeId, selectedEdgeKey, selectedNodeIds: [...selectedNodeIds], selectedEdgeKeys: [...selectedEdgeKeys] }); deleteSelection(); });
       $('#swapPortsBtn').addEventListener('click', () => { backendTool('swap_selected_ports', { selectedNodeId }); swapSelectedPorts(); });
-      wrap.addEventListener('click', e => { if (suppressCanvasClick) { suppressCanvasClick = false; return; } if (e.target === wrap || e.target.id === 'canvasScroll' || e.target.id === 'scrollSpacer' || e.target.id === 'edgeSvg') { clearSelection(); drawEdges(); renderAll(false); } });
+      wrap.addEventListener('click', e => { if (suppressCanvasClick) { suppressCanvasClick = false; return; } if (e.target === wrap || e.target.id === 'canvasScroll' || e.target.id === 'scrollSpacer' || e.target.id === 'edgeSvg') { clearSelection(); renderSelectionChange({ resetInspector: true }); } });
       $('#panelMenuBtn').addEventListener('click', () => $('#panelMenu').classList.toggle('show'));
       $$('#panelMenu input').forEach(cb => cb.addEventListener('change', e => setPanelVisible(e.target.dataset.panel, e.target.checked)));
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));

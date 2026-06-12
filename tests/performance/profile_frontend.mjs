@@ -53,7 +53,7 @@ function run(command, args, { cwd = root, env = process.env } = {}) {
 }
 
 async function ensureBackend() {
-  if (options.url) return { url: options.url, stop: () => {} };
+  if (options.url) return { url: options.url, stop: () => { } };
 
   const server = path.join(root, 'build', 'audio_studio_server');
   if (!fs.existsSync(server)) {
@@ -201,6 +201,18 @@ function profileProbeSource() {
     rafScheduled: 0,
     rafCallbacks: 0
   };
+  let lastFrame = 0;
+  window.__audioStudioProfileReset = () => {
+    data.startedAt = performance.now();
+    data.longTasks = [];
+    data.frames = [];
+    data.requests = [];
+    data.timeouts = [];
+    data.rafScheduled = 0;
+    data.rafCallbacks = 0;
+    lastFrame = 0;
+    return true;
+  };
   try {
     new PerformanceObserver(list => {
       for (const entry of list.getEntries()) {
@@ -236,7 +248,6 @@ function profileProbeSource() {
       return callback(timestamp);
     });
   };
-  let lastFrame = 0;
   const frameLoop = timestamp => {
     if (lastFrame) data.frames.push(timestamp - lastFrame);
     lastFrame = timestamp;
@@ -323,6 +334,39 @@ async function evaluate(client, sessionId, expression) {
   return result.result?.value;
 }
 
+async function startInteractionDriver(client, sessionId) {
+  await evaluate(client, sessionId, String.raw`
+(() => {
+  window.__audioStudioProfileInteractionStop?.();
+  let tickCount = 0;
+  const tick = () => {
+    tickCount += 1;
+    const sc = document.querySelector('#canvasScroll') || document.querySelector('#canvasWrap');
+    if (sc) {
+      const maxX = Math.max(1, sc.scrollWidth - sc.clientWidth);
+      const maxY = Math.max(1, sc.scrollHeight - sc.clientHeight);
+      sc.scrollLeft = (tickCount * 97) % maxX;
+      sc.scrollTop = (tickCount * 53) % maxY;
+      sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+    }
+    const nodes = Array.from(document.querySelectorAll('.pipeline-node'));
+    if (nodes.length && tickCount % 2 === 0) nodes[(tickCount * 7) % nodes.length].click();
+  };
+  const timer = setInterval(tick, 120);
+  window.__audioStudioProfileInteractionStop = () => {
+    clearInterval(timer);
+    delete window.__audioStudioProfileInteractionStop;
+    return true;
+  };
+  return true;
+})()
+`);
+}
+
+async function stopInteractionDriver(client, sessionId) {
+  await evaluate(client, sessionId, 'window.__audioStudioProfileInteractionStop?.() ?? true');
+}
+
 async function runScenario(client, baseUrl, scenario) {
   const sessionId = await createPage(client, baseUrl);
   await waitFor(
@@ -330,7 +374,7 @@ async function runScenario(client, baseUrl, scenario) {
     'Audio Studio UI'
   );
 
-  if (scenario === 'running') {
+  if (scenario === 'running' || scenario === 'interaction') {
     await evaluate(client, sessionId, 'document.querySelector("#runBtn").click(); true');
     await waitFor(
       () => evaluate(client, sessionId, 'Boolean(window.__audioStudioProfile.requests.some(req => new URL(req.url, location.href).pathname === "/api/runtime/run"))'),
@@ -340,10 +384,17 @@ async function runScenario(client, baseUrl, scenario) {
   }
 
   await sleep(options.warmupMs);
+  await evaluate(client, sessionId, 'window.__audioStudioProfileReset()');
+  if (scenario === 'interaction') await startInteractionDriver(client, sessionId);
   const before = metricsMap(await client.send('Performance.getMetrics', {}, sessionId));
-  await sleep(options.durationMs);
-  const after = metricsMap(await client.send('Performance.getMetrics', {}, sessionId));
-  const snapshot = await evaluate(client, sessionId, 'window.__audioStudioProfileSnapshot()');
+  let after, snapshot;
+  try {
+    await sleep(options.durationMs);
+    after = metricsMap(await client.send('Performance.getMetrics', {}, sessionId));
+    snapshot = await evaluate(client, sessionId, 'window.__audioStudioProfileSnapshot()');
+  } finally {
+    if (scenario === 'interaction') await stopInteractionDriver(client, sessionId);
+  }
 
   return {
     scenario,

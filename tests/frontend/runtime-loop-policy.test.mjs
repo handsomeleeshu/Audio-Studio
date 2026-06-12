@@ -29,9 +29,11 @@ assert.ok(!hasToken('.finally(()=>refreshEventLogBackendV69())'), 'UI event post
 assert.ok(hasToken('applyZoom(false)'), 'node rebuild should not redraw edges before replacing node DOM');
 assert.ok(hasToken('let edgeLayoutRedrawFrame=0') && !compactHtml.includes(compactToken('raf(()=>{ drawEdges(); raf(drawEdges); })')), 'edge redraw after layout should be coalesced instead of triple-drawing every render');
 assert.ok(
-  /if\s*\(\s*!\s*running\s*\)\s*\{\s*requestAnimationFrame\s*\(\s*applyCostStoppedIdxFixV62\s*\)\s*;\s*setTimeout\s*\(\s*applyCostStoppedIdxFixV62\s*,\s*0\s*\)\s*;/.test(html) &&
-    /new\s+MutationObserver\s*\(\s*\(\s*\)\s*=>\s*\{\s*if\s*\(\s*!\s*running\s*\)\s*requestAnimationFrame\s*\(\s*applyCostStoppedIdxFixV62\s*\)\s*;?\s*\}\s*\)/.test(html),
-  'stopped-state cost-table repair should not schedule extra async DOM passes while running'
+  hasToken('applyCostTableFinalLayoutV99') &&
+    hasToken('renderCostTableSourceV99') &&
+    !/new\s+MutationObserver\s*\([^)]*applyCostStoppedIdxFixV62/.test(html) &&
+    !/setTimeout\s*\(\s*applyCostStoppedIdxFixV62\s*,\s*0\s*\)/.test(html),
+  'cost table should render final six-column layout in one pass without stopped-state async repair churn'
 );
 
 console.log('runtime-loop-policy.test passed');
