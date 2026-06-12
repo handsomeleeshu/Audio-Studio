@@ -18,10 +18,21 @@ for (const phrase of [
   'Performance.getMetrics',
   'longtask',
   'requestAnimationFrame',
+  '__audioStudioProfileReset',
+  '__audioStudioProfileInteractionStop',
   '/api/runtime/run',
   'profiles/frontend'
 ]) {
   assert.ok(source.includes(phrase), `profile harness should collect ${phrase}`);
 }
+
+assert.ok(
+  /await\s+evaluate\s*\(\s*client\s*,\s*sessionId\s*,\s*['"]window\.__audioStudioProfileReset\(\)['"]\s*\)/.test(source),
+  'profile harness should reset page counters after warmup so long-task/frame metrics describe the measured window'
+);
+assert.ok(
+  source.includes("scenario === 'interaction'") && source.includes('startInteractionDriver'),
+  'profile harness should include an interaction scenario for scroll and selection responsiveness'
+);
 
 console.log('performance-profile.test passed');
