@@ -10368,9 +10368,27 @@
         });
       }
       
+      
+      function algorithmCostItemsForTotalsV101() {
+        // Startup-safe accessor: renderAll() may run before the cost live state has
+        // been initialized. Access through try/catch so a TDZ/ReferenceError cannot
+        // block project loading or pipeline layout rendering.
+        try {
+          const live = algorithmCostLiveV50;
+          const items = live?.items;
+          if (items?.values) return Array.from(items.values()).filter(Boolean);
+          return Object.values(items || {}).filter(Boolean);
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function isRuntimeRunningForCostTotalsV101() {
+        try { return !!running; } catch (_) { return false; }
+      }
+
       function backendCostTotalsV100() {
-        const items = algorithmCostLiveV50?.items;
-        const values = items?.values ? Array.from(items.values()) : Object.values(items || {});
+        const values = algorithmCostItemsForTotalsV101();
         let cpu = 0, cpuCount = 0, memKb = 0, memCount = 0;
         values.forEach(item => {
           if (!item) return;
@@ -10385,9 +10403,10 @@
             memCount++;
           }
         });
+        const active = isRuntimeRunningForCostTotalsV101();
         return {
-          cpu: running && cpuCount ? `${cpu.toFixed(1)}%` : 'N/A',
-          mem: running && memCount ? `${(memKb / 1024).toFixed(1)} MB` : 'N/A',
+          cpu: active && cpuCount ? `${cpu.toFixed(1)}%` : 'N/A',
+          mem: active && memCount ? `${(memKb / 1024).toFixed(1)} MB` : 'N/A',
           cpuCount,
           memCount
         };
