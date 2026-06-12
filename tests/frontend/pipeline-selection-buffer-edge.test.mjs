@@ -6,6 +6,8 @@ const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.ur
 assert.ok(html.includes('function shouldHandlePipelineSelectAllV104'), 'Ctrl+A guard should exist');
 assert.ok(html.includes('function selectAllVisiblePipelineLayoutV104'), 'visible layout select-all helper should exist');
 assert.ok(html.includes('selection_all_visible_layout'), 'select-all should report backend edit telemetry');
+assert.ok(html.includes("document.addEventListener('keydown', e => {"), 'Ctrl+A keydown listener should be installed');
+assert.ok(html.includes('selectAllVisiblePipelineLayoutV104();'), 'Ctrl+A keydown listener should invoke select-all helper');
 assert.ok(html.includes("selectedNodeIds = new Set(state.nodes.map(n => n.id))"), 'Ctrl+A should select all visible nodes');
 assert.ok(html.includes('selectedEdgeKeys = new Set(state.edges.map(edgeKeyForEdge))'), 'Ctrl+A should select all visible edges');
 

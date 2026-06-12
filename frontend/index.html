@@ -11708,6 +11708,13 @@
       runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === 'running')
     };
 
+    document.addEventListener('keydown', e => {
+      if (!shouldHandlePipelineSelectAllV104(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectAllVisiblePipelineLayoutV104();
+    }, true);
+
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
     setupPanelMenuAutoClose();
