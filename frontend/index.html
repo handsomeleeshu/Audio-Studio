@@ -4863,6 +4863,47 @@
       return window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || 'not-ready';
     }
 
+
+
+    // Node card runtime cost must use the same backend-owned source as PER-ALGORITHM COST.
+    // CPU/LAT/MEM/Core are runtime values. When /api/algorithm/cost/live has not
+    // provided a cost item for a node, the node card shows N/A instead of using
+    // mkNode/random/config fallbacks.
+    function nodeCardRuntimeCostV98(n) {
+      const api = window.audioStudioAlgorithmCostV50 || window.audioStudioAlgorithmCostV48 || {};
+      const item = api.nodeCardCostForV98?.(n?.id) || api.getNodeCostV98?.(n?.id) || null;
+      if (!running || !item) return { cpu: 'N/A', lat: 'N/A', mem: 'N/A', core: 'Core N/A', live: false };
+      const cpu = Number(item.cpu);
+      const lat = Number(item.latency_ms ?? item.latencyMs);
+      const mem = Number(item.mem_kb ?? item.memKb);
+      const core = Number(item.core);
+      return {
+        cpu: Number.isFinite(cpu) ? `${cpu.toFixed(1)}%` : 'N/A',
+        lat: Number.isFinite(lat) ? `${lat.toFixed(2)} ms` : 'N/A',
+        mem: Number.isFinite(mem) ? `${Math.round(mem)} KB` : 'N/A',
+        core: Number.isFinite(core) ? `Core ${Math.round(core)}` : 'Core N/A',
+        live: true
+      };
+    }
+    function renderNodeCardRuntimeCostMarkupV98(n) {
+      const c = nodeCardRuntimeCostV98(n);
+      return `<div class="node-stat" data-node-card-runtime-v98="1"><em>CPU</em><b>${c.cpu}</b><em>LAT</em><b>${c.lat}</b><em>MEM</em><b>${c.mem}</b></div><div class="core-tag" data-node-card-core-v98="1">${c.core}</div>`;
+    }
+    function refreshNodeCardRuntimeCostV98() {
+      document.querySelectorAll('.pipeline-node[data-id]').forEach(el => {
+        const n = nodeById(el.dataset.id);
+        if (!n) return;
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = renderNodeCardRuntimeCostMarkupV98(n);
+        const nextStat = wrapper.querySelector('.node-stat');
+        const nextCore = wrapper.querySelector('.core-tag');
+        const curStat = el.querySelector('.node-stat');
+        const curCore = el.querySelector('.core-tag');
+        if (curStat && nextStat) curStat.replaceWith(nextStat);
+        if (curCore && nextCore) curCore.replaceWith(nextCore);
+      });
+    }
+
     function renderNodes() {
       applyZoom(false);
       const layer = $('#nodesLayer'); layer.innerHTML = '';
@@ -4879,7 +4920,7 @@
         const el = document.createElement('div');
         el.className = `pipeline-node ${colors[n.type] || ''} ${isNodeSelected(n.id) ? 'selected' : ''} ${n.portsFlipped ? 'flipped' : ''} ${running ? 'locked' : 'editable'} runtime-${nodeRuntimeVisualState(n)}`;
         el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; el.style.minHeight = n.h + 'px'; el.style.height = 'auto'; el.dataset.id = n.id;
-        el.innerHTML = `<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts, 'in')}${portHtml(outPorts, 'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span class="node-name" title="${n.name}">${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div><div class="node-stat"><em>CPU</em><b>${n.cpu.toFixed(1)}%</b><em>LAT</em><b>${n.lat.toFixed(2)} ms</b><em>MEM</em><b>${n.mem} KB</b></div><div class="core-tag">Core ${n.core}</div>`;
+        el.innerHTML = `<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts, 'in')}${portHtml(outPorts, 'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span class="node-name" title="${n.name}">${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div>${renderNodeCardRuntimeCostMarkupV98(n)}`;
         layer.appendChild(el);
         const measuredH = Math.ceil(el.getBoundingClientRect().height / (state.zoom || 1));
         if (Number.isFinite(measuredH) && measuredH > n.h) n.h = measuredH;
@@ -7560,7 +7601,7 @@
       function costMetricV48(n, key) {
         const item = costItemV48(n.id);
         if (key === 'name') return String(n.name || n.id || '').toLowerCase();
-        if (key === 'core') return Number(n.core ?? item?.core ?? 0);
+        if (key === 'core') return item?.core === null || item?.core === undefined ? null : Number(item.core);
         if (key === 'cpu') return Number(item?.cpu ?? 0);
         if (key === 'mem') return Number.isFinite(Number(item?.mem_kb)) ? Number(item.mem_kb) : null;
         if (key === 'lat') return Number.isFinite(Number(item?.latency_ms)) ? Number(item.latency_ms) : null;
@@ -7739,7 +7780,7 @@
           cpu: Number.isFinite(cpu) ? clamp(cpu, 0, 100) : 0,
           mem_kb: memRaw === null || memRaw === undefined || !Number.isFinite(Number(memRaw)) ? null : Number(memRaw),
           latency_ms: latRaw === null || latRaw === undefined || !Number.isFinite(Number(latRaw)) ? null : Number(latRaw),
-          core: Number(raw.core ?? n?.core ?? 0)
+          core: raw.core === null || raw.core === undefined || !Number.isFinite(Number(raw.core)) ? null : Number(raw.core)
         };
       }
       function cpuColorV50(cpu) {
@@ -7756,7 +7797,7 @@
         const item = currentCostV50(n);
         if (key === 'name') return String(n.name || n.id || '').toLowerCase();
         if (key === 'idx') return costIndexValueV54(n);
-        if (key === 'core') return Number(n.core ?? item?.core ?? 0);
+        if (key === 'core') return item?.core === null || item?.core === undefined ? null : Number(item.core);
         if (key === 'cpu') return Number(item?.cpu ?? 0);
         if (key === 'mem') return item?.mem_kb === null || item?.mem_kb === undefined ? null : Number(item.mem_kb);
         if (key === 'lat') return item?.latency_ms === null || item?.latency_ms === undefined ? null : Number(item.latency_ms);
@@ -7791,8 +7832,9 @@
           const color = cpuColorV50(cpu);
           const mem = item?.mem_kb === null || item?.mem_kb === undefined ? '<span class="cost-na-v50">N/A</span>' : `<span class="cost-num-v50">${Math.round(Number(item.mem_kb))} KB</span>`;
           const lat = item?.latency_ms === null || item?.latency_ms === undefined ? '<span class="cost-na-v50">N/A</span>' : `<span class="cost-num-v50">${Number(item.latency_ms).toFixed(2)}</span>`;
-          const core = Number(n.core ?? item?.core ?? 0);
-          return `<tr data-cost-node-id="${escapeHtml(n.id)}"><td><span class="cost-name-v50" data-cost-center-v50="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name || n.id)}</span></td><td><div class="cost-cpu-cell-v50"><div class="cost-cpu-bar-v50"><i style="width:${clamp(cpu, 0, 100)}%;background:${color};color:${color}"></i></div><span class="cost-cpu-value-v50">${cpu.toFixed(1)}%</span></div></td><td>${mem}</td><td>${lat}</td><td><span class="cost-num-v50">${escapeHtml(core)}</span></td></tr>`;
+          const core = item?.core === null || item?.core === undefined || !Number.isFinite(Number(item.core)) ? null : Number(item.core);
+          const coreText = core === null ? '<span class="cost-na-v50">N/A</span>' : `<span class="cost-num-v50">${escapeHtml(Math.round(core))}</span>`;
+          return `<tr data-cost-node-id="${escapeHtml(n.id)}"><td><span class="cost-name-v50" data-cost-center-v50="${escapeHtml(n.id)}" title="Ctrl/Cmd + click to center and flash this algorithm">${escapeHtml(n.name || n.id)}</span></td><td><div class="cost-cpu-cell-v50"><div class="cost-cpu-bar-v50"><i style="width:${clamp(cpu, 0, 100)}%;background:${color};color:${color}"></i></div><span class="cost-cpu-value-v50">${cpu.toFixed(1)}%</span></div></td><td>${mem}</td><td>${lat}</td><td>${coreText}</td></tr>`;
         }).join('');
         const totalCpu = nodes.reduce((s, n) => s + Number(currentCostV50(n)?.cpu ?? 0), 0);
         const memVals = nodes.map(n => Number(currentCostV50(n)?.mem_kb)).filter(Number.isFinite);
@@ -7876,7 +7918,18 @@
         const name = e.target?.closest?.('#costTable [data-cost-center-v50]');
         if (name && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); centerAndFlashCostNodeV50(name.dataset.costCenterV50); }
       }, true);
-      window.audioStudioAlgorithmCostV50 = { refreshAlgorithmCostsV50, renderCostTableV50, sortCostTableV50, centerAndFlashCostNodeV50, syncTelemetryBackendOnly, backendOnly: true };
+      function nodeCardCostForV98(nodeId) {
+        if (!running || !algorithmCostLiveV50.backendOk) return null;
+        return algorithmCostLiveV50.items.get(nodeId) || null;
+      }
+      const __refreshAlgorithmCostsBeforeNodeCardV98 = refreshAlgorithmCostsV50;
+      refreshAlgorithmCostsV50 = async function () {
+        const ok = await __refreshAlgorithmCostsBeforeNodeCardV98();
+        refreshNodeCardRuntimeCostV98();
+        return ok;
+      };
+      window.audioStudioAlgorithmCostV50 = { refreshAlgorithmCostsV50, renderCostTableV50, sortCostTableV50, centerAndFlashCostNodeV50, syncTelemetryBackendOnly, backendOnly: true, nodeCardCostForV98 };
+
 
     }
 
@@ -11488,6 +11541,26 @@
     }
 
     setupResponsivePanelLayout();
+
+    // Keep node cards synchronized after all final render/runtime wrappers have run.
+    {
+      const __renderAllBeforeNodeCardCostV98 = renderAll;
+      renderAll = function (rebuildNodes = true) {
+        const out = __renderAllBeforeNodeCardCostV98?.(rebuildNodes);
+        refreshNodeCardRuntimeCostV98();
+        return out;
+      };
+      const __renderRuntimeTelemetryBeforeNodeCardCostV98 = renderRuntimeTelemetry;
+      renderRuntimeTelemetry = function () {
+        const out = __renderRuntimeTelemetryBeforeNodeCardCostV98?.();
+        refreshNodeCardRuntimeCostV98();
+        return out;
+      };
+      requestAnimationFrame(refreshNodeCardRuntimeCostV98);
+      setTimeout(refreshNodeCardRuntimeCostV98, 0);
+      window.audioStudioNodeCardAlgorithmCostV98 = { nodeCardRuntimeCostV98, renderNodeCardRuntimeCostMarkupV98, refreshNodeCardRuntimeCostV98 };
+    }
+
 
 
 
