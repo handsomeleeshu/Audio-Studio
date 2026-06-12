@@ -3431,31 +3431,6 @@
     }
 
 
-
-
-    /* Buffer edge runtime labels and stable flow particles. */
-    .edge-label {
-      fill: #d9fbff;
-      font-size: 11px;
-      font-weight: 900;
-      letter-spacing: .03em;
-      text-anchor: middle;
-      dominant-baseline: central;
-      paint-order: stroke;
-      stroke: #06101c;
-      stroke-width: 4px;
-      stroke-linejoin: round;
-      pointer-events: none;
-      filter: drop-shadow(0 0 8px rgba(0, 216, 255, .38));
-    }
-
-    .edge-particle {
-      fill: var(--green);
-      stroke: #effff4;
-      stroke-width: 1px;
-      pointer-events: none;
-      filter: drop-shadow(0 0 8px rgba(49, 242, 107, .9));
-    }
     /* Dynamic runtime load color mapping for DSP Core and System Health. */
     #corePanel .loadbar i,
     #healthPanel .health-progress i {
@@ -3796,9 +3771,9 @@
       }
     }
     function edgeSampleRateLabelForEdge(ep, key = '') {
-      const fmt = (key ? cachedEdgeRuntimeFormat(key) : null) || inferredEdgeFormat(ep);
-      const rate = Number(fmt?.sampleRate || fmt?.sample_rate || 48000);
-      return formatSampleRateLabel(Number.isFinite(rate) && rate > 0 ? rate : 48000);
+      const fmt = key ? cachedEdgeRuntimeFormat(key) : null;
+      if (!fmt || fmt.source !== 'backend') return '';
+      return formatSampleRateLabel(fmt.sampleRate || fmt.sample_rate);
     }
     function setupPanelMenuAutoClose() {
       const menu = $('#panelMenu');
@@ -4104,28 +4079,6 @@
       if (resetInspector) inspectorRenderKey = '';
       if (redrawEdges) drawEdges();
       if (inspector) renderInspector();
-    }
-    function shouldHandlePipelineSelectAllV104(e) {
-      if (!e || !(e.ctrlKey || e.metaKey) || String(e.key || '').toLowerCase() !== 'a') return false;
-      const target = e.target;
-      const tag = String(target?.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return false;
-      return !!document.getElementById('canvasWrap');
-    }
-    function selectAllVisiblePipelineLayoutV104() {
-      selectedNodeIds = new Set(state.nodes.map(n => n.id));
-      selectedEdgeKeys = new Set(state.edges.map(edgeKeyForEdge));
-      selectedNodeId = state.nodes[0]?.id || '';
-      selectedEdgeKey = selectedEdgeKeys.values().next().value || '';
-      inspectorActiveTab = 'general';
-      inspectorRenderKey = '';
-      inspectorBackendContextKey = '';
-      renderSelectionChange({ resetInspector: true });
-      drawEdges();
-      addLog('info', 'Select all visible layout', `${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s)`);
-      backendEdit('selection_all_visible_layout', { pipeline_id: currentPipelineId, nodes: [...selectedNodeIds], edges: [...selectedEdgeKeys] });
-      toast(`Selected ${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s)`);
-      return true;
     }
     function rectsIntersect(a, b) {
       return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
@@ -5230,46 +5183,6 @@
       renderSelectionChange({ resetInspector: true });
       toast(`Selected connection: ${ep.from}.${ep.fromPort} → ${ep.to}.${ep.toPort}`);
     }
-    function stableEdgeHashV104(text = '') {
-      let h = 2166136261;
-      String(text || '').split('').forEach(ch => { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); });
-      return h >>> 0;
-    }
-    function edgeParticleDurationV104(key = '') {
-      return 2.15 + (stableEdgeHashV104(key) % 7) * 0.08;
-    }
-    function edgeParticleBeginV104(key = '', duration = 2.4) {
-      const now = ((window.performance && performance.now) ? performance.now() : Date.now()) / 1000;
-      const seed = (stableEdgeHashV104(key) % 1000) / 1000;
-      const phase = (now + seed * duration) % duration;
-      return `-${phase.toFixed(3)}s`;
-    }
-    function appendEdgeRuntimeParticleV104(svg, key, d) {
-      const duration = edgeParticleDurationV104(key);
-      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('r', '3.2');
-      dot.setAttribute('class', 'edge-particle');
-      const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
-      anim.setAttribute('dur', `${duration.toFixed(2)}s`);
-      anim.setAttribute('repeatCount', 'indefinite');
-      anim.setAttribute('path', d);
-      anim.setAttribute('begin', edgeParticleBeginV104(key, duration));
-      dot.appendChild(anim);
-      svg.appendChild(dot);
-    }
-    function appendEdgeSampleRateLabelV104(svg, a, b, ep, key) {
-      const label = edgeSampleRateLabelForEdge(ep, key);
-      if (!label) return false;
-      const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort);
-      const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8;
-      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', tx);
-      text.setAttribute('y', ty);
-      text.setAttribute('class', 'edge-label');
-      text.textContent = label;
-      svg.appendChild(text);
-      return true;
-    }
     function drawEdges() {
       syncWorldGeometry();
       const svg = $('#edgeSvg'); if (!svg) return; svg.innerHTML = '';
@@ -5297,10 +5210,11 @@
         bindEdgeSelect(hit);
         svg.appendChild(p);
         svg.appendChild(hit);
-        const edgeRuntimeStateV104 = edgePipelineRuntimeState(ep);
-        const edgeRunningV104 = edgeRuntimeStateV104 === 'running';
-        if (edgeRunningV104) appendEdgeRuntimeParticleV104(svg, key, d);
-        if (edgeRunningV104) appendEdgeSampleRateLabelV104(svg, a, b, ep, key);
+        if (running) {
+          const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', '3'); dot.setAttribute('class', 'edge-particle');
+          const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
+        }
+        if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
       });
     }
     function deleteSelectedEdge() {
@@ -11707,13 +11621,6 @@
       edgePipelineRuntimeState,
       runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === 'running')
     };
-
-    document.addEventListener('keydown', e => {
-      if (!shouldHandlePipelineSelectAllV104(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      selectAllVisiblePipelineLayoutV104();
-    }, true);
 
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
     init();
