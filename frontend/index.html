@@ -3765,7 +3765,14 @@
       if (!key || !fmt) return null;
       const normalized = normalizeRuntimeFormat(fmt, fallback);
 
-      normalized.source = fmt && (fmt.source || fmt.backendOwned || fmt.backend_owned) ? 'backend' : (normalized.source || ''); edgeRuntimeFormatCache.set(key, normalized);
+      normalized.source = fmt && (fmt.source || fmt.backendOwned || fmt.backend_owned) ? 'backend' : (normalized.source || '');
+      const backendSampleRate = Number(fmt?.sampleRate ?? fmt?.sample_rate);
+      if (normalized.source === 'backend' && Number.isFinite(backendSampleRate) && backendSampleRate > 0) {
+        normalized.backendSampleRate = backendSampleRate;
+      } else {
+        delete normalized.backendSampleRate;
+      }
+      edgeRuntimeFormatCache.set(key, normalized);
       return normalized;
     }
     function cachedEdgeRuntimeFormat(key) {
@@ -3796,9 +3803,10 @@
       }
     }
     function edgeSampleRateLabelForEdge(ep, key = '') {
-      const fmt = (key ? cachedEdgeRuntimeFormat(key) : null) || inferredEdgeFormat(ep);
-      const rate = Number(fmt?.sampleRate || fmt?.sample_rate || 48000);
-      return formatSampleRateLabel(Number.isFinite(rate) && rate > 0 ? rate : 48000);
+      const fmt = key ? cachedEdgeRuntimeFormat(key) : null;
+      if (!fmt || fmt.source !== 'backend') return 'N/A';
+      const rate = Number(fmt.backendSampleRate);
+      return Number.isFinite(rate) && rate > 0 ? formatSampleRateLabel(rate) : 'N/A';
     }
     function setupPanelMenuAutoClose() {
       const menu = $('#panelMenu');
