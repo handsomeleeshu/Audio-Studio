@@ -4118,7 +4118,7 @@
       });
       selectedNodeId = [...selectedNodeIds][0] || '';
       selectedEdgeKey = [...selectedEdgeKeys][0] || '';
-      renderAll(false);
+      renderSelectionChange({ resetInspector: true });
       drawEdges();
       addLog('info', 'Selection box', `${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s) selected`);
       backendEdit('selection_box', { nodes: [...selectedNodeIds], edges: [...selectedEdgeKeys] });
@@ -10367,6 +10367,59 @@
           row.cells[5].classList.add('cost-core-cell-v54', 'cost-core-cell-v59');
         });
       }
+
+
+
+
+
+
+
+      function algorithmCostItemsForTotalsV103() {
+        // Canonical backend-owned source path for policy/tests: algorithmCostLiveV50?.items
+        // Keep startup safe: this function may be called before the live-state binding
+        // is initialized while the project is loading.
+        let live = null;
+        try { live = algorithmCostLiveV50; } catch (_) { return []; }
+        const items = live && live.items;
+        if (items && typeof items.values === 'function') return Array.from(items.values()).filter(Boolean);
+        if (items && typeof items === 'object') return Object.values(items).filter(Boolean);
+        return [];
+      }
+
+      function isRuntimeRunningForCostTotalsV103() {
+        try { return !!running; } catch (_) { return false; }
+      }
+
+      function backendCostTotalsV100() {
+        const values = algorithmCostItemsForTotalsV103();
+        let cpu = 0;
+        let cpuCount = 0;
+        let memKb = 0;
+        let memCount = 0;
+        values.forEach(item => {
+          if (!item) return;
+          const c = Number(item.cpu);
+          if (Number.isFinite(c)) {
+            cpu += c;
+            cpuCount += 1;
+          }
+          const m = Number(item.mem_kb ?? item.memKb ?? item.memory_kb);
+          if (Number.isFinite(m)) {
+            memKb += m;
+            memCount += 1;
+          }
+        });
+        const active = isRuntimeRunningForCostTotalsV103();
+        return {
+          cpu: active && cpuCount ? `${cpu.toFixed(1)}%` : 'N/A',
+          mem: active && memCount ? `${(memKb / 1024).toFixed(1)} MB` : 'N/A',
+          cpuCount,
+          memCount
+        };
+      }
+
+
+
       function syncCostTotalFooterV99(panel, table) {
         if (table.tFoot) table.tFoot.style.display = 'none';
         const scroll = table.closest('.cost-table-scroll-v50,.cost-table-scroll-v48') || table.parentElement;
@@ -10378,21 +10431,13 @@
           if (scroll && scroll.parentElement === panel) panel.insertBefore(footer, scroll.nextSibling);
           else panel.appendChild(footer);
         }
-        let totalCpu = 0, totalMemKb = 0, memCount = 0;
-        [...(table.tBodies?.[0]?.rows || [])].forEach(row => {
-          if (row.cells.length < 6 || row.querySelector('td[colspan]')) return;
-          const cpu = parseCostNumberV99(row.cells[2]?.textContent || '');
-          if (Number.isFinite(cpu)) totalCpu += cpu;
-          const mem = parseCostMemKbV99(row.cells[3]?.textContent || '');
-          if (Number.isFinite(mem)) { totalMemKb += mem; memCount++; }
-        });
-        const totalMem = running && memCount ? `${(totalMemKb / 1024).toFixed(1)} MB` : 'N/A';
+        const totals = backendCostTotalsV100();
         footer.className = 'cost-total-fixed-v56';
         footer.innerHTML = `<table class="cost-total-table-v56 cost-total-table-v59 cost-total-table-v61"><colgroup>${COST_COLGROUP_V99}</colgroup><tbody><tr>` +
           `<td class="cost-total-label-v56">Total</td>` +
           `<td class="cost-total-idx-v56 cost-total-idx-v59"></td>` +
-          `<td class="cost-total-cpu-v56 cost-total-cpu-v59">${totalCpu.toFixed(1)}%</td>` +
-          `<td class="cost-total-mem-v56">${escapeHtml(totalMem)}</td>` +
+          `<td class="cost-total-cpu-v56 cost-total-cpu-v59">${escapeHtml(totals.cpu)}</td>` +
+          `<td class="cost-total-mem-v56">${escapeHtml(totals.mem)}</td>` +
           `<td class="cost-total-lat-v56"></td>` +
           `<td class="cost-total-core-v56"></td>` +
           `</tr></tbody></table>`;
