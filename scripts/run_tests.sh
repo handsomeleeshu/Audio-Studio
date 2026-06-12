@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node "$ROOT/tests/frontend/config-parser.test.mjs"
-node "$ROOT/tests/frontend/plain-html-integration.test.mjs"
-node "$ROOT/tests/frontend/standalone-features.test.mjs"
-node "$ROOT/tests/frontend/performance-profile.test.mjs"
-node "$ROOT/tests/frontend/dead-code-policy.test.mjs"
-node "$ROOT/tests/frontend/runtime-loop-policy.test.mjs"
-node "$ROOT/tests/dev-environment.test.mjs"
+cd "$ROOT"
+
+mapfile -t frontend_tests < <(find tests/frontend -maxdepth 1 -type f -name '*.test.mjs' | sort)
+
+for test_file in "${frontend_tests[@]}"; do
+  node "$test_file"
+done
+
+node tests/dev-environment.test.mjs
+
 "$ROOT/scripts/build_backend.sh"
 ctest --test-dir "$ROOT/build" --output-on-failure
