@@ -98,6 +98,11 @@ config FRAMEWORK_PLUGIN
   default n
   depends on FRAMEWORK_COMMON
 
+config FRAMEWORK_TRANSPORT
+  bool "Build transport framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

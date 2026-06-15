@@ -10,6 +10,8 @@
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
 #include "audio_studio/framework/status.hpp"
+#include "audio_studio/framework/transport/frame_codec.hpp"
+#include "audio_studio/framework/transport/transport_manager.hpp"
 #include "audio_studio/rpc/json_rpc.hpp"
 
 int main() {
@@ -83,6 +85,23 @@ int main() {
   assert(plugins.findByCapability("control").size() == 1);
   assert(plugins.unregisterPlugin("eq-plugin").ok());
   assert(plugins.size() == 0);
+
+  audio_studio::framework::transport::TransportManager transport;
+  assert(transport.openChannel(1, "control").ok());
+  audio_studio::framework::transport::TransportFrame frame{1, 2, 1, transport.nextSequence(), {1, 2, 3, 4}};
+  const auto encoded = audio_studio::framework::transport::FrameCodec::encode(frame);
+  audio_studio::framework::transport::TransportFrame decoded;
+  assert(audio_studio::framework::transport::FrameCodec::decode(encoded.data(), encoded.size(), decoded).ok());
+  assert(decoded.payload.size() == 4);
+  assert(decoded.sequence_id == frame.sequence_id);
+  assert(transport.recordTx(decoded).ok());
+  assert(transport.recordRx(decoded).ok());
+  audio_studio::framework::transport::LogicalChannel channel;
+  assert(transport.getChannel(1, channel).ok());
+  assert(channel.frames_sent == 1);
+  assert(channel.frames_received == 1);
+  assert(transport.closeChannel(1).ok());
+  assert(!transport.recordTx(decoded).ok());
 
   audio_studio::rpc::JsonRpcRequest request;
   assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());

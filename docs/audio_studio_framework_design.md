@@ -1452,6 +1452,18 @@ Audio-Studio/server/framework/transport/
     transport_session.cpp
 ```
 
+当前已实现首批 host-alone transport 模块：
+
+```text
+server/framework/transport/include/audio_studio/framework/transport/transport_frame.hpp
+server/framework/transport/include/audio_studio/framework/transport/frame_codec.hpp
+server/framework/transport/include/audio_studio/framework/transport/transport_manager.hpp
+server/framework/transport/src/frame_codec.cpp
+server/framework/transport/src/transport_manager.cpp
+```
+
+该阶段提供基础 frame encode/decode 和 logical channel 状态统计，用于先验证 TransportManager 的服务边界、构建开关和 CTest；不启动 TX/RX worker，不访问 socket/pipe/USB/PCIe，也不直接调用 OS API。真实 IO 必须通过后续 drivers/transport 与 drivers/os 接入。
+
 ### 4.12 server/drivers
 
 Driver 层同时提供 interface 和默认 implementation。每个默认实现均有 Kconfig 开关，platform 可以选择使用、禁用或替换。

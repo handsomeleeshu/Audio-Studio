@@ -72,6 +72,16 @@ if(CONFIG_FRAMEWORK_PLUGIN)
   target_compile_features(audio_studio_framework_plugin PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_FRAMEWORK_TRANSPORT)
+  add_library(audio_studio_framework_transport
+    framework/transport/src/frame_codec.cpp
+    framework/transport/src/transport_manager.cpp
+  )
+  target_include_directories(audio_studio_framework_transport PUBLIC framework/transport/include)
+  target_link_libraries(audio_studio_framework_transport PUBLIC audio_studio_framework_common)
+  target_compile_features(audio_studio_framework_transport PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_RPC)
   add_library(audio_studio_rpc
     rpc/src/json_rpc.cpp
@@ -99,6 +109,9 @@ if(CONFIG_FRAMEWORK_DUMP)
 endif()
 if(CONFIG_FRAMEWORK_PLUGIN)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_plugin)
+endif()
+if(CONFIG_FRAMEWORK_TRANSPORT)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_transport)
 endif()
 if(CONFIG_RPC)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc)
