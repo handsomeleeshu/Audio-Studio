@@ -1154,6 +1154,17 @@ Audio-Studio/server/framework/common/
     crc32.cpp
 ```
 
+当前已实现首批 host-alone common 模块：
+
+```text
+server/framework/common/include/audio_studio/framework/status.hpp
+server/framework/common/include/audio_studio/framework/service_registry.hpp
+server/framework/common/src/status.cpp
+server/framework/common/src/service_registry.cpp
+```
+
+该阶段只承载通用 `Status` 和 `ServiceRegistry`，用于后续 RPC service、framework service 和 dummy driver 测试共享；不包含平台逻辑。
+
 ### 4.4 server/framework/session
 
 ```text
@@ -1385,6 +1396,15 @@ Audio-Studio/server/drivers/
 ```
 
 后续 driver 子目录详见本文 Driver 章节。
+
+当前已实现首批 host-alone dummy driver：
+
+```text
+server/drivers/dummy/include/audio_studio/drivers/dummy/dummy_driver.hpp
+server/drivers/dummy/src/dummy_driver.cpp
+```
+
+`CONFIG_DRIVER_DUMMY=y` 时构建该 driver。它只在 host 内存中维护 open/start/stop/command/telemetry 状态，用于验证 server/framework 连接、CTest 和 CLI/RPC 后续接入，不访问真实设备。
 
 ### 4.13 server/platform
 

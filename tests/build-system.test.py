@@ -13,6 +13,10 @@ def run(command):
     subprocess.run(command, cwd=str(ROOT), check=True)
 
 
+def check_output(command):
+    return subprocess.check_output(command, cwd=str(ROOT), text=True)
+
+
 def main():
     if BUILD_DIR.exists():
         shutil.rmtree(BUILD_DIR)
@@ -24,7 +28,6 @@ def main():
         '--toolchain', 'gcc',
         '--build-type', 'Debug',
         '--defconfig', str(ROOT / 'configs' / 'host_linux_defconfig'),
-        '--configure-only',
     ])
     expected = [
         BUILD_DIR / '.config',
@@ -39,7 +42,15 @@ def main():
     assert config['CONFIG_TARGET_OS_LINUX'] is True
     assert config['CONFIG_TOOLCHAIN_GCC'] is True
     assert config['CONFIG_GUI_BACKEND'] is True
+    assert config['CONFIG_SERVER'] is True
+    assert config['CONFIG_DRIVER_DUMMY'] is True
     assert (BUILD_DIR / 'CMakeCache.txt').exists()
+    assert (BUILD_DIR / 'as_server').exists()
+    run(['ctest', '--test-dir', str(BUILD_DIR), '--output-on-failure'])
+    self_test = json.loads(check_output([str(BUILD_DIR / 'as_server'), '--self-test']))
+    assert self_test['ok'] is True
+    assert self_test['driver'] == 'dummy'
+    assert self_test['commands'] == 1
     print('build-system.test passed')
 
 

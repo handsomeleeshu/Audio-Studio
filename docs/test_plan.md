@@ -40,7 +40,21 @@ python3 tests/build-system.test.py
 
 - `scripts/build_all` 解析 defconfig。
 - 生成 `.config`、`autoconf.h`、`autoconf.hpp`、`config.cmake`、`config.json`。
-- Linux/GCC host-alone CMake configure。
+- Linux/GCC host-alone CMake configure/build。
+- `CONFIG_SERVER=y` 时构建 `as_server`、framework common、dummy driver，并运行 server CTest。
+
+### Server Host-Alone Tests
+
+```bash
+ctest --test-dir out/test-build-system/linux-gcc/Debug --output-on-failure
+out/test-build-system/linux-gcc/Debug/as_server --self-test
+```
+
+覆盖：
+
+- `Status` 和 `ServiceRegistry` common 模块。
+- dummy driver open/start/command/stop/telemetry。
+- `as_server` host-alone dummy self-test。
 
 ## 建议后续增加
 

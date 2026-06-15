@@ -15,3 +15,7 @@ enable_testing()
 if(CONFIG_GUI_BACKEND)
   add_subdirectory(GUI/backend)
 endif()
+
+if(CONFIG_SERVER)
+  add_subdirectory(server)
+endif()
