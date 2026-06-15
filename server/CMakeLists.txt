@@ -126,6 +126,15 @@ if(CONFIG_PLATFORM_CORE)
   target_compile_features(audio_studio_platform_core PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_PLATFORM_A2)
+  add_library(audio_studio_platform_a2
+    platform/a2/src/a2_platform.cpp
+  )
+  target_include_directories(audio_studio_platform_a2 PUBLIC platform/a2/include)
+  target_link_libraries(audio_studio_platform_a2 PUBLIC audio_studio_platform_core)
+  target_compile_features(audio_studio_platform_a2 PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_FRAMEWORK_SESSION)
   add_library(audio_studio_framework_session
     framework/session/src/session_registry.cpp
@@ -235,6 +244,9 @@ if(CONFIG_DRIVER_DUMP)
 endif()
 if(CONFIG_PLATFORM_CORE)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_core)
+endif()
+if(CONFIG_PLATFORM_A2)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_a2)
 endif()
 if(CONFIG_FRAMEWORK_SESSION)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)

@@ -163,6 +163,11 @@ config PLATFORM_CORE
   default n
   depends on SERVER && FRAMEWORK_COMMON
 
+config PLATFORM_A2
+  bool "Build A2 platform profile"
+  default n
+  depends on PLATFORM_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

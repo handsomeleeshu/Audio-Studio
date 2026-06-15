@@ -72,6 +72,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `LogDevice` host-alone raw chunk start/read/stats。
 - `DumpDevice` host-alone probe point and packet state。
 - `PlatformRegistry` register/get/list/findByCapability。
+- `platform/a2` profile creation and registry integration。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

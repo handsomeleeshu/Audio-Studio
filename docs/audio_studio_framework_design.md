@@ -1564,9 +1564,11 @@ Audio-Studio/server/platform/
 ```text
 server/platform/core/include/audio_studio/platform/core/platform_registry.hpp
 server/platform/core/src/platform_registry.cpp
+server/platform/a2/include/audio_studio/platform/a2/a2_platform.hpp
+server/platform/a2/src/a2_platform.cpp
 ```
 
-`CONFIG_PLATFORM_CORE=y` 时构建 `PlatformRegistry`，用于注册 platform id/name/transport/capabilities/available 状态，先打通 platform adapter 的选择和能力发现边界；不访问 A2 设备、simulator 进程或 customer platform。
+`CONFIG_PLATFORM_CORE=y` 时构建 `PlatformRegistry`，用于注册 platform id/name/transport/capabilities/available 状态，先打通 platform adapter 的选择和能力发现边界；不访问 A2 设备、simulator 进程或 customer platform。`CONFIG_PLATFORM_A2=y` 时构建 A2 platform profile skeleton，只声明 A2 的 audio/control/log/dump/transport 能力和 transport profile 名称，不实现 7870 tinyalsa、tinymix、debugfs、probe 或物理 transport。
 
 ### 4.14 audio_controller 对端 C 工程
 

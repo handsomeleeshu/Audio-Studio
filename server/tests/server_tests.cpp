@@ -23,6 +23,7 @@
 #include "audio_studio/framework/status.hpp"
 #include "audio_studio/framework/transport/frame_codec.hpp"
 #include "audio_studio/framework/transport/transport_manager.hpp"
+#include "audio_studio/platform/a2/a2_platform.hpp"
 #include "audio_studio/platform/core/platform_registry.hpp"
 #include "audio_studio/rpc/json_rpc.hpp"
 
@@ -163,6 +164,10 @@ int main() {
   audio_studio::platform::core::PlatformProfile platform_profile;
   assert(platform_registry.getPlatform("host", platform_profile).ok());
   assert(platform_profile.available);
+  const auto a2_profile = audio_studio::platform::a2::makeA2PlatformProfile();
+  assert(a2_profile.id == "a2");
+  assert(platform_registry.registerPlatform(a2_profile).ok());
+  assert(platform_registry.findByCapability("dump").size() == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());
