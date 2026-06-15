@@ -5,6 +5,7 @@
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
 #include "audio_studio/framework/status.hpp"
+#include "audio_studio/rpc/json_rpc.hpp"
 
 int main() {
   using audio_studio::drivers::dummy::DummyDriver;
@@ -32,6 +33,14 @@ int main() {
   assert(sessions.close("sess-1").ok());
   assert(!sessions.get("sess-1").active);
   assert(sessions.activeCount() == 0);
+
+  audio_studio::rpc::JsonRpcRequest request;
+  assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());
+  assert(request.id == "1");
+  assert(request.method == "health.ping");
+  assert(request.params_json.find("\"x\":1") != std::string::npos);
+  assert(audio_studio::rpc::resultResponse("1", R"({"pong":true})").find("\"result\"") != std::string::npos);
+  assert(audio_studio::rpc::errorResponse("1", -32601, "missing").find("\"error\"") != std::string::npos);
 
   DummyDriver driver;
   assert(!driver.start().ok());

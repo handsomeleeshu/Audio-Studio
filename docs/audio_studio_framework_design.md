@@ -373,6 +373,15 @@ Audio-Studio/server/rpc/
 
 这部分属于正式 `server/`，不是 `GUI/backend/`。
 
+当前已实现首批 host-alone RPC helper：
+
+```text
+server/rpc/include/audio_studio/rpc/json_rpc.hpp
+server/rpc/src/json_rpc.cpp
+```
+
+该阶段提供 JSON-RPC request method/id/params 提取，以及 result/error response 生成，用于后续 as_server dispatcher 和 CLI/GUI backend RPC transport 接入。
+
 ### 2.4 Backend-Orchestrated RPC / Client RPC Action Delegation
 
 该方案命名为：

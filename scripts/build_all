@@ -20,6 +20,7 @@ BOOL_DEFAULTS = {
     'CONFIG_GUI_BACKEND': True,
     'CONFIG_BUILD_TESTS': True,
     'CONFIG_SERVER': False,
+    'CONFIG_RPC': False,
     'CONFIG_CLI': False,
     'CONFIG_FRAMEWORK_COMMON': False,
     'CONFIG_FRAMEWORK_SESSION': False,

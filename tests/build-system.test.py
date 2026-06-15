@@ -43,6 +43,7 @@ def main():
     assert config['CONFIG_TOOLCHAIN_GCC'] is True
     assert config['CONFIG_GUI_BACKEND'] is True
     assert config['CONFIG_SERVER'] is True
+    assert config['CONFIG_RPC'] is True
     assert config['CONFIG_CLI'] is True
     assert config['CONFIG_FRAMEWORK_SESSION'] is True
     assert config['CONFIG_DRIVER_DUMMY'] is True
