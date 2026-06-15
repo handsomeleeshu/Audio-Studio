@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "audio_studio/drivers/core/driver_manager.hpp"
+#include "audio_studio/drivers/dynlib/dynlib_driver.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/drivers/filesystem/filesystem_driver.hpp"
 #include "audio_studio/drivers/os/os_driver.hpp"
@@ -88,6 +89,14 @@ int main() {
   std::vector<uint8_t> pipe_rx;
   assert(pipe_driver.read(3, pipe_rx).ok());
   assert(pipe_rx.size() == 3);
+
+  audio_studio::drivers::dynlib::DynlibDriver dynlib_driver;
+  static int test_symbol = 42;
+  assert(dynlib_driver.open("plugin.mock").ok());
+  assert(dynlib_driver.registerSymbol("studio_create_plugin", &test_symbol).ok());
+  void* symbol = nullptr;
+  assert(dynlib_driver.getSymbol("studio_create_plugin", symbol).ok());
+  assert(symbol == &test_symbol);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

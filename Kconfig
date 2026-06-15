@@ -128,6 +128,11 @@ config DRIVER_PIPE
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_DYNLIB
+  bool "Build host-alone dynamic library driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
