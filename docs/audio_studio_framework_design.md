@@ -1283,6 +1283,15 @@ Audio-Studio/server/framework/control/
     control_value.cpp
 ```
 
+当前已实现首批 host-alone control 模块：
+
+```text
+server/framework/control/include/audio_studio/framework/control/control_service.hpp
+server/framework/control/src/control_service.cpp
+```
+
+该阶段提供参数 set/get/list 的通用状态层，不直接访问 tinymix、A2 transport 或物理 driver；后续由 driver/control 或 platform/control 负责真实下发。
+
 ### 4.7 server/framework/audio
 
 ```text
