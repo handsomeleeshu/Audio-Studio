@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const html = readFileSync('frontend/index.html', 'utf8');
+const html = readFileSync('GUI/frontend/index.html', 'utf8');
 const start = html.indexOf('/* Pipeline runtime UX polish. */');
 const end = html.indexOf('/* Pipeline-scoped runtime state colors. */', start);
 assert(start >= 0 && end > start, 'runtime UX CSS block must exist');

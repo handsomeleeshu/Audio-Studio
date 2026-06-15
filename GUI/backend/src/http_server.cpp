@@ -172,6 +172,20 @@ static void logApiRequest(const HttpRequest& req) {
   std::cout << "\n" << std::flush;
 }
 
+static bool startsWith(const std::string& value, const std::string& prefix) {
+  return value.rfind(prefix, 0) == 0;
+}
+
+static bool hasJsonSuffix(const std::string& path) {
+  return path.size() >= 5 && path.substr(path.size() - 5) == ".json";
+}
+
+static bool isFrontendIndexPath(const std::string& path) {
+  return path == "/" || path == "/index.html" ||
+         path == "/GUI/frontend/" || path == "/GUI/frontend/index.html" ||
+         path == "/frontend/" || path == "/frontend/index.html";
+}
+
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller,
@@ -210,12 +224,27 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   logApiRequest(req);
   static size_t ui_notification_seq = 0;
   static std::vector<std::string> ui_notifications;
+  const std::string frontend_root = "GUI/frontend";
+  const std::string gui_asset_prefix = "/GUI/frontend/assets/";
+  const std::string legacy_frontend_prefix = "/frontend/";
+  const std::string gui_config_prefix = "/GUI/frontend/config/";
+  const std::string legacy_config_prefix = "/frontend/config/";
+  auto serveFrontendFile = [&](const std::string& rel_path, const std::string& content_type = "") {
+    return serveFile(frontend_root + "/" + rel_path, content_type);
+  };
+
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
-  if (req.method == "GET" && (req.path == "/" || req.path == "/index.html" || req.path == "/frontend/" || req.path == "/frontend/index.html")) return serveFile("frontend/index.html", "text/html; charset=utf-8");
-  if (req.method == "GET" && req.path.rfind("/assets/", 0) == 0) return serveFile("frontend" + req.path, "");
-  if (req.method == "GET" && req.path.rfind("/frontend/config/", 0) == 0 &&
-      req.path.size() >= 23 && req.path.substr(req.path.size() - 5) == ".json") {
-    return serveFile(std::string("frontend/config/") + sanitizeConfigFileName(req.path.substr(17)), "application/json; charset=utf-8");
+  if (req.method == "GET" && isFrontendIndexPath(req.path)) return serveFrontendFile("index.html", "text/html; charset=utf-8");
+  if (req.method == "GET" && startsWith(req.path, "/assets/")) return serveFrontendFile(req.path.substr(1), "");
+  if (req.method == "GET" && startsWith(req.path, gui_asset_prefix)) return serveFile(req.path.substr(1), "");
+  if (req.method == "GET" && startsWith(req.path, legacy_frontend_prefix) && startsWith(req.path.substr(legacy_frontend_prefix.size()), "assets/")) {
+    return serveFrontendFile(req.path.substr(legacy_frontend_prefix.size()), "");
+  }
+  if (req.method == "GET" && startsWith(req.path, gui_config_prefix) && hasJsonSuffix(req.path)) {
+    return serveFrontendFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(gui_config_prefix.size())), "application/json; charset=utf-8");
+  }
+  if (req.method == "GET" && startsWith(req.path, legacy_config_prefix) && hasJsonSuffix(req.path)) {
+    return serveFrontendFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(legacy_config_prefix.size())), "application/json; charset=utf-8");
   }
   if (req.method == "GET" && req.path == "/api/projects") {
     return {200, "application/json; charset=utf-8", configProjectListJson(root_dir_)};

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const html = readFileSync('frontend/index.html', 'utf8');
+const html = readFileSync('GUI/frontend/index.html', 'utf8');
 
 assert(html.includes('function nodeCardRuntimeCostV98'), 'node card backend-cost helper must be installed');
 assert(html.includes('function renderNodeCardRuntimeCostMarkupV98'), 'node card runtime-cost markup helper must be installed');

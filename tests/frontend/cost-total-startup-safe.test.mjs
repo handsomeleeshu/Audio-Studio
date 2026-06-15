@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert';
 
-const html = fs.readFileSync('frontend/index.html', 'utf8');
+const html = fs.readFileSync('GUI/frontend/index.html', 'utf8');
 
 assert.ok(html.includes('function algorithmCostItemsForTotalsV103'), 'startup-safe cost item accessor should exist');
 assert.ok(html.includes('function isRuntimeRunningForCostTotalsV103'), 'startup-safe running accessor should exist');

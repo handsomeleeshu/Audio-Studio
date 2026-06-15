@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { convertPipeline } from '../../frontend/assets/js/configParser.js';
-import { autoLayout, checkMinDistance, getPortPosition, edgePath, MIN_X_DISTANCE, NODE_WIDTH } from '../../frontend/assets/js/layout.js';
+import { convertPipeline } from '../../GUI/frontend/assets/js/configParser.js';
+import { autoLayout, checkMinDistance, getPortPosition, edgePath, MIN_X_DISTANCE, NODE_WIDTH } from '../../GUI/frontend/assets/js/layout.js';
 
 const cfg = JSON.parse(fs.readFileSync(new URL('../../config/A2.json', import.meta.url), 'utf8'));
 const graph = convertPipeline(cfg, 'PLAY_MAIN');

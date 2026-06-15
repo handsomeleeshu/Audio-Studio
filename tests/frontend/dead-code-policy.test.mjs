@@ -5,27 +5,27 @@ const root = new URL('../../', import.meta.url);
 const readText = path => fs.readFileSync(new URL(path, root), 'utf8');
 const exists = path => fs.existsSync(new URL(path, root));
 
-const html = readText('frontend/index.html');
+const html = readText('GUI/frontend/index.html');
 assert.equal((html.match(/<script\b/g) || []).length, 1, 'standalone UI should keep one inline script entry');
 assert.ok(!/<script[^>]+src=/i.test(html), 'standalone UI must not load external frontend scripts');
 assert.ok(!/<link[^>]+rel=["']?stylesheet/i.test(html), 'standalone UI must not load external CSS bundles');
 
 const deadAssets = [
-  'frontend/assets/js/app.js',
-  'frontend/assets/js/react-app.js',
-  'frontend/assets/js/api.js',
-  'frontend/assets/js/telemetry.js',
-  'frontend/assets/js/pipeline-edit-callbacks.js',
-  'frontend/assets/js/topbar-panel-menu.js',
-  'frontend/assets/css/styles.css',
-  'frontend/assets/css/pipeline-editor-fixes.css',
-  'frontend/assets/css/topbar-legacy.css',
-  'frontend/assets/css/legacy-ui-reset.css',
-  'frontend/assets/css/library-compact.css',
+  'GUI/frontend/assets/js/app.js',
+  'GUI/frontend/assets/js/react-app.js',
+  'GUI/frontend/assets/js/api.js',
+  'GUI/frontend/assets/js/telemetry.js',
+  'GUI/frontend/assets/js/pipeline-edit-callbacks.js',
+  'GUI/frontend/assets/js/topbar-panel-menu.js',
+  'GUI/frontend/assets/css/styles.css',
+  'GUI/frontend/assets/css/pipeline-editor-fixes.css',
+  'GUI/frontend/assets/css/topbar-legacy.css',
+  'GUI/frontend/assets/css/legacy-ui-reset.css',
+  'GUI/frontend/assets/css/library-compact.css',
 ];
 
 for (const asset of deadAssets) {
-  assert.ok(!exists(asset), `${asset} is not loaded by frontend/index.html and should be removed`);
+  assert.ok(!exists(asset), `${asset} is not loaded by GUI/frontend/index.html and should be removed`);
 }
 
 const packageJson = JSON.parse(readText('package.json'));

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const html = readFileSync('frontend/index.html', 'utf8');
+const html = readFileSync('GUI/frontend/index.html', 'utf8');
 
 assert(html.includes('makeBufferInspectorUnavailableState'), 'buffer Inspector unavailable state helper is required');
 assert(/general:\s*\{\s*format:\s*['"]N\/A['"],\s*rms:\s*null,\s*peak:\s*null/.test(html), 'buffer unavailable General must be N/A/null');

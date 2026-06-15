@@ -8,7 +8,7 @@ import {
   panelVisibilityFromClassList,
   readSavedPanelVisibility,
   writeSavedPanelVisibility,
-} from '../../frontend/assets/js/topbarPanelMenuModel.js';
+} from '../../GUI/frontend/assets/js/topbarPanelMenuModel.js';
 
 assert.deepEqual(panelKeys(), ['library', 'inspector', 'cost', 'core', 'probe', 'health', 'io']);
 assert.equal(getPanelItem('library').label, 'Algorithm Library');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const html = readFileSync('frontend/index.html', 'utf8');
+const html = readFileSync('GUI/frontend/index.html', 'utf8');
 const compact = html.replace(/\s+/g, '');
 
 assert(compact.includes('syncTelemetryBackendOnly,backendOnly:true'), 'runtime loop policy requires syncTelemetryBackendOnly and backendOnly:true to stay adjacent');

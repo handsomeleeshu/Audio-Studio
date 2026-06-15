@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html = fs.readFileSync('frontend/index.html', 'utf8');
+const html = fs.readFileSync('GUI/frontend/index.html', 'utf8');
 
 assert(html.includes('Dynamic runtime load color mapping for DSP Core and System Health'), 'load color mapping block must be installed');
 assert(html.includes('#corePanel .loadbar i') && html.includes('#healthPanel .health-progress i'), 'DSP Core and System Health bar selectors must both be styled');

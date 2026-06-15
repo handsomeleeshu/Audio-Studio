@@ -4675,18 +4675,21 @@
       const pathname = loc.pathname || '';
       const origin = loc.origin || '';
 
-      // GitHub Pages project site forms:
-      //   /Audio-Studio/frontend/       -> /Audio-Studio/config/<file>
-      //   /Audio-Studio/frontend        -> /Audio-Studio/config/<file>
+      // GitHub Pages / source-tree forms:
+      //   /Audio-Studio/GUI/frontend/   -> /Audio-Studio/config/<file>
+      //   /Audio-Studio/frontend/       -> /Audio-Studio/config/<file> (legacy)
       let projectBase = '';
-      const frontendSlashIdx = pathname.indexOf('/frontend/');
-      if (frontendSlashIdx >= 0) projectBase = pathname.slice(0, frontendSlashIdx);
+      const guiFrontendSlashIdx = pathname.indexOf('/GUI/frontend/');
+      const legacyFrontendSlashIdx = pathname.indexOf('/frontend/');
+      if (guiFrontendSlashIdx >= 0) projectBase = pathname.slice(0, guiFrontendSlashIdx);
+      else if (legacyFrontendSlashIdx >= 0) projectBase = pathname.slice(0, legacyFrontendSlashIdx);
+      else if (pathname.endsWith('/GUI/frontend')) projectBase = pathname.slice(0, -'/GUI/frontend'.length);
       else if (pathname.endsWith('/frontend')) projectBase = pathname.slice(0, -'/frontend'.length);
       if (projectBase) paths.push(`${projectBase}/config/${safe}`);
 
       // Extra robust GitHub Pages candidate derived from the first path segment.
       const parts = pathname.split('/').filter(Boolean);
-      if (parts.length && parts[0] !== 'frontend') paths.push(`/${parts[0]}/config/${safe}`);
+      if (parts.length && parts[0] !== 'GUI' && parts[0] !== 'frontend') paths.push(`/${parts[0]}/config/${safe}`);
 
       // Direct frontend-local copy. v30 copies built-in-algorithm.json here so
       // GitHub Pages can load it even if root config is not exposed by deployment.
@@ -4694,6 +4697,7 @@
       paths.push(`config/${safe}`);
 
       // Standard repository-root relative paths.
+      paths.push(`../../config/${safe}`);
       paths.push(`../config/${safe}`);
       paths.push(`/config/${safe}`);
 
@@ -4716,13 +4720,16 @@
       //   built-in algorithm catalog is frontend-owned, not platform config.
       //
       // Local backend may serve the same frontend at:
-      //   /                    -> needs /frontend/config/<file>
+      //   /                    -> needs /GUI/frontend/config/<file>
+      //   /GUI/frontend/       -> ./config/<file> works
       //   /frontend/            -> ./config/<file> works
       //
-      // GitHub Pages deployment stages frontend/. into site root:
+      // GitHub Pages deployment stages GUI/frontend/. into site root:
       //   /Audio-Studio/        -> ./config/<file> works
       paths.push(`./config/${safe}`);
       paths.push(`config/${safe}`);
+      paths.push(`/GUI/frontend/config/${safe}`);
+      paths.push(`GUI/frontend/config/${safe}`);
       paths.push(`/frontend/config/${safe}`);
       paths.push(`frontend/config/${safe}`);
 
@@ -4730,20 +4737,28 @@
       if (parts.length) {
         const repoBase = '/' + parts[0];
         paths.push(`${repoBase}/config/${safe}`);
+        paths.push(`${repoBase}/GUI/frontend/config/${safe}`);
         paths.push(`${repoBase}/frontend/config/${safe}`);
       }
 
-      const frontendSlashIdx = pathname.indexOf('/frontend/');
-      if (frontendSlashIdx >= 0) {
-        const projectBase = pathname.slice(0, frontendSlashIdx);
+      const guiFrontendSlashIdx = pathname.indexOf('/GUI/frontend/');
+      const legacyFrontendSlashIdx = pathname.indexOf('/frontend/');
+      if (guiFrontendSlashIdx >= 0) {
+        const projectBase = pathname.slice(0, guiFrontendSlashIdx);
+        if (projectBase) paths.push(`${projectBase}/GUI/frontend/config/${safe}`);
+      } else if (legacyFrontendSlashIdx >= 0) {
+        const projectBase = pathname.slice(0, legacyFrontendSlashIdx);
         if (projectBase) paths.push(`${projectBase}/frontend/config/${safe}`);
+      } else if (pathname.endsWith('/GUI/frontend')) {
+        const projectBase = pathname.slice(0, -'/GUI/frontend'.length);
+        if (projectBase) paths.push(`${projectBase}/GUI/frontend/config/${safe}`);
       } else if (pathname.endsWith('/frontend')) {
         const projectBase = pathname.slice(0, -'/frontend'.length);
         if (projectBase) paths.push(`${projectBase}/frontend/config/${safe}`);
       }
 
       if ((loc.hostname || '').endsWith('github.io')) {
-        paths.push('https://raw.githubusercontent.com/handsomeleeshu/Audio-Studio/main/frontend/config/' + safe);
+        paths.push('https://raw.githubusercontent.com/handsomeleeshu/Audio-Studio/main/GUI/frontend/config/' + safe);
       }
       return [...new Set(paths)];
     }
@@ -4755,7 +4770,7 @@
     async function loadBuiltInAlgorithms() {
       const cfg = await apiGetFirstJson(builtInAlgorithmPaths('built-in-algorithm.json'));
       if (!cfg || !Array.isArray(cfg.module_types)) {
-        addLog('warn', 'Built-in algorithms not loaded', 'Tried frontend/config, local backend /frontend/config, Pages /config and raw GitHub frontend/config paths');
+        addLog('warn', 'Built-in algorithms not loaded', 'Tried GUI/frontend/config, local backend /GUI/frontend/config, Pages /config and raw GitHub GUI/frontend/config paths');
         builtInComponents = [];
         mergeLibraryComponents();
         renderLibrary($('#searchInput')?.value || '');

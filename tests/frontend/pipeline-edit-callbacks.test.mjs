@@ -5,7 +5,7 @@ import {
   makePipelineEditPayload,
   summarizeDomPipeline,
   toolKeys,
-} from '../../frontend/assets/js/pipelineEditCallbackModel.js';
+} from '../../GUI/frontend/assets/js/pipelineEditCallbackModel.js';
 
 assert.deepEqual(toolKeys(), ['select', 'pan', 'fit', 'undo', 'delete']);
 assert.equal(getToolItem('undo').backend, false);

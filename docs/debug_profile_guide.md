@@ -65,27 +65,27 @@ This compound configuration:
 Backend breakpoints go in:
 
 ```text
-backend/src/main.cpp
-backend/src/http_server.cpp
-backend/src/mock_runtime.cpp
-backend/include/audio_studio.hpp
+GUI/backend/src/main.cpp
+GUI/backend/src/http_server.cpp
+GUI/backend/src/mock_runtime.cpp
+GUI/backend/include/audio_studio.hpp
 ```
 
 Frontend breakpoints go in:
 
 ```text
-frontend/index.html
+GUI/frontend/index.html
 ```
 
-The files under `frontend/assets/js/` are tested helper/model modules, not the
+The files under `GUI/frontend/assets/js/` are tested helper/model modules, not the
 current browser entrypoint.
 
 Useful backend breakpoint locations:
 
-- `HttpServer::handle` in `backend/src/http_server.cpp`
-- `MockRuntimeEngine::buildPipeline` in `backend/src/mock_runtime.cpp`
-- `MockRuntimeEngine::run` in `backend/src/mock_runtime.cpp`
-- `FakeInspectorController::bufferLiveData` in `backend/src/mock_runtime.cpp`
+- `HttpServer::handle` in `GUI/backend/src/http_server.cpp`
+- `MockRuntimeEngine::buildPipeline` in `GUI/backend/src/mock_runtime.cpp`
+- `MockRuntimeEngine::run` in `GUI/backend/src/mock_runtime.cpp`
+- `FakeInspectorController::bufferLiveData` in `GUI/backend/src/mock_runtime.cpp`
 
 Useful frontend breakpoint locations:
 
@@ -128,7 +128,7 @@ Frontend: Debug Chrome
 ```
 
 Chrome opens with DevTools enabled. VSCode breakpoints work against files under
-`frontend/`. Browser DevTools breakpoints also work normally.
+`GUI/frontend/`. Browser DevTools breakpoints also work normally.
 
 If Chrome is already running with remote debugging on port `9222`, use:
 

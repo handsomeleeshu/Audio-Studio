@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const html = readFileSync('frontend/index.html', 'utf8');
-const backend = readFileSync('backend/src/http_server.cpp', 'utf8');
+const html = readFileSync('GUI/frontend/index.html', 'utf8');
+const backend = readFileSync('GUI/backend/src/http_server.cpp', 'utf8');
 
 for (const forbidden of [
   "mode: 'visual_fallback_only'",

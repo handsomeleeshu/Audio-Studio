@@ -30,7 +30,7 @@
       "type": "chrome",
       "request": "launch",
       "url": "http://127.0.0.1:${input:serverPort}",
-      "webRoot": "${workspaceFolder}/frontend",
+      "webRoot": "${workspaceFolder}/GUI/frontend",
       "sourceMaps": false,
       "runtimeArgs": [
         "--remote-debugging-port=9222",
@@ -44,7 +44,7 @@
       "type": "chrome",
       "request": "attach",
       "port": 9222,
-      "webRoot": "${workspaceFolder}/frontend",
+      "webRoot": "${workspaceFolder}/GUI/frontend",
       "sourceMaps": false
     },
     {
@@ -52,7 +52,7 @@
       "type": "chrome",
       "request": "launch",
       "url": "http://127.0.0.1:${input:serverPort}",
-      "webRoot": "${workspaceFolder}/frontend",
+      "webRoot": "${workspaceFolder}/GUI/frontend",
       "sourceMaps": false,
       "runtimeArgs": [
         "--auto-open-devtools-for-tabs",

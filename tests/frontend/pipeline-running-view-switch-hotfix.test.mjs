@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
 
 assert.ok(
   html.includes('Running pipeline view switch hotfix'),
