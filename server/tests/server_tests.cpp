@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 
+#include "audio_studio/drivers/audio/audio_device.hpp"
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dynlib/dynlib_driver.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
@@ -107,6 +108,20 @@ int main() {
   assert(transport_rx.size() == 4);
   assert(transport_driver.bytesWritten() == 4);
   assert(transport_driver.bytesRead() == 4);
+
+  audio_studio::drivers::audio::AudioDevice playback_device;
+  assert(playback_device.open(audio_studio::drivers::audio::AudioDirection::kPlayback, {48000, 2, 2}).ok());
+  assert(playback_device.start().ok());
+  assert(playback_device.writeFrame({0, 1, 2, 3}).ok());
+  assert(playback_device.stats().frames_written == 1);
+  assert(playback_device.stop().ok());
+  audio_studio::drivers::audio::AudioDevice capture_device;
+  assert(capture_device.open(audio_studio::drivers::audio::AudioDirection::kCapture, {48000, 1, 2}).ok());
+  assert(capture_device.injectCaptureFrame({5, 6}).ok());
+  assert(capture_device.start().ok());
+  std::vector<uint8_t> capture_frame;
+  assert(capture_device.readFrame(capture_frame).ok());
+  assert(capture_frame.size() == 2);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

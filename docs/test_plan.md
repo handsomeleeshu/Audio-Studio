@@ -67,6 +67,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `PipeDriver` in-memory create/open/read/write。
 - `DynlibDriver` mock open/registerSymbol/getSymbol。
 - `TransportDriver` memory open/write/read/flush/caps。
+- `AudioDevice` host-alone playback/capture frame state。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

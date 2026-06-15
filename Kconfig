@@ -138,6 +138,11 @@ config DRIVER_TRANSPORT
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_AUDIO
+  bool "Build host-alone audio driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
