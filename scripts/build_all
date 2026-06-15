@@ -1,51 +1,69 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 platform="simulator"
+arch="host"
 target_os="auto"
 toolchain="default"
 build_type="Release"
 defconfig=""
+cmake_generator=""
+configure_only=0
 clean=0
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/build_all [options]
 
-M0 build entry point for the Audio Studio repository. It configures and builds
-all top-level skeleton targets without changing the existing GUI/backend flow.
+SOF-style top-level build entry for Audio Studio.
+
+The script selects a platform/arch/toolchain tuple, resolves a defconfig from
+src/arch/<arch>/configs, lets CMake run the Kconfig flow, then builds the
+selected targets. Kconfig remains the source of truth; CMake consumes the
+resulting generated/.config and generated/include/generated/autoconf.h.
 
 Options:
-  --platform <simulator|a2>       Platform profile. Default: simulator
-  --target-os <linux|macos|auto>  Target OS hint. Default: auto
-  --toolchain <default|gcc|clang> Toolchain hint. Default: default
-  --build-type <type>             CMake build type. Default: Release
-  --defconfig <path>              Defconfig file to copy into the build dir
-  --clean                         Remove the selected build directory first
-  -h, --help                      Show this help
+  -p, --platform <simulator|a2>      Platform profile. Default: simulator
+  -a, --arch <host>                 Build architecture. Default: host
+  -o, --target-os <linux|macos|auto> Target OS hint. Default: auto
+  -t, --toolchain <default|gcc|clang> Toolchain hint. Default: default
+  -b, --build-type <type>           CMake build type. Default: Release
+  -d, --defconfig <path|name>       Initial Kconfig defconfig
+  -g, --generator <name>            CMake generator, for example Ninja
+  -c, --clean                       Remove the selected build directory first
+      --configure-only              Configure but do not build
+  -h, --help                        Show this help
 
 Examples:
-  scripts/build_all --platform simulator --target-os linux --toolchain gcc
-  scripts/build_all --platform a2 --defconfig configs/a2_linux_defconfig
+  scripts/build_all -p simulator -o linux -t gcc
+  scripts/build_all -p a2 -a host -d a2_linux_defconfig
+  scripts/build_all --clean --platform simulator --generator Ninja
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --platform)
-      platform="${2:?missing value for --platform}"; shift 2 ;;
-    --target-os)
-      target_os="${2:?missing value for --target-os}"; shift 2 ;;
-    --toolchain)
-      toolchain="${2:?missing value for --toolchain}"; shift 2 ;;
-    --build-type)
-      build_type="${2:?missing value for --build-type}"; shift 2 ;;
-    --defconfig)
-      defconfig="${2:?missing value for --defconfig}"; shift 2 ;;
-    --clean)
+    -p|--platform)
+      platform="${2:?missing value for $1}"; shift 2 ;;
+    -a|--arch)
+      arch="${2:?missing value for $1}"; shift 2 ;;
+    -o|--target-os)
+      target_os="${2:?missing value for $1}"; shift 2 ;;
+    -t|--toolchain)
+      toolchain="${2:?missing value for $1}"; shift 2 ;;
+    -b|--build-type)
+      build_type="${2:?missing value for $1}"; shift 2 ;;
+    -d|--defconfig|--init-config)
+      defconfig="${2:?missing value for $1}"; shift 2 ;;
+    -g|--generator)
+      cmake_generator="${2:?missing value for $1}"; shift 2 ;;
+    -c|--clean)
       clean=1; shift ;;
+    --configure-only)
+      configure_only=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -63,40 +81,119 @@ if [[ "$target_os" == "auto" ]]; then
   esac
 fi
 
-if [[ -z "$defconfig" ]]; then
-  candidate="$ROOT/configs/${platform}_${target_os}_defconfig"
-  if [[ -f "$candidate" ]]; then
-    defconfig="$candidate"
-  else
-    defconfig="$ROOT/configs/simulator_linux_defconfig"
-  fi
-elif [[ "$defconfig" != /* ]]; then
-  defconfig="$ROOT/$defconfig"
+case "$arch" in
+  host)
+    ;;
+  *)
+    echo "Unsupported M0 arch: $arch" >&2
+    echo "M0 supports host builds. Additional arch toolchains will be added later." >&2
+    exit 2 ;;
+esac
+
+case "$platform" in
+  simulator|a2)
+    ;;
+  *)
+    echo "Unsupported platform: $platform" >&2
+    exit 2 ;;
+esac
+
+case "$toolchain" in
+  default|gcc|clang)
+    ;;
+  *)
+    echo "Unsupported toolchain hint: $toolchain" >&2
+    exit 2 ;;
+esac
+
+if ! python3 - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("kconfiglib") else 1)
+PY
+then
+  cat >&2 <<'EOF'
+Missing Python module: kconfiglib
+
+Audio Studio now uses the same Kconfiglib-based flow as SOF helper scripts.
+Install it before configuring, for example:
+
+  python3 -m pip install --user kconfiglib
+
+EOF
+  exit 1
 fi
 
-if [[ ! -f "$defconfig" ]]; then
-  echo "Defconfig not found: $defconfig" >&2
+resolve_defconfig() {
+  local requested="$1"
+
+  if [[ -n "$requested" ]]; then
+    if [[ "$requested" == /* && -f "$requested" ]]; then
+      printf '%s\n' "$requested"
+      return 0
+    fi
+    if [[ -f "$ROOT/$requested" ]]; then
+      printf '%s\n' "$ROOT/$requested"
+      return 0
+    fi
+    if [[ -f "$ROOT/src/arch/$arch/configs/$requested" ]]; then
+      printf '%s\n' "$ROOT/src/arch/$arch/configs/$requested"
+      return 0
+    fi
+  fi
+
+  local candidates=(
+    "$ROOT/src/arch/$arch/configs/${platform}_${target_os}_defconfig"
+    "$ROOT/src/arch/$arch/configs/${platform}_defconfig"
+    "$ROOT/src/arch/$arch/configs/simulator_linux_defconfig"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+if ! defconfig_path="$(resolve_defconfig "$defconfig")"; then
+  echo "Unable to resolve defconfig for arch=$arch platform=$platform target_os=$target_os" >&2
   exit 1
 fi
 
 build_type_lc="$(printf '%s' "$build_type" | tr '[:upper:]' '[:lower:]')"
-build_dir="$ROOT/build/${platform}-${target_os}-${toolchain}-${build_type_lc}"
+build_dir="$ROOT/build/${arch}-${platform}-${target_os}-${toolchain}-${build_type_lc}"
 
 if [[ "$clean" -eq 1 ]]; then
   rm -rf "$build_dir"
 fi
 
 mkdir -p "$build_dir"
-cp "$defconfig" "$build_dir/.config"
+
+# Pass INIT_CONFIG relative to the source tree when possible. This mirrors SOF's
+# CMake Kconfig helper which searches src/arch/<arch>/configs and then freezes
+# the active config as generated/.config inside the build directory.
+init_config="$defconfig_path"
+if [[ "$defconfig_path" == "$ROOT"/* ]]; then
+  init_config="${defconfig_path#"$ROOT"/}"
+fi
 
 cmake_args=(
   -S "$ROOT"
   -B "$build_dir"
-  -DCMAKE_BUILD_TYPE="$build_type"
+  -DARCH="$arch"
+  -DINIT_CONFIG="$init_config"
   -DAUDIO_STUDIO_PLATFORM="$platform"
   -DAUDIO_STUDIO_TARGET_OS="$target_os"
-  -DAUDIO_STUDIO_DEFCONFIG="$defconfig"
+  -DAUDIO_STUDIO_TOOLCHAIN="$toolchain"
+  -DCMAKE_BUILD_TYPE="$build_type"
 )
+
+if [[ -n "$cmake_generator" ]]; then
+  cmake_args+=( -G "$cmake_generator" )
+fi
 
 case "$toolchain" in
   default)
@@ -105,33 +202,28 @@ case "$toolchain" in
     cmake_args+=( -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ ) ;;
   clang)
     cmake_args+=( -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ) ;;
-  *)
-    echo "Unsupported toolchain hint: $toolchain" >&2
-    exit 2 ;;
 esac
 
 cmake "${cmake_args[@]}"
-cmake --build "$build_dir" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+
+if [[ "$configure_only" -eq 0 ]]; then
+  cmake --build "$build_dir" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+fi
 
 cat <<EOF
 
-Audio Studio M0 build completed.
-  build_dir:  $build_dir
-  defconfig:  $defconfig
-  platform:   $platform
-  target_os:  $target_os
-  toolchain:  $toolchain
+Audio Studio build completed.
+  build_dir:     $build_dir
+  arch:          $arch
+  platform:      $platform
+  target_os:     $target_os
+  toolchain:     $toolchain
+  init_config:   $init_config
+  active config: $build_dir/generated/.config
+  header:        $build_dir/generated/include/generated/autoconf.h
 
-Expected skeleton outputs include:
-  $build_dir/as_server
-  $build_dir/as_config
-  $build_dir/as_control
-  $build_dir/as_play
-  $build_dir/as_record
-  $build_dir/as_log
-  $build_dir/as_dump
-  $build_dir/audio_controller
-
-The existing GUI mock backend remains available as:
-  $build_dir/audio_studio_server
+Useful Kconfig targets inside build dir:
+  cmake --build $build_dir --target menuconfig
+  cmake --build $build_dir --target olddefconfig
+  cmake --build $build_dir --target savedefconfig
 EOF
