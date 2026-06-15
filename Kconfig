@@ -1,0 +1,24 @@
+mainmenu "Audio Studio Configuration"
+
+config PLATFORM
+	string "Audio Studio platform"
+	default "simulator_linux"
+
+config BUILD_GUI_BACKEND
+	bool "Build existing GUI backend"
+	default y
+
+config BUILD_AS_SERVER
+	bool "Build formal Audio Studio server skeleton"
+	default y
+
+config BUILD_CLI
+	bool "Build Audio Studio CLI skeletons"
+	default y
+
+config BUILD_AUDIO_CONTROLLER
+	bool "Build Audio Controller peer skeleton"
+	default y
+
+source "platform/simulator_linux/Kconfig"
+source "platform/a2_linux/Kconfig"
