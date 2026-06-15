@@ -158,6 +158,11 @@ config DRIVER_DUMP
   default n
   depends on DRIVERS_CORE
 
+config PLATFORM_CORE
+  bool "Build platform registry core"
+  default n
+  depends on SERVER && FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

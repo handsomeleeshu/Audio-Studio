@@ -41,6 +41,7 @@ BOOL_DEFAULTS = {
     'CONFIG_DRIVER_CONTROL': False,
     'CONFIG_DRIVER_LOG': False,
     'CONFIG_DRIVER_DUMP': False,
+    'CONFIG_PLATFORM_CORE': False,
     'CONFIG_DRIVER_DUMMY': False,
 }
 

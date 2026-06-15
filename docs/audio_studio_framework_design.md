@@ -1559,6 +1559,15 @@ Audio-Studio/server/platform/
     customer_x_platform.cpp
 ```
 
+当前已实现首批 host-alone platform core：
+
+```text
+server/platform/core/include/audio_studio/platform/core/platform_registry.hpp
+server/platform/core/src/platform_registry.cpp
+```
+
+`CONFIG_PLATFORM_CORE=y` 时构建 `PlatformRegistry`，用于注册 platform id/name/transport/capabilities/available 状态，先打通 platform adapter 的选择和能力发现边界；不访问 A2 设备、simulator 进程或 customer platform。
+
 ### 4.14 audio_controller 对端 C 工程
 
 `audio_controller/` 是 Audio Studio 在 A2 直连或 DSP simulator 模式下的对端参考实现。它不是 PC server 的一部分，主要用 C 实现，后续可以移植到 RISC-V Audio Controller 或 DSP simulator 进程。

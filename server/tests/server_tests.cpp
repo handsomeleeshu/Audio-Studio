@@ -23,6 +23,7 @@
 #include "audio_studio/framework/status.hpp"
 #include "audio_studio/framework/transport/frame_codec.hpp"
 #include "audio_studio/framework/transport/transport_manager.hpp"
+#include "audio_studio/platform/core/platform_registry.hpp"
 #include "audio_studio/rpc/json_rpc.hpp"
 
 int main() {
@@ -154,6 +155,14 @@ int main() {
   assert(dump_device.readPacket(raw_dump_packet).ok());
   assert(raw_dump_packet.point_id == 7);
   assert(dump_device.stats().packets_read == 1);
+
+  audio_studio::platform::core::PlatformRegistry platform_registry;
+  assert(platform_registry.registerPlatform({"host", "Host Platform", "memory", {"audio", "control"}, true}).ok());
+  assert(platform_registry.hasPlatform("host"));
+  assert(platform_registry.findByCapability("audio").size() == 1);
+  audio_studio::platform::core::PlatformProfile platform_profile;
+  assert(platform_registry.getPlatform("host", platform_profile).ok());
+  assert(platform_profile.available);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());
