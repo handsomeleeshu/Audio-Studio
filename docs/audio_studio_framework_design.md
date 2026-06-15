@@ -1321,6 +1321,15 @@ Audio-Studio/server/framework/audio/
     audio_stats.cpp
 ```
 
+当前已实现首批 host-alone audio 模块：
+
+```text
+server/framework/audio/include/audio_studio/framework/audio/audio_service.hpp
+server/framework/audio/src/audio_service.cpp
+```
+
+该阶段只维护 playback/capture stream 的 create/start/stop/get/list 状态，不直接访问 ALSA、浏览器音频或 Audio Controller；真实设备访问由后续 drivers/audio 承担。
+
 ### 4.8 server/framework/log
 
 ```text

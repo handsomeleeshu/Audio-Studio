@@ -55,6 +55,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `Status` 和 `ServiceRegistry` common 模块。
 - `SessionRegistry` create/close/list/activeCount。
 - `ControlService` set/get/list。
+- `AudioService` stream create/start/stop/get/list。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

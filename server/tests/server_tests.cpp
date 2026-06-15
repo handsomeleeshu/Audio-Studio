@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
+#include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
@@ -42,6 +43,15 @@ int main() {
   assert(controls.get("AEC", "echo_suppress_db", control_value).ok());
   assert(control_value.value == "-20");
   assert(!controls.get("AEC", "missing", control_value).ok());
+
+  audio_studio::framework::audio::AudioService audio;
+  assert(audio.create({"playback-1", audio_studio::framework::audio::StreamDirection::kPlayback, 48000, 2, false}).ok());
+  assert(audio.start("playback-1").ok());
+  audio_studio::framework::audio::AudioStream stream;
+  assert(audio.get("playback-1", stream).ok());
+  assert(stream.running);
+  assert(audio.stop("playback-1").ok());
+  assert(!audio.create({"bad", audio_studio::framework::audio::StreamDirection::kCapture, 0, 2, false}).ok());
 
   audio_studio::rpc::JsonRpcRequest request;
   assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());

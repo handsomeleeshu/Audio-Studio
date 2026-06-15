@@ -36,6 +36,15 @@ if(CONFIG_FRAMEWORK_CONTROL)
   target_compile_features(audio_studio_framework_control PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_FRAMEWORK_AUDIO)
+  add_library(audio_studio_framework_audio
+    framework/audio/src/audio_service.cpp
+  )
+  target_include_directories(audio_studio_framework_audio PUBLIC framework/audio/include)
+  target_link_libraries(audio_studio_framework_audio PUBLIC audio_studio_framework_common)
+  target_compile_features(audio_studio_framework_audio PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_RPC)
   add_library(audio_studio_rpc
     rpc/src/json_rpc.cpp
@@ -51,6 +60,9 @@ if(CONFIG_FRAMEWORK_SESSION)
 endif()
 if(CONFIG_FRAMEWORK_CONTROL)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_control)
+endif()
+if(CONFIG_FRAMEWORK_AUDIO)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_audio)
 endif()
 if(CONFIG_RPC)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc)
