@@ -68,6 +68,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `DynlibDriver` mock open/registerSymbol/getSymbol。
 - `TransportDriver` memory open/write/read/flush/caps。
 - `AudioDevice` host-alone playback/capture frame state。
+- `ControlDevice` host-alone set/get/list/stats。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

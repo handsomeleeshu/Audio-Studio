@@ -143,6 +143,11 @@ config DRIVER_AUDIO
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_CONTROL
+  bool "Build host-alone control driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

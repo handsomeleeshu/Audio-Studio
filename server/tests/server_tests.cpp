@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "audio_studio/drivers/audio/audio_device.hpp"
+#include "audio_studio/drivers/control/control_device.hpp"
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dynlib/dynlib_driver.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
@@ -122,6 +123,15 @@ int main() {
   std::vector<uint8_t> capture_frame;
   assert(capture_device.readFrame(capture_frame).ok());
   assert(capture_frame.size() == 2);
+
+  audio_studio::drivers::control::ControlDevice control_device;
+  assert(control_device.open("host").ok());
+  assert(control_device.setValue("gain", "-6").ok());
+  std::string control_device_value;
+  assert(control_device.getValue("gain", control_device_value).ok());
+  assert(control_device_value == "-6");
+  assert(control_device.listControls().size() == 1);
+  assert(control_device.stats().writes == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

@@ -60,6 +60,7 @@ def main():
     assert config['CONFIG_DRIVER_DYNLIB'] is True
     assert config['CONFIG_DRIVER_TRANSPORT'] is True
     assert config['CONFIG_DRIVER_AUDIO'] is True
+    assert config['CONFIG_DRIVER_CONTROL'] is True
     assert config['CONFIG_DRIVER_DUMMY'] is True
     assert (BUILD_DIR / 'CMakeCache.txt').exists()
     assert (BUILD_DIR / 'as_server').exists()
