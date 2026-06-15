@@ -57,6 +57,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `ControlService` set/get/list。
 - `AudioService` stream create/start/stop/get/list。
 - `LogService` append/tail/clear/size。
+- `DumpService` start/write/stop/get/list。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

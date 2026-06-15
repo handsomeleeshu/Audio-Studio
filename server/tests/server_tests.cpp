@@ -4,6 +4,7 @@
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
+#include "audio_studio/framework/dump/dump_service.hpp"
 #include "audio_studio/framework/log/log_service.hpp"
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
@@ -61,6 +62,15 @@ int main() {
   assert(logs.size() == 2);
   logs.clear();
   assert(logs.size() == 0);
+
+  audio_studio::framework::dump::DumpService dumps;
+  assert(dumps.start("dump-1", "AEC.out").ok());
+  assert(dumps.write("dump-1", 256).ok());
+  assert(dumps.stop("dump-1").ok());
+  audio_studio::framework::dump::DumpSession dump_session;
+  assert(dumps.get("dump-1", dump_session).ok());
+  assert(dump_session.bytes_written == 256);
+  assert(!dump_session.active);
 
   audio_studio::rpc::JsonRpcRequest request;
   assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());

@@ -1394,6 +1394,15 @@ Audio-Studio/server/framework/dump/
     sof_probe_packet.hpp
 ```
 
+当前已实现首批 host-alone dump 模块：
+
+```text
+server/framework/dump/include/audio_studio/framework/dump/dump_service.hpp
+server/framework/dump/src/dump_service.cpp
+```
+
+该阶段提供 dump session start/write/stop/get/list 的内存统计能力，用于先打通 as_server、CTest 和构建配置；不解析 SOF probe packet，不操作真实 dump point，也不写 PCM/WAV 文件。真实 probe demux、dump sink 和 IDumpDevice 接入仍由后续 drivers/dump 与 framework/dump 扩展完成。
+
 ### 4.10 server/framework/plugin
 
 ```text

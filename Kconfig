@@ -88,6 +88,11 @@ config FRAMEWORK_LOG
   default n
   depends on FRAMEWORK_COMMON
 
+config FRAMEWORK_DUMP
+  bool "Build dump framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
