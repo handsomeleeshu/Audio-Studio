@@ -25,7 +25,3 @@ endif()
 if(CONFIG_BUILD_CLI STREQUAL "y")
   add_subdirectory(cli)
 endif()
-
-if(CONFIG_BUILD_AUDIO_CONTROLLER STREQUAL "y")
-  add_subdirectory(audio_controller)
-endif()
