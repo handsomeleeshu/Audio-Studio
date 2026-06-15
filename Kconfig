@@ -93,6 +93,11 @@ config FRAMEWORK_DUMP
   default n
   depends on FRAMEWORK_COMMON
 
+config FRAMEWORK_PLUGIN
+  bool "Build plugin framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

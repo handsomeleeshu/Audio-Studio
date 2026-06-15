@@ -58,6 +58,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `AudioService` stream create/start/stop/get/list。
 - `LogService` append/tail/clear/size。
 - `DumpService` start/write/stop/get/list。
+- `PluginManager` register/unregister/get/list/findByCapability 和 active 状态。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

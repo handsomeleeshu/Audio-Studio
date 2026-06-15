@@ -6,6 +6,7 @@
 #include "audio_studio/framework/control/control_service.hpp"
 #include "audio_studio/framework/dump/dump_service.hpp"
 #include "audio_studio/framework/log/log_service.hpp"
+#include "audio_studio/framework/plugin/plugin_manager.hpp"
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
 #include "audio_studio/framework/status.hpp"
@@ -71,6 +72,17 @@ int main() {
   assert(dumps.get("dump-1", dump_session).ok());
   assert(dump_session.bytes_written == 256);
   assert(!dump_session.active);
+
+  audio_studio::framework::plugin::PluginManager plugins;
+  assert(plugins.registerPlugin({"eq-plugin", "EQ Plugin", "1.0.0", "host", {"audio", "control"}, false}).ok());
+  assert(!plugins.registerPlugin({"eq-plugin", "Duplicate", "1.0.0", "host", {}, false}).ok());
+  assert(plugins.setActive("eq-plugin", true).ok());
+  audio_studio::framework::plugin::PluginDescriptor plugin_descriptor;
+  assert(plugins.get("eq-plugin", plugin_descriptor).ok());
+  assert(plugin_descriptor.active);
+  assert(plugins.findByCapability("control").size() == 1);
+  assert(plugins.unregisterPlugin("eq-plugin").ok());
+  assert(plugins.size() == 0);
 
   audio_studio::rpc::JsonRpcRequest request;
   assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());

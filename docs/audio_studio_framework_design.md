@@ -1421,6 +1421,15 @@ Audio-Studio/server/framework/plugin/
     plugin_scanner.cpp
 ```
 
+当前已实现首批 host-alone plugin 模块：
+
+```text
+server/framework/plugin/include/audio_studio/framework/plugin/plugin_manager.hpp
+server/framework/plugin/src/plugin_manager.cpp
+```
+
+该阶段提供 plugin descriptor register/unregister/get/list/findByCapability 和 active 状态管理，用于先打通 framework/plugin 的构建配置与 CTest；不扫描插件目录，不调用 dlopen/LoadLibrary，也不执行插件 ABI。真实插件发现和动态库加载必须通过后续 drivers/filesystem 与 drivers/dynlib 接入。
+
 ### 4.11 server/framework/transport
 
 ```text

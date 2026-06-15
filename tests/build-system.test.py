@@ -50,6 +50,7 @@ def main():
     assert config['CONFIG_FRAMEWORK_AUDIO'] is True
     assert config['CONFIG_FRAMEWORK_LOG'] is True
     assert config['CONFIG_FRAMEWORK_DUMP'] is True
+    assert config['CONFIG_FRAMEWORK_PLUGIN'] is True
     assert config['CONFIG_DRIVER_DUMMY'] is True
     assert (BUILD_DIR / 'CMakeCache.txt').exists()
     assert (BUILD_DIR / 'as_server').exists()
