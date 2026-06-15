@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+platform="simulator"
+target_os="auto"
+toolchain="default"
+build_type="Release"
+defconfig=""
+clean=0
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/build_all [options]
+
+M0 build entry point for the Audio Studio repository. It configures and builds
+all top-level skeleton targets without changing the existing GUI/backend flow.
+
+Options:
+  --platform <simulator|a2>       Platform profile. Default: simulator
+  --target-os <linux|macos|auto>  Target OS hint. Default: auto
+  --toolchain <default|gcc|clang> Toolchain hint. Default: default
+  --build-type <type>             CMake build type. Default: Release
+  --defconfig <path>              Defconfig file to copy into the build dir
+  --clean                         Remove the selected build directory first
+  -h, --help                      Show this help
+
+Examples:
+  scripts/build_all --platform simulator --target-os linux --toolchain gcc
+  scripts/build_all --platform a2 --defconfig configs/a2_linux_defconfig
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --platform)
+      platform="${2:?missing value for --platform}"; shift 2 ;;
+    --target-os)
+      target_os="${2:?missing value for --target-os}"; shift 2 ;;
+    --toolchain)
+      toolchain="${2:?missing value for --toolchain}"; shift 2 ;;
+    --build-type)
+      build_type="${2:?missing value for --build-type}"; shift 2 ;;
+    --defconfig)
+      defconfig="${2:?missing value for --defconfig}"; shift 2 ;;
+    --clean)
+      clean=1; shift ;;
+    -h|--help)
+      usage; exit 0 ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2 ;;
+  esac
+done
+
+if [[ "$target_os" == "auto" ]]; then
+  case "$(uname -s)" in
+    Linux*) target_os="linux" ;;
+    Darwin*) target_os="macos" ;;
+    *) target_os="unknown" ;;
+  esac
+fi
+
+if [[ -z "$defconfig" ]]; then
+  candidate="$ROOT/configs/${platform}_${target_os}_defconfig"
+  if [[ -f "$candidate" ]]; then
+    defconfig="$candidate"
+  else
+    defconfig="$ROOT/configs/simulator_linux_defconfig"
+  fi
+elif [[ "$defconfig" != /* ]]; then
+  defconfig="$ROOT/$defconfig"
+fi
+
+if [[ ! -f "$defconfig" ]]; then
+  echo "Defconfig not found: $defconfig" >&2
+  exit 1
+fi
+
+build_type_lc="$(printf '%s' "$build_type" | tr '[:upper:]' '[:lower:]')"
+build_dir="$ROOT/build/${platform}-${target_os}-${toolchain}-${build_type_lc}"
+
+if [[ "$clean" -eq 1 ]]; then
+  rm -rf "$build_dir"
+fi
+
+mkdir -p "$build_dir"
+cp "$defconfig" "$build_dir/.config"
+
+cmake_args=(
+  -S "$ROOT"
+  -B "$build_dir"
+  -DCMAKE_BUILD_TYPE="$build_type"
+  -DAUDIO_STUDIO_PLATFORM="$platform"
+  -DAUDIO_STUDIO_TARGET_OS="$target_os"
+  -DAUDIO_STUDIO_DEFCONFIG="$defconfig"
+)
+
+case "$toolchain" in
+  default)
+    ;;
+  gcc)
+    cmake_args+=( -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ ) ;;
+  clang)
+    cmake_args+=( -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ) ;;
+  *)
+    echo "Unsupported toolchain hint: $toolchain" >&2
+    exit 2 ;;
+esac
+
+cmake "${cmake_args[@]}"
+cmake --build "$build_dir" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+
+cat <<EOF
+
+Audio Studio M0 build completed.
+  build_dir:  $build_dir
+  defconfig:  $defconfig
+  platform:   $platform
+  target_os:  $target_os
+  toolchain:  $toolchain
+
+Expected skeleton outputs include:
+  $build_dir/as_server
+  $build_dir/as_config
+  $build_dir/as_control
+  $build_dir/as_play
+  $build_dir/as_record
+  $build_dir/as_log
+  $build_dir/as_dump
+  $build_dir/audio_controller
+
+The existing GUI mock backend remains available as:
+  $build_dir/audio_studio_server
+EOF
