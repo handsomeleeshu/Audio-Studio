@@ -1,0 +1,7 @@
+config PLATFORM_SIMULATOR_LINUX
+	bool
+	default y if PLATFORM = "simulator_linux"
+
+config PLATFORM_SIMULATOR_LINUX_TOOLCHAIN
+	string
+	default "platform/simulator_linux/toolchain.cmake" if PLATFORM_SIMULATOR_LINUX
