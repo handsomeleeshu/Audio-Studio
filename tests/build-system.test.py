@@ -7,8 +7,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_ALL = ROOT / 'scripts' / 'build_all.sh'
-LINUX_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'Debug'
-WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'Debug'
+LINUX_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_server_minimal' / 'Debug'
+DRIVER_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'driver_interface_tests' / 'Debug'
+WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
 
 
 def run(command, **kwargs):
@@ -52,6 +53,7 @@ def exercise_kconfig_targets():
         'alldefconfig',
         'overrideconfig',
         'as_server_minimal_defconfig',
+        'driver_interface_tests_defconfig',
         'a2_defconfig',
         'simulator_defconfig',
     ]:
@@ -125,6 +127,18 @@ def main():
     assert 'PLATFORM_CONFIG=' in dry_run and 'configs/platform/a2_defconfig' in dry_run
     assert 'OS=windows' in dry_run
     assert 'windows-mingw.cmake' in dry_run
+
+    if DRIVER_BUILD_DIR.exists():
+        shutil.rmtree(DRIVER_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'driver_interface_tests', 'linux', 'a2'])
+    driver_config = read_text(DRIVER_BUILD_DIR / 'generated' / '.config')
+    driver_header = read_text(DRIVER_BUILD_DIR / 'generated' / 'include' / 'autoconfig.h')
+    require_contains(driver_config, 'CONFIG_DRIVER_INTERFACE_TESTS=y')
+    require_contains(driver_config, 'CONFIG_DRIVER_SOCKET_LINUX_HOST=y')
+    require_contains(driver_config, 'CONFIG_DRIVER_AUDIO_LINUX_HOST=y')
+    require_contains(driver_header, '#define CONFIG_DRIVER_DUMP_LINUX_HOST 1')
+    assert (DRIVER_BUILD_DIR / 'audio_studio_driver_interface_tests').exists()
+    run(['ctest', '--test-dir', str(DRIVER_BUILD_DIR), '--output-on-failure'])
 
     if shutil.which('x86_64-w64-mingw32-g++'):
         if WINDOWS_BUILD_DIR.exists():

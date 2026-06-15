@@ -9,113 +9,7 @@ if(CONFIG_FRAMEWORK_COMMON)
   target_compile_features(audio_studio_framework_common PUBLIC cxx_std_17)
 endif()
 
-if(CONFIG_DRIVER_DUMMY)
-  add_library(audio_studio_dummy_driver
-    drivers/dummy/src/dummy_driver.cpp
-  )
-  target_include_directories(audio_studio_dummy_driver PUBLIC drivers/dummy/include)
-  target_link_libraries(audio_studio_dummy_driver PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_dummy_driver PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVERS_CORE)
-  add_library(audio_studio_drivers_core
-    drivers/core/src/driver_manager.cpp
-  )
-  target_include_directories(audio_studio_drivers_core PUBLIC drivers/core/include)
-  target_link_libraries(audio_studio_drivers_core PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_drivers_core PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_OS)
-  add_library(audio_studio_driver_os
-    drivers/os/src/os_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_os PUBLIC drivers/os/include)
-  target_link_libraries(audio_studio_driver_os PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_os PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_SOCKET)
-  add_library(audio_studio_driver_socket
-    drivers/socket/src/socket_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_socket PUBLIC drivers/socket/include)
-  target_link_libraries(audio_studio_driver_socket PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_socket PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_FILESYSTEM)
-  add_library(audio_studio_driver_filesystem
-    drivers/filesystem/src/filesystem_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_filesystem PUBLIC drivers/filesystem/include)
-  target_link_libraries(audio_studio_driver_filesystem PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_filesystem PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_PIPE)
-  add_library(audio_studio_driver_pipe
-    drivers/pipe/src/pipe_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_pipe PUBLIC drivers/pipe/include)
-  target_link_libraries(audio_studio_driver_pipe PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_pipe PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_DYNLIB)
-  add_library(audio_studio_driver_dynlib
-    drivers/dynlib/src/dynlib_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_dynlib PUBLIC drivers/dynlib/include)
-  target_link_libraries(audio_studio_driver_dynlib PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_dynlib PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_TRANSPORT)
-  add_library(audio_studio_driver_transport
-    drivers/transport/src/transport_driver.cpp
-  )
-  target_include_directories(audio_studio_driver_transport PUBLIC drivers/transport/include)
-  target_link_libraries(audio_studio_driver_transport PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_transport PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_AUDIO)
-  add_library(audio_studio_driver_audio
-    drivers/audio/src/audio_device.cpp
-  )
-  target_include_directories(audio_studio_driver_audio PUBLIC drivers/audio/include)
-  target_link_libraries(audio_studio_driver_audio PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_audio PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_CONTROL)
-  add_library(audio_studio_driver_control
-    drivers/control/src/control_device.cpp
-  )
-  target_include_directories(audio_studio_driver_control PUBLIC drivers/control/include)
-  target_link_libraries(audio_studio_driver_control PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_control PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_LOG)
-  add_library(audio_studio_driver_log
-    drivers/log/src/log_device.cpp
-  )
-  target_include_directories(audio_studio_driver_log PUBLIC drivers/log/include)
-  target_link_libraries(audio_studio_driver_log PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_log PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_DRIVER_DUMP)
-  add_library(audio_studio_driver_dump
-    drivers/dump/src/dump_device.cpp
-  )
-  target_include_directories(audio_studio_driver_dump PUBLIC drivers/dump/include)
-  target_link_libraries(audio_studio_driver_dump PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_driver_dump PUBLIC cxx_std_17)
-endif()
+add_subdirectory(drivers)
 
 if(CONFIG_PLATFORM_CORE)
   add_library(audio_studio_platform_core
@@ -215,9 +109,6 @@ endif()
 if(CONFIG_DRIVER_DUMMY)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_dummy_driver)
 endif()
-if(CONFIG_DRIVERS_CORE)
-  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_drivers_core)
-endif()
 if(CONFIG_DRIVER_OS)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_os)
 endif()
@@ -247,6 +138,9 @@ if(CONFIG_DRIVER_LOG)
 endif()
 if(CONFIG_DRIVER_DUMP)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_dump)
+endif()
+if(CONFIG_DRIVERS_CORE)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_drivers_core)
 endif()
 if(CONFIG_PLATFORM_CORE)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_core)
@@ -283,11 +177,20 @@ add_executable(as_server as_server/main.cpp)
 target_link_libraries(as_server PRIVATE audio_studio_config ${AUDIO_STUDIO_SERVER_LIBS})
 target_compile_features(as_server PRIVATE cxx_std_17)
 
-if(CONFIG_BUILD_TESTS)
+if(CONFIG_BUILD_TESTS AND CONFIG_SERVER_FRAMEWORK_TESTS)
   add_executable(audio_studio_server_tests
     tests/server_tests.cpp
   )
   target_link_libraries(audio_studio_server_tests PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
   target_compile_features(audio_studio_server_tests PRIVATE cxx_std_17)
   add_test(NAME server_framework_tests COMMAND audio_studio_server_tests)
+endif()
+
+if(CONFIG_BUILD_TESTS AND CONFIG_DRIVER_INTERFACE_TESTS)
+  add_executable(audio_studio_driver_interface_tests
+    tests/driver_interface_tests.cpp
+  )
+  target_link_libraries(audio_studio_driver_interface_tests PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
+  target_compile_features(audio_studio_driver_interface_tests PRIVATE cxx_std_17)
+  add_test(NAME driver_interface_tests COMMAND audio_studio_driver_interface_tests)
 endif()

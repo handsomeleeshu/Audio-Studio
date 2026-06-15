@@ -44,30 +44,32 @@ python3 tests/build-system.test.py
 - `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
 - Linux/GCC host `as_server` 最小程序 CMake configure/build。
 - `as_server --version` 与 `as_server --health` 输出 tool OS 和 target platform。
-- Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/Debug/as_server.exe`。
+- `--profile driver_interface_tests` 构建全部 Linux host driver 测试实现，并运行 `driver_interface_tests` CTest。
+- `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
+- Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/as_server_minimal/Debug/as_server.exe`。
 
 ### Server Host-Alone Tests
 
 ```bash
-out/linux/a2/Debug/as_server --version
-out/linux/a2/Debug/as_server --health
+out/linux/a2/as_server_minimal/Debug/as_server --version
+out/linux/a2/as_server_minimal/Debug/as_server --health
 ```
 
 覆盖：
 
-- 当前阶段只验证独立 `server/as_server/main.cpp` 可按 OS/toolchain 与 Kconfig target platform 编译。
-- framework、driver interface、driver implementation、platform backend 将按设计文档返工后再恢复单元测试。
+- 当前阶段验证独立 `server/as_server/main.cpp` 可按 OS/toolchain 与 Kconfig target platform 编译。
+- driver 层通过 `server/tests/driver_interface_tests.cpp` 覆盖 `DriverManager` 初始化、driver metadata、各模块 Registry，以及每个 `I*` interface 的 Linux host 测试实现。
 
 ### CLI Host-Alone Tests
 
 ```bash
-out/linux/a2/Debug/as_control --target dummy --action get-health
-out/linux/a2/Debug/as_play --target dummy --file demo.wav
+out/linux/a2/as_server_minimal/Debug/as_control --target dummy --action get-health
+out/linux/a2/as_server_minimal/Debug/as_play --target dummy --file demo.wav
 ```
 
 覆盖：
 
-- 待 framework/driver interface 返工完成后恢复。
+- 待 CLI/RPC 正式接入 as_server 后恢复。
 
 ## 建议后续增加
 

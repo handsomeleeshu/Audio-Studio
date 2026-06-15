@@ -1,0 +1,12 @@
+set(AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES)
+if(CONFIG_DRIVER_FILESYSTEM_LINUX_HOST)
+  list(APPEND AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES linux_host_filesystem_driver.cpp)
+endif()
+audio_studio_require_sources(audio_studio_driver_filesystem "${AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES}")
+
+add_library(audio_studio_driver_filesystem
+  ${AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES}
+)
+target_include_directories(audio_studio_driver_filesystem PUBLIC ../include)
+target_link_libraries(audio_studio_driver_filesystem PUBLIC audio_studio_framework_common)
+target_compile_features(audio_studio_driver_filesystem PUBLIC cxx_std_17)

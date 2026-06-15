@@ -1,0 +1,12 @@
+set(AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES)
+if(CONFIG_DRIVER_DYNLIB_LINUX_HOST)
+  list(APPEND AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES linux_host_dynlib_driver.cpp)
+endif()
+audio_studio_require_sources(audio_studio_driver_dynlib "${AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES}")
+
+add_library(audio_studio_driver_dynlib
+  ${AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES}
+)
+target_include_directories(audio_studio_driver_dynlib PUBLIC ../include)
+target_link_libraries(audio_studio_driver_dynlib PUBLIC audio_studio_framework_common)
+target_compile_features(audio_studio_driver_dynlib PUBLIC cxx_std_17)

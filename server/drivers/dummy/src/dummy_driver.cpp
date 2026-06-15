@@ -1,4 +1,4 @@
-#include "audio_studio/drivers/dummy/dummy_driver.hpp"
+#include "dummy_driver.hpp"
 
 namespace audio_studio::drivers::dummy {
 

@@ -24,6 +24,16 @@ config BUILD_TESTS
   bool "Build unit tests"
   default y
 
+config DRIVER_INTERFACE_TESTS
+  bool "Build driver interface tests"
+  default n
+  depends on BUILD_TESTS
+
+config SERVER_FRAMEWORK_TESTS
+  bool "Build server framework tests"
+  default n
+  depends on BUILD_TESTS && FRAMEWORK_COMMON
+
 config SERVER
   bool "Build as_server"
   default n
@@ -83,54 +93,104 @@ config DRIVERS_CORE
   depends on SERVER && FRAMEWORK_COMMON
 
 config DRIVER_OS
-  bool "Build host-alone OS driver"
+  bool "Build OS driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_OS_LINUX_HOST
+  bool "Build Linux host OS driver implementation"
+  default n
+  depends on DRIVER_OS
 
 config DRIVER_SOCKET
-  bool "Build host-alone socket driver"
+  bool "Build socket driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_SOCKET_LINUX_HOST
+  bool "Build Linux host socket driver implementation"
+  default n
+  depends on DRIVER_SOCKET
 
 config DRIVER_FILESYSTEM
-  bool "Build host-alone filesystem driver"
+  bool "Build filesystem driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_FILESYSTEM_LINUX_HOST
+  bool "Build Linux host filesystem driver implementation"
+  default n
+  depends on DRIVER_FILESYSTEM
 
 config DRIVER_PIPE
-  bool "Build host-alone pipe driver"
+  bool "Build pipe driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_PIPE_LINUX_HOST
+  bool "Build Linux host pipe driver implementation"
+  default n
+  depends on DRIVER_PIPE
 
 config DRIVER_DYNLIB
-  bool "Build host-alone dynamic library driver"
+  bool "Build dynamic library driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_DYNLIB_LINUX_HOST
+  bool "Build Linux host dynamic library driver implementation"
+  default n
+  depends on DRIVER_DYNLIB
 
 config DRIVER_TRANSPORT
-  bool "Build host-alone transport driver"
+  bool "Build transport driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_TRANSPORT_LINUX_HOST
+  bool "Build Linux host transport driver implementation"
+  default n
+  depends on DRIVER_TRANSPORT
 
 config DRIVER_AUDIO
-  bool "Build host-alone audio driver"
+  bool "Build audio driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_AUDIO_LINUX_HOST
+  bool "Build Linux host audio driver implementation"
+  default n
+  depends on DRIVER_AUDIO
 
 config DRIVER_CONTROL
-  bool "Build host-alone control driver"
+  bool "Build control driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_CONTROL_LINUX_HOST
+  bool "Build Linux host control driver implementation"
+  default n
+  depends on DRIVER_CONTROL
 
 config DRIVER_LOG
-  bool "Build host-alone log driver"
+  bool "Build log driver interface"
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_LOG_LINUX_HOST
+  bool "Build Linux host log driver implementation"
+  default n
+  depends on DRIVER_LOG
+
 config DRIVER_DUMP
-  bool "Build host-alone dump driver"
+  bool "Build dump driver interface"
   default n
   depends on DRIVERS_CORE
+
+config DRIVER_DUMP_LINUX_HOST
+  bool "Build Linux host dump driver implementation"
+  default n
+  depends on DRIVER_DUMP
 
 config PLATFORM_CORE
   bool "Build platform registry core"
