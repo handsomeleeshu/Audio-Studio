@@ -5,6 +5,7 @@
 #include "audio_studio/drivers/control/control_device.hpp"
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dynlib/dynlib_driver.hpp"
+#include "audio_studio/drivers/dump/dump_device.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/drivers/filesystem/filesystem_driver.hpp"
 #include "audio_studio/drivers/log/log_device.hpp"
@@ -142,6 +143,17 @@ int main() {
   assert(log_device.readChunk(raw_log_chunk).ok());
   assert(raw_log_chunk.sequence == 1);
   assert(log_device.stats().chunks_read == 1);
+
+  audio_studio::drivers::dump::DumpDevice dump_device;
+  assert(dump_device.open("probe").ok());
+  assert(dump_device.addPoint({7, "AEC.out"}).ok());
+  assert(dump_device.listPoints().size() == 1);
+  assert(dump_device.appendPacket({7, {0x10, 0x20}}).ok());
+  assert(dump_device.start().ok());
+  audio_studio::drivers::dump::DumpPacket raw_dump_packet;
+  assert(dump_device.readPacket(raw_dump_packet).ok());
+  assert(raw_dump_packet.point_id == 7);
+  assert(dump_device.stats().packets_read == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

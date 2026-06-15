@@ -70,6 +70,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `AudioDevice` host-alone playback/capture frame state。
 - `ControlDevice` host-alone set/get/list/stats。
 - `LogDevice` host-alone raw chunk start/read/stats。
+- `DumpDevice` host-alone probe point and packet state。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。
