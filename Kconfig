@@ -57,6 +57,7 @@ config SERVER
 config CLI
   bool "Build CLI tools"
   default n
+  depends on SERVER
 
 config FRAMEWORK_COMMON
   bool "Build common framework library"

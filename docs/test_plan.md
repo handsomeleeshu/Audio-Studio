@@ -56,6 +56,19 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。
 
+### CLI Host-Alone Tests
+
+```bash
+out/test-build-system/linux-gcc/Debug/as_control --target dummy --action get-health
+out/test-build-system/linux-gcc/Debug/as_play --target dummy --file demo.wav
+```
+
+覆盖：
+
+- `cli/common` 参数解析和 JSON 输出。
+- `as_control/as_play/as_record/as_log/as_dump` 目标构建。
+- `as_control`、`as_play` dummy target 执行路径。
+
 ## 建议后续增加
 
 - 浏览器 E2E：Playwright 检查拖拽、连线、参数修改。

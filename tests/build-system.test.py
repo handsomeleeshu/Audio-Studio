@@ -43,14 +43,23 @@ def main():
     assert config['CONFIG_TOOLCHAIN_GCC'] is True
     assert config['CONFIG_GUI_BACKEND'] is True
     assert config['CONFIG_SERVER'] is True
+    assert config['CONFIG_CLI'] is True
     assert config['CONFIG_DRIVER_DUMMY'] is True
     assert (BUILD_DIR / 'CMakeCache.txt').exists()
     assert (BUILD_DIR / 'as_server').exists()
+    for tool in ['as_control', 'as_play', 'as_record', 'as_log', 'as_dump']:
+        assert (BUILD_DIR / tool).exists(), f'missing CLI tool: {tool}'
     run(['ctest', '--test-dir', str(BUILD_DIR), '--output-on-failure'])
     self_test = json.loads(check_output([str(BUILD_DIR / 'as_server'), '--self-test']))
     assert self_test['ok'] is True
     assert self_test['driver'] == 'dummy'
     assert self_test['commands'] == 1
+    control = json.loads(check_output([str(BUILD_DIR / 'as_control'), '--target', 'dummy', '--action', 'get-health']))
+    assert control['ok'] is True
+    assert control['tool'] == 'as_control'
+    play = json.loads(check_output([str(BUILD_DIR / 'as_play'), '--target', 'dummy', '--file', 'demo.wav']))
+    assert play['ok'] is True
+    assert play['tool'] == 'as_play'
     print('build-system.test passed')
 
 

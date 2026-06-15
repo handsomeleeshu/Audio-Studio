@@ -19,3 +19,7 @@ endif()
 if(CONFIG_SERVER)
   add_subdirectory(server)
 endif()
+
+if(CONFIG_CLI)
+  add_subdirectory(cli)
+endif()

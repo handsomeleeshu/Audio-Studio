@@ -1117,6 +1117,20 @@ Audio-Studio/cli/
     as_dump_options.cpp
 ```
 
+当前已实现首批 host-alone CLI 骨架：
+
+```text
+cli/common/include/audio_studio/cli/cli_common.hpp
+cli/common/src/cli_common.cpp
+cli/tools/as_control.cpp
+cli/tools/as_play.cpp
+cli/tools/as_record.cpp
+cli/tools/as_log.cpp
+cli/tools/as_dump.cpp
+```
+
+该阶段的 CLI 只支持 `--target dummy` 和 `--help`，通过 dummy driver 输出 JSON 结果，用于验证 build、参数解析、命令入口和后续 RPC 接入边界。`as_config` 暂不实现。
+
 CLI 不应包含：
 
 ```text
@@ -2055,6 +2069,8 @@ Audio-Studio/GUI/backend:
 
 Audio-Studio/cli:
   构建 as_config/as_control/as_play/as_record/as_log/as_dump。
+  当前阶段先实现 as_control/as_play/as_record/as_log/as_dump 的 host-alone dummy CLI；
+  as_config 按当前任务边界暂不实现。
 
 Audio-Studio/server:
   构建 as_server、framework 静态库/动态库、driver implementation、platform backend。
