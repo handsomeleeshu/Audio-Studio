@@ -1,0 +1,7 @@
+config PLATFORM_A2_LINUX
+	bool
+	default y if PLATFORM = "a2_linux"
+
+config PLATFORM_A2_LINUX_TOOLCHAIN
+	string
+	default "platform/a2_linux/toolchain.cmake" if PLATFORM_A2_LINUX
