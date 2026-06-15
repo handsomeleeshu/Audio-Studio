@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
+#include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
 #include "audio_studio/framework/status.hpp"
 
@@ -21,6 +22,16 @@ int main() {
   assert(registry.describe("dummy") == "dummy driver");
   assert(!registry.registerService("", "bad").ok());
   assert(!registry.registerService("dummy", "duplicate").ok());
+
+  audio_studio::framework::session::SessionRegistry sessions;
+  assert(sessions.create("sess-1", "server_tests").ok());
+  assert(sessions.has("sess-1"));
+  assert(sessions.get("sess-1").active);
+  assert(sessions.activeCount() == 1);
+  assert(!sessions.create("sess-1", "duplicate").ok());
+  assert(sessions.close("sess-1").ok());
+  assert(!sessions.get("sess-1").active);
+  assert(sessions.activeCount() == 0);
 
   DummyDriver driver;
   assert(!driver.start().ok());

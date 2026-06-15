@@ -18,15 +18,29 @@ if(CONFIG_DRIVER_DUMMY)
   target_compile_features(audio_studio_dummy_driver PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_FRAMEWORK_SESSION)
+  add_library(audio_studio_framework_session
+    framework/session/src/session_registry.cpp
+  )
+  target_include_directories(audio_studio_framework_session PUBLIC framework/session/include)
+  target_link_libraries(audio_studio_framework_session PUBLIC audio_studio_framework_common)
+  target_compile_features(audio_studio_framework_session PUBLIC cxx_std_17)
+endif()
+
+set(AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_common audio_studio_dummy_driver)
+if(CONFIG_FRAMEWORK_SESSION)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)
+endif()
+
 add_executable(as_server as_server/main.cpp)
-target_link_libraries(as_server PRIVATE audio_studio_framework_common audio_studio_dummy_driver)
+target_link_libraries(as_server PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
 target_compile_features(as_server PRIVATE cxx_std_17)
 
 if(CONFIG_BUILD_TESTS)
   add_executable(audio_studio_server_tests
     tests/server_tests.cpp
   )
-  target_link_libraries(audio_studio_server_tests PRIVATE audio_studio_framework_common audio_studio_dummy_driver)
+  target_link_libraries(audio_studio_server_tests PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
   target_compile_features(audio_studio_server_tests PRIVATE cxx_std_17)
   add_test(NAME server_framework_tests COMMAND audio_studio_server_tests)
 endif()

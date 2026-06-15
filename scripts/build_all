@@ -22,6 +22,7 @@ BOOL_DEFAULTS = {
     'CONFIG_SERVER': False,
     'CONFIG_CLI': False,
     'CONFIG_FRAMEWORK_COMMON': False,
+    'CONFIG_FRAMEWORK_SESSION': False,
     'CONFIG_DRIVER_DUMMY': False,
 }
 

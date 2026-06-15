@@ -1193,6 +1193,15 @@ Audio-Studio/server/framework/session/
     session_lifecycle.cpp
 ```
 
+当前已实现首批 host-alone session 模块：
+
+```text
+server/framework/session/include/audio_studio/framework/session/session_registry.hpp
+server/framework/session/src/session_registry.cpp
+```
+
+该阶段提供 session create/close/list/activeCount 基础生命周期能力，供后续 as_server RPC session、device session 和 stream session 复用。
+
 ### 4.5 server/framework/config
 
 `framework/config` 是 `as_config` 的主体能力所在。它负责解析 project JSON，生成 Audio Studio IR、Config Binary、ALSA topology、private section、编译报告等。

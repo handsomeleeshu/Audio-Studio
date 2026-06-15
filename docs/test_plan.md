@@ -53,6 +53,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 覆盖：
 
 - `Status` 和 `ServiceRegistry` common 模块。
+- `SessionRegistry` create/close/list/activeCount。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。
 

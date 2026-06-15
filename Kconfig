@@ -63,6 +63,11 @@ config FRAMEWORK_COMMON
   bool "Build common framework library"
   default n
 
+config FRAMEWORK_SESSION
+  bool "Build session framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
