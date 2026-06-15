@@ -1,0 +1,29 @@
+mainmenu "Audio Studio Configuration"
+
+choice AUDIO_STUDIO_PLATFORM
+    prompt "Audio Studio platform profile"
+    default AUDIO_STUDIO_PLATFORM_SIMULATOR
+
+config AUDIO_STUDIO_PLATFORM_SIMULATOR
+    bool "Simulator"
+
+config AUDIO_STUDIO_PLATFORM_A2
+    bool "A2"
+
+endchoice
+
+config AUDIO_STUDIO_BUILD_GUI_BACKEND
+    bool "Build existing GUI Web Backend mock runtime"
+    default y
+
+config AUDIO_STUDIO_BUILD_SERVER
+    bool "Build formal Audio Studio as_server skeleton"
+    default y
+
+config AUDIO_STUDIO_BUILD_CLI
+    bool "Build Audio Studio CLI skeleton tools"
+    default y
+
+config AUDIO_STUDIO_BUILD_AUDIO_CONTROLLER
+    bool "Build Audio Controller peer skeleton"
+    default y
