@@ -1,0 +1,2 @@
+add_executable(audio_studio_runtime_server main/main.cpp)
+set_target_properties(audio_studio_runtime_server PROPERTIES OUTPUT_NAME as_server)
