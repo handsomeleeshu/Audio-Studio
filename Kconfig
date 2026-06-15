@@ -1,29 +1,41 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 mainmenu "Audio Studio Configuration"
 
+menu "Platform profile"
+
 choice AUDIO_STUDIO_PLATFORM
-    prompt "Audio Studio platform profile"
-    default AUDIO_STUDIO_PLATFORM_SIMULATOR
+	prompt "Audio Studio platform profile"
+	default AUDIO_STUDIO_PLATFORM_SIMULATOR
 
 config AUDIO_STUDIO_PLATFORM_SIMULATOR
-    bool "Simulator"
+	bool "Simulator"
+	help
+	  Host-side simulator profile used for early framework and RPC bring-up.
 
 config AUDIO_STUDIO_PLATFORM_A2
-    bool "A2"
+	bool "A2"
+	help
+	  A2 platform profile. M0 only selects the build shape; real A2 platform
+	  drivers are added in later milestones under server/platform/a2/.
 
 endchoice
 
-config AUDIO_STUDIO_BUILD_GUI_BACKEND
-    bool "Build existing GUI Web Backend mock runtime"
-    default y
+config AUDIO_STUDIO_PLATFORM_NAME
+	string
+	default "simulator" if AUDIO_STUDIO_PLATFORM_SIMULATOR
+	default "a2" if AUDIO_STUDIO_PLATFORM_A2
 
-config AUDIO_STUDIO_BUILD_SERVER
-    bool "Build formal Audio Studio as_server skeleton"
-    default y
+config AUDIO_STUDIO_TARGET_OS
+	string "Target OS name"
+	default "linux"
+	help
+	  Target OS hint passed by scripts/build_all. It is kept in Kconfig so
+	  CMake and generated headers share a single source of truth.
 
-config AUDIO_STUDIO_BUILD_CLI
-    bool "Build Audio Studio CLI skeleton tools"
-    default y
+endmenu
 
-config AUDIO_STUDIO_BUILD_AUDIO_CONTROLLER
-    bool "Build Audio Controller peer skeleton"
-    default y
+source "GUI/backend/Kconfig"
+source "server/Kconfig"
+source "cli/Kconfig"
+source "audio_controller/Kconfig"
