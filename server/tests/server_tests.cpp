@@ -5,6 +5,7 @@
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/drivers/filesystem/filesystem_driver.hpp"
 #include "audio_studio/drivers/os/os_driver.hpp"
+#include "audio_studio/drivers/pipe/pipe_driver.hpp"
 #include "audio_studio/drivers/socket/socket_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
@@ -75,6 +76,18 @@ int main() {
   std::vector<audio_studio::drivers::filesystem::FileInfo> entries;
   assert(fs_driver.listDirectory("/tmp", entries).ok());
   assert(entries.size() == 1);
+
+  audio_studio::drivers::pipe::PipeDriver pipe_driver;
+  audio_studio::drivers::pipe::PipeEndpoint pipe_endpoint{"/tmp/as.pipe"};
+  assert(pipe_driver.createPipe(pipe_endpoint, audio_studio::drivers::pipe::PipeType::kFifo).ok());
+  bool pipe_exists = false;
+  assert(pipe_driver.exists(pipe_endpoint, pipe_exists).ok());
+  assert(pipe_exists);
+  assert(pipe_driver.open(pipe_endpoint).ok());
+  assert(pipe_driver.write({9, 8, 7}).ok());
+  std::vector<uint8_t> pipe_rx;
+  assert(pipe_driver.read(3, pipe_rx).ok());
+  assert(pipe_rx.size() == 3);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());
