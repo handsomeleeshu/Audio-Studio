@@ -38,57 +38,36 @@ python3 tests/build-system.test.py
 
 覆盖：
 
-- `scripts/build_all` 解析 defconfig。
-- 生成 `.config`、`autoconf.h`、`autoconf.hpp`、`config.cmake`、`config.json`。
-- Linux/GCC host-alone CMake configure/build。
-- `CONFIG_SERVER=y` 时构建 `as_server`、framework common、dummy driver，并运行 server CTest。
+- `scripts/build_all.sh` shell 入口用 OS 选择 toolchain，用 platform 选择 defconfig。
+- SOF-style `scripts/kconfig` 生成 `generated/.config` 与 `generated/include/autoconfig.h`。
+- Kconfig non-interactive targets：`olddefconfig`、`savedefconfig`、`alldefconfig`、`overrideconfig`、`*_defconfig`、`genconfig`。
+- `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
+- Linux/GCC host `as_server` 最小程序 CMake configure/build。
+- `as_server --version` 与 `as_server --health` 输出 tool OS 和 target platform。
+- Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/Debug/as_server.exe`。
 
 ### Server Host-Alone Tests
 
 ```bash
-ctest --test-dir out/test-build-system/linux-gcc/Debug --output-on-failure
-out/test-build-system/linux-gcc/Debug/as_server --self-test
+out/linux/a2/Debug/as_server --version
+out/linux/a2/Debug/as_server --health
 ```
 
 覆盖：
 
-- `Status` 和 `ServiceRegistry` common 模块。
-- `SessionRegistry` create/close/list/activeCount。
-- `ControlService` set/get/list。
-- `AudioService` stream create/start/stop/get/list。
-- `LogService` append/tail/clear/size。
-- `DumpService` start/write/stop/get/list。
-- `PluginManager` register/unregister/get/list/findByCapability 和 active 状态。
-- `FrameCodec` encode/decode 和 `TransportManager` logical channel 统计。
-- `DriverManager` register/unregister/get/listByCategory 和 active 状态。
-- `OsDriver` deterministic clock/env/systemInfo。
-- `SocketDriver` loopback open/connect/send/receive。
-- `FileSystemDriver` in-memory write/read/list/joinPath。
-- `PipeDriver` in-memory create/open/read/write。
-- `DynlibDriver` mock open/registerSymbol/getSymbol。
-- `TransportDriver` memory open/write/read/flush/caps。
-- `AudioDevice` host-alone playback/capture frame state。
-- `ControlDevice` host-alone set/get/list/stats。
-- `LogDevice` host-alone raw chunk start/read/stats。
-- `DumpDevice` host-alone probe point and packet state。
-- `PlatformRegistry` register/get/list/findByCapability。
-- `platform/a2` profile creation and registry integration。
-- JSON-RPC request parse/result/error response helper。
-- dummy driver open/start/command/stop/telemetry。
-- `as_server` host-alone dummy self-test。
+- 当前阶段只验证独立 `server/as_server/main.cpp` 可按 OS/toolchain 与 Kconfig target platform 编译。
+- framework、driver interface、driver implementation、platform backend 将按设计文档返工后再恢复单元测试。
 
 ### CLI Host-Alone Tests
 
 ```bash
-out/test-build-system/linux-gcc/Debug/as_control --target dummy --action get-health
-out/test-build-system/linux-gcc/Debug/as_play --target dummy --file demo.wav
+out/linux/a2/Debug/as_control --target dummy --action get-health
+out/linux/a2/Debug/as_play --target dummy --file demo.wav
 ```
 
 覆盖：
 
-- `cli/common` 参数解析和 JSON 输出。
-- `as_control/as_play/as_record/as_log/as_dump` 目标构建。
-- `as_control`、`as_play` dummy target 执行路径。
+- 待 framework/driver interface 返工完成后恢复。
 
 ## 建议后续增加
 

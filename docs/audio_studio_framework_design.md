@@ -934,7 +934,7 @@ Audio-Studio/
 | `cli/` | 命令行前端，包含 `as_config/as_control/as_play/as_record/as_log/as_dump` | C++ | 不直接包含平台驱动 |
 | `server/` | 正式 as_server、RPC server、framework、drivers、platform adapter | C++ | `server/platform/*` 包含 |
 | `audio_controller/` | Audio Studio 对端 controller 参考实现 | C | `audio_controller/platform/*` 包含 |
-| `scripts/` | Kconfig、build_all、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
+| `scripts/` | Kconfig、build_all.sh、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
 | `config/` | 当前产品 JSON 示例，例如 A2.json | JSON | 可包含平台示例 |
 | `configs/` | defconfig/profile 示例 | Kconfig defconfig/TOML/JSON | 可包含平台配置 |
 | `plugins/` | Audio Studio Host Plugin SDK 示例和三方插件目录 | C/C++ | 插件可平台无关 |
@@ -2187,7 +2187,7 @@ Audio-Studio/audio_controller:
   构建 simulator audio_controller 或 A2 侧可移植 controller reference。
 
 Audio-Studio/scripts:
-  build_all、Kconfig resolve、CMake configure、toolchain 管理、生成 autoconf。
+  build_all.sh、Kconfig resolve、CMake configure、toolchain 管理、生成 autoconf。
   scripts/run_tests.sh 是 host-alone 统一回归入口，必须先运行可执行的 GUI 逻辑测试，再构建 C++ 目标并运行 CTest。
 ```
 
@@ -2300,7 +2300,7 @@ config PLATFORM_A2_7870_CONTROL_TINYMIX
 - `platform/a2`
 - `platform/simulator`
 - `apps/as_*`
-- `scripts/build_all` 与 Kconfig 风格配置系统
+- `scripts/build_all.sh` 与 Kconfig 风格配置系统
 
 本文档中的 Audio Studio 是一个通用 PC 端音频调试、配置、控制、观测框架，不是 A2 专用工具。A2 只是第一个验证平台和平台实现示例。后续客户平台、DSP simulator 或其他音频控制器平台都应能够复用 Audio Studio 的 common framework。
 
@@ -2452,7 +2452,7 @@ Ctrl+C 清理
 Audio Studio
 │
 ├── 0. Build & Config System
-│     scripts/build_all
+│     scripts/build_all.sh
 │     scripts/cmake/
 │     Kconfig / defconfig / generated config
 │
@@ -2492,7 +2492,7 @@ audio_studio/
   Kconfig
 
   scripts/
-    build_all
+    build_all.sh
     kconfig/
       menuconfig
       genconfig.py
@@ -2588,58 +2588,61 @@ CONFIG 系统不是 Transport 的配置系统，而是整个 Audio Studio 工程
 是否启用 Audio Controller audio/log/dump driver
 是否启用 A2 platform
 是否启用 simulator platform
-目标运行系统是 Linux / macOS / Windows
-使用哪套 toolchain
 是否编译 shared library / static library / CLI tools
 ```
 
 #### 4.2 Kconfig/defconfig 风格设计
 
-Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。当前实现采用轻量 Python resolver 解析 `configs/*_defconfig`，生成 CMake 和 C/C++ 可消费的配置文件；后续如果引入完整 Kconfig 工具，输出文件和 CMake 消费方式保持兼容。
+Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。当前实现已引入 `scripts/kconfig` Kconfig 工具链，并通过 `scripts/cmake/kconfig.cmake` 在 configure 阶段从 `configs/*_defconfig` 生成 `.config` 和 C/C++ 可消费的 `autoconfig.h`。
 
 ```text
-Kconfig -> defconfig -> .config -> autoconf.h/autoconf.hpp/config.cmake/config.json -> CMake/Ninja
+Kconfig -> defconfig -> generated/.config -> generated/include/autoconfig.h -> CMake/Ninja
 ```
 
 当前生成文件：
 
 ```text
-out/<profile>/<target-os>-<toolchain>/<build-type>/.config
-out/<profile>/<target-os>-<toolchain>/<build-type>/generated/autoconf.h
-out/<profile>/<target-os>-<toolchain>/<build-type>/generated/autoconf.hpp
-out/<profile>/<target-os>-<toolchain>/<build-type>/generated/config.cmake
-out/<profile>/<target-os>-<toolchain>/<build-type>/generated/config.json
+out/<os>/<platform>/<build-type>/generated/.config
+out/<os>/<platform>/<build-type>/generated/include/autoconfig.h
+out/<os>/<platform>/<build-type>/CMakeCache.txt
 ```
 
-当前 CONFIG 依赖关系以目标 OS 和 toolchain choice 为核心，`scripts/build_all` 会确保同一组 choice 中只有一个 `CONFIG_TARGET_OS_*` 和一个 `CONFIG_TOOLCHAIN_*` 为 `y`。模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，后续 `CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。
+当前 CONFIG 依赖关系以 target platform choice 和模块开关为核心，Kconfig choice 保证同一组 platform choice 中只有一个 `CONFIG_TARGET_PLATFORM_*` 为 `y`。模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，后续 `CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
 
-#### 4.3 build_all 是推荐唯一入口
+#### 4.3 build_all.sh 是推荐唯一入口
 
 示例：
 
 ```bash
-./scripts/build_all \
-  --profile host \
-  --platform host \
-  --target-os linux \
-  --toolchain gcc \
-  --build-type Debug \
-  --defconfig configs/host_linux_defconfig
+./scripts/build_all.sh linux a2
+./scripts/build_all.sh windows a2
+./scripts/build_all.sh --dry-run windows a2
 ```
+
+`build_all.sh` 是 shell 脚本入口，风格和职责对齐 SOF/codec 的多平台脚本。第一个位置参数是 PC OS，用来选择 toolchain 文件和输出目录；后续位置参数是 target platform，用来选择 platform defconfig。命令行不传 `--toolchain`，toolchain 由 OS 映射决定；`configs/` 不包含 OS defconfig。
 
 内部流程：
 
 ```text
-1. 创建 out/<profile>/<target-os>-<toolchain>/<build-type>/
-2. 加载 defconfig
-3. 运行轻量 Kconfig/choice resolve
-4. 生成 .config
-5. 生成 autoconf.h/autoconf.hpp/config.cmake/config.json
-6. 选择 scripts/cmake/toolchain/<target>.cmake
-7. CMake configure
+1. 根据 OS 选择 scripts/cmake/toolchain/<target>.cmake
+2. 根据 target platform 选择 configs/platform/<platform>_defconfig
+3. 拼接 profile defconfig 与 platform defconfig，生成 build-local initial.config
+4. 创建 out/<os>/<platform>/<Debug|Release>/
+5. CMake configure
+6. Kconfig 生成 generated/.config 和 generated/include/autoconfig.h
+7. 可选 menuconfig
 8. CMake build
 9. 输出 bin/lib/test 产物到 build directory
 ```
+
+当前第一阶段只要求打通最小 `server/as_server/main.cpp`：
+
+```text
+linux/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake    -> out/linux/a2/Debug/as_server
+windows/a2 -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/windows-mingw.cmake -> out/windows/a2/Debug/as_server.exe
+```
+
+macOS 构建支持暂保留 toolchain 结构入口，但不纳入当前阶段的验证范围，后续在 macOS 开发环境下再验证。
 
 #### 4.4 Linux 构建环境与多目标产物
 
@@ -2647,25 +2650,26 @@ out/<profile>/<target-os>-<toolchain>/<build-type>/generated/config.json
 
 ```text
 构建环境优先只要求 Linux。
-但工程结构必须支持生成 Linux / Windows / macOS 运行目标产物。
+当前阶段验证 Linux host 与 Windows/MinGW 映射；macOS 暂缓。
 ```
 
 示例 toolchain：
 
 ```text
-TARGET_OS_LINUX   -> scripts/cmake/toolchain/linux-gcc.cmake / linux-clang.cmake
-TARGET_OS_WINDOWS -> scripts/cmake/toolchain/windows-mingw.cmake
-TARGET_OS_MACOS   -> scripts/cmake/toolchain/macos-clang.cmake
+linux   -> scripts/cmake/toolchain/linux-gcc.cmake
+windows -> scripts/cmake/toolchain/windows-mingw.cmake
+macos   -> scripts/cmake/toolchain/macos-clang.cmake
 ```
 
-Windows/macOS toolchain 文件是结构化入口，实际编译依赖调用环境提供 MinGW 或 osxcross。host-alone CI 只强制验证 Linux/GCC 配置生成与 CMake configure。
+Windows/macOS toolchain 文件是结构化入口，实际编译依赖调用环境提供 MinGW 或 osxcross。当前 host-alone CI 强制验证 Linux/GCC 配置生成与 `as_server` 编译，并在缺少 MinGW 时只验证 Windows 平台映射。
 
 #### 4.5 CMake 的职责
 
 CMake 只消费 CONFIG：
 
 ```cmake
-include(${AUDIO_STUDIO_CONFIG_FILE})
+include(scripts/cmake/kconfig.cmake)
+read_kconfig_config("${DOT_CONFIG_PATH}")
 
 if(CONFIG_GUI_BACKEND)
   add_subdirectory(GUI/backend)
@@ -6186,36 +6190,16 @@ platform/simulator/
 
 以 socket 为例：
 
-```kconfig
-menu "Socket Driver"
+```text
+Kconfig:
+  CONFIG_DRIVER_SOCKET=y 只表示需要 socket driver interface/default implementation。
 
-config DRIVER_SOCKET
-    bool "Enable socket driver interface"
-    default n
-
-choice DRIVER_SOCKET_IMPL
-    prompt "Socket driver implementation"
-    depends on DRIVER_SOCKET
-    default DRIVER_SOCKET_POSIX if TARGET_OS_LINUX || TARGET_OS_MACOS
-    default DRIVER_SOCKET_WIN32 if TARGET_OS_WINDOWS
-
-config DRIVER_SOCKET_NONE
-    bool "No default socket implementation"
-
-config DRIVER_SOCKET_POSIX
-    bool "Use POSIX socket implementation"
-    depends on TARGET_OS_LINUX || TARGET_OS_MACOS
-
-config DRIVER_SOCKET_WIN32
-    bool "Use Win32 Winsock implementation"
-    depends on TARGET_OS_WINDOWS
-
-config DRIVER_SOCKET_MOCK
-    bool "Use mock socket implementation"
-
-endchoice
-
-endmenu
+CMake:
+  if(WIN32)
+    选择 Win32 Winsock source
+  elseif(APPLE OR UNIX)
+    选择 POSIX socket source
+  endif()
 ```
 
 同样模式适用于：
@@ -6446,7 +6430,7 @@ as_dump
 8. framework/transport 线程模型、flow control、frame codec
 9. framework/config 与 Plugin SDK
 10. platform/a2 profile 与 7870 tinyalsa/FIFO/tinymix backend
-11. Kconfig tree 与 build_all 实现细节
+11. Kconfig tree 与 build_all.sh 实现细节
 ```
 
 ---
@@ -6460,7 +6444,7 @@ as_dump
 
 2. A2 是第一个 platform profile；A2 相关实现只放在 platform/a2。
 
-3. 构建系统采用 Kconfig/defconfig + scripts/build_all + scripts/cmake，CMake 只消费 generated config。
+3. 构建系统采用 Kconfig/defconfig + scripts/build_all.sh + scripts/cmake，CMake 只消费 generated config。
 
 4. Driver 层同时提供 interface 和默认实现，platform 优先复用默认实现，必要时 override。
 

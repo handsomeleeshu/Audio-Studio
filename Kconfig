@@ -4,41 +4,15 @@ config AUDIO_STUDIO
   bool "Audio Studio build"
   default y
 
-choice TARGET_OS
-  prompt "Target operating system"
-  default TARGET_OS_LINUX
+choice TARGET_PLATFORM
+  prompt "Audio target chip/platform profile"
+  default TARGET_PLATFORM_A2
 
-config TARGET_OS_LINUX
-  bool "Linux"
+config TARGET_PLATFORM_A2
+  bool "A2"
 
-config TARGET_OS_WINDOWS
-  bool "Windows"
-
-config TARGET_OS_MACOS
-  bool "macOS"
-
-endchoice
-
-choice TOOLCHAIN
-  prompt "Toolchain family"
-  default TOOLCHAIN_GCC if TARGET_OS_LINUX
-  default TOOLCHAIN_MINGW if TARGET_OS_WINDOWS
-  default TOOLCHAIN_OSXCROSS if TARGET_OS_MACOS
-
-config TOOLCHAIN_GCC
-  bool "GCC"
-
-config TOOLCHAIN_CLANG
-  bool "Clang"
-
-config TOOLCHAIN_MINGW
-  bool "MinGW"
-
-config TOOLCHAIN_MSVC
-  bool "MSVC"
-
-config TOOLCHAIN_OSXCROSS
-  bool "osxcross Clang"
+config TARGET_PLATFORM_SIMULATOR
+  bool "Simulator"
 
 endchoice
 
@@ -164,9 +138,9 @@ config PLATFORM_CORE
   depends on SERVER && FRAMEWORK_COMMON
 
 config PLATFORM_A2
-  bool "Build A2 platform profile"
-  default n
-  depends on PLATFORM_CORE
+  bool "Build A2 platform implementation"
+  default y if TARGET_PLATFORM_A2 && PLATFORM_CORE
+  depends on TARGET_PLATFORM_A2 && PLATFORM_CORE
 
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"

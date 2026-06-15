@@ -1,60 +1,41 @@
 #include <iostream>
 #include <string>
 
-#include "audio_studio/drivers/dummy/dummy_driver.hpp"
-#include "audio_studio/framework/service_registry.hpp"
+#include "autoconfig.h"
 
 namespace {
 
-audio_studio::framework::ServiceRegistry defaultRegistry() {
-  audio_studio::framework::ServiceRegistry registry;
-  registry.registerService("health", "server health service");
-  registry.registerService("dummy", "host-alone dummy driver service");
-  return registry;
+const char* toolOs() {
+#if defined(_WIN32)
+  return "windows";
+#elif defined(__APPLE__)
+  return "macos";
+#else
+  return "linux";
+#endif
 }
 
-int printServices() {
-  const auto registry = defaultRegistry();
-  std::cout << "{\"services\":[";
-  const auto names = registry.serviceNames();
-  for (size_t i = 0; i < names.size(); ++i) {
-    if (i) std::cout << ",";
-    std::cout << "{\"name\":\"" << names[i] << "\",\"description\":\"" << registry.describe(names[i]) << "\"}";
-  }
-  std::cout << "]}\n";
-  return 0;
-}
-
-int runSelfTest() {
-  audio_studio::drivers::dummy::DummyDriver driver;
-  auto status = driver.open();
-  if (!status.ok()) {
-    std::cerr << status.toJson() << "\n";
-    return 1;
-  }
-  status = driver.start();
-  if (!status.ok()) {
-    std::cerr << status.toJson() << "\n";
-    return 1;
-  }
-  driver.sendCommand("ping");
-  driver.stop();
-  const auto telemetry = driver.telemetry();
-  std::cout << "{\"ok\":true,\"driver\":\"dummy\",\"frames\":" << telemetry.frames_processed
-            << ",\"commands\":" << telemetry.commands_processed << "}\n";
-  return 0;
+const char* targetPlatform() {
+#if defined(CONFIG_TARGET_PLATFORM_SIMULATOR)
+  return "simulator";
+#else
+  return "a2";
+#endif
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-  const std::string arg = argc > 1 ? argv[1] : "--list-services";
+  const std::string arg = argc > 1 ? argv[1] : "--version";
   if (arg == "--version") {
-    std::cout << "Audio Studio as_server host-alone dummy\n";
+    std::cout << "Audio Studio as_server initial " << toolOs() << "/" << targetPlatform() << "\n";
     return 0;
   }
-  if (arg == "--list-services") return printServices();
-  if (arg == "--self-test") return runSelfTest();
-  std::cerr << "usage: as_server [--version|--list-services|--self-test]\n";
+  if (arg == "--health") {
+    std::cout << "{\"ok\":true,\"tool_os\":\"" << toolOs() << "\",\"platform\":\"" << targetPlatform()
+              << "\"}\n";
+    return 0;
+  }
+  std::cerr << "usage: as_server [--version|--health]\n";
   return 2;
 }
