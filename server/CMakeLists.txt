@@ -36,6 +36,15 @@ if(CONFIG_DRIVER_OS)
   target_compile_features(audio_studio_driver_os PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_DRIVER_SOCKET)
+  add_library(audio_studio_driver_socket
+    drivers/socket/src/socket_driver.cpp
+  )
+  target_include_directories(audio_studio_driver_socket PUBLIC drivers/socket/include)
+  target_link_libraries(audio_studio_driver_socket PUBLIC audio_studio_framework_common)
+  target_compile_features(audio_studio_driver_socket PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_FRAMEWORK_SESSION)
   add_library(audio_studio_framework_session
     framework/session/src/session_registry.cpp
@@ -115,6 +124,9 @@ if(CONFIG_DRIVERS_CORE)
 endif()
 if(CONFIG_DRIVER_OS)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_os)
+endif()
+if(CONFIG_DRIVER_SOCKET)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_socket)
 endif()
 if(CONFIG_FRAMEWORK_SESSION)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)

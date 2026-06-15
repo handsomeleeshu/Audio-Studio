@@ -1493,11 +1493,13 @@ server/drivers/core/include/audio_studio/drivers/core/driver_manager.hpp
 server/drivers/core/src/driver_manager.cpp
 server/drivers/os/include/audio_studio/drivers/os/os_driver.hpp
 server/drivers/os/src/os_driver.cpp
+server/drivers/socket/include/audio_studio/drivers/socket/socket_driver.hpp
+server/drivers/socket/src/socket_driver.cpp
 server/drivers/dummy/include/audio_studio/drivers/dummy/dummy_driver.hpp
 server/drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 host-alone `DriverManager`，用于注册 driver category/name/detail 和 active 状态，先验证 driver registry/factory 边界。`CONFIG_DRIVER_OS=y` 时构建 deterministic OS driver，提供测试用 monotonic clock、env 和 systemInfo 能力，不创建真实线程或进程。`CONFIG_DRIVER_DUMMY=y` 时构建 dummy driver；它只在 host 内存中维护 open/start/stop/command/telemetry 状态，用于验证 server/framework 连接、CTest 和 CLI/RPC 后续接入，不访问真实设备。
+`CONFIG_DRIVERS_CORE=y` 时构建 host-alone `DriverManager`，用于注册 driver category/name/detail 和 active 状态，先验证 driver registry/factory 边界。`CONFIG_DRIVER_OS=y` 时构建 deterministic OS driver，提供测试用 monotonic clock、env 和 systemInfo 能力，不创建真实线程或进程。`CONFIG_DRIVER_SOCKET=y` 时构建 loopback socket driver，覆盖 open/connect/send/receive 状态，不打开真实 TCP/UDP socket。`CONFIG_DRIVER_DUMMY=y` 时构建 dummy driver；它只在 host 内存中维护 open/start/stop/command/telemetry 状态，用于验证 server/framework 连接、CTest 和 CLI/RPC 后续接入，不访问真实设备。
 
 ### 4.13 server/platform
 

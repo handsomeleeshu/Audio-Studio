@@ -4,6 +4,7 @@
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/drivers/os/os_driver.hpp"
+#include "audio_studio/drivers/socket/socket_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
 #include "audio_studio/framework/dump/dump_service.hpp"
@@ -52,6 +53,16 @@ int main() {
   assert(os_driver.getEnv("AS_TEST", env_value).ok());
   assert(env_value == "1");
   assert(os_driver.systemInfo().platform == "host-alone");
+
+  audio_studio::drivers::socket::SocketDriver socket_driver;
+  assert(socket_driver.open(audio_studio::drivers::socket::SocketType::kTcp).ok());
+  assert(socket_driver.connect({"127.0.0.1", 9000}).ok());
+  assert(socket_driver.send({1, 2, 3}).ok());
+  std::vector<uint8_t> socket_rx;
+  assert(socket_driver.receive(2, socket_rx).ok());
+  assert(socket_rx.size() == 2);
+  assert(socket_driver.bytesSent() == 3);
+  assert(socket_driver.bytesReceived() == 2);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

@@ -113,6 +113,11 @@ config DRIVER_OS
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_SOCKET
+  bool "Build host-alone socket driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
