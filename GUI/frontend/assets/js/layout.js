@@ -6,7 +6,7 @@ export const WORLD_WIDTH = 5200;
 export const WORLD_HEIGHT = 2800;
 
 function nodeHeight(node) {
-  const portCount = Math.max(node.inputs?.length || 0, node.outputs?.length || 0);
+  const portCount = Math.max((node.inputs || []).length, (node.outputs || []).length);
   return Math.max(NODE_BASE_HEIGHT, 104 + Math.max(0, portCount - 1) * 22);
 }
 
@@ -22,7 +22,8 @@ export function autoLayout(nodes, edges) {
   for (const e of edges) {
     if (!byId.has(e.from.nodeId) || !byId.has(e.to.nodeId)) continue;
     indeg.set(e.to.nodeId, (indeg.get(e.to.nodeId) || 0) + 1);
-    out.get(e.from.nodeId)?.push(e.to.nodeId);
+    const targets = out.get(e.from.nodeId);
+    if (targets) targets.push(e.to.nodeId);
   }
 
   const queue = [];

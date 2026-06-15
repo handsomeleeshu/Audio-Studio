@@ -1,6 +1,6 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import { convertPipeline } from '../../frontend/assets/js/configParser.js';
+import { strict as assert } from 'assert';
+import fs from 'fs';
+import { convertPipeline } from '../../GUI/frontend/assets/js/configParser.js';
 const cfg = JSON.parse(fs.readFileSync(new URL('../../config/A2.json', import.meta.url), 'utf8'));
 const graph = convertPipeline(cfg, 'PLAY_MAIN');
 const drc = graph.nodes.find(n => n.id === 'DRC');

@@ -15,12 +15,13 @@ export function getToolItem(key) {
 }
 
 export function summarizeDomPipeline(doc = document) {
-  const nodes = Array.from(doc.querySelectorAll?.('.pipeline-world .node') || []);
-  const edgeHits = Array.from(doc.querySelectorAll?.('.edge-layer .edge-hit') || []);
+  const queryAll = doc && typeof doc.querySelectorAll === 'function' ? selector => doc.querySelectorAll(selector) : () => [];
+  const nodes = Array.from(queryAll('.pipeline-world .node'));
+  const edgeHits = Array.from(queryAll('.edge-layer .edge-hit'));
   return {
     node_count: nodes.length,
     edge_count: edgeHits.length,
-    selected_node_count: nodes.filter(n => n.classList?.contains('selected')).length,
+    selected_node_count: nodes.filter(n => n.classList && n.classList.contains('selected')).length,
   };
 }
 

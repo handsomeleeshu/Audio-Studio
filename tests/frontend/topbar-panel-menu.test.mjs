@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+import { strict as assert } from 'assert';
 import {
   PANEL_MENU_ITEMS,
   defaultPanelVisibility,
@@ -8,7 +8,7 @@ import {
   panelVisibilityFromClassList,
   readSavedPanelVisibility,
   writeSavedPanelVisibility,
-} from '../../frontend/assets/js/topbarPanelMenuModel.js';
+} from '../../GUI/frontend/assets/js/topbarPanelMenuModel.js';
 
 assert.deepEqual(panelKeys(), ['library', 'inspector', 'cost', 'core', 'probe', 'health', 'io']);
 assert.equal(getPanelItem('library').label, 'Algorithm Library');
@@ -46,7 +46,7 @@ assert.equal(findDockButton(fakeDoc, 'Missing'), null);
 
 const store = new Map();
 const storage = {
-  getItem: key => store.get(key) ?? null,
+  getItem: key => store.has(key) ? store.get(key) : null,
   setItem: (key, value) => store.set(key, value),
 };
 writeSavedPanelVisibility({ library: true, inspector: false, cost: false, core: true, probe: true, health: true, io: true }, storage);

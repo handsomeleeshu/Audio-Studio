@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { connectUnique, validateConnection, endpointKey } from '../../frontend/assets/js/pipelineRules.js';
+import { connectUnique, validateConnection, endpointKey } from '../../GUI/frontend/assets/js/pipelineRules.js';
 
 const nodes = [
   { id: 'A', outputs: [{ name: 'out' }], inputs: [] },

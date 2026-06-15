@@ -1,5 +1,5 @@
 export function endpointKey(ep) {
-  return `${ep?.nodeId || ''}:${ep?.portName || ''}`;
+  return `${ep && ep.nodeId || ''}:${ep && ep.portName || ''}`;
 }
 
 export function findPort(nodes, endpoint, direction) {

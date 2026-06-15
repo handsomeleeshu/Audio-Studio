@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
 const readJson = path => JSON.parse(fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
 const readText = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -9,7 +9,7 @@ const rootCmake = readText('CMakeLists.txt');
 const configurePresets = new Map(presets.configurePresets.map(preset => [preset.name, preset]));
 const buildPresets = new Set(presets.buildPresets.map(preset => preset.name));
 
-assert.ok(rootCmake.includes('add_subdirectory(backend)'), 'root CMake entry must include backend for presets');
+assert.ok(rootCmake.includes('add_subdirectory(GUI/backend)'), 'root CMake entry must include GUI/backend for presets');
 
 for (const name of ['debug', 'release', 'profile']) {
   assert.ok(configurePresets.has(name), `missing CMake configure preset ${name}`);

@@ -1,7 +1,7 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
-const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
 const compactHtml = html.replace(/\s+/g, '');
 const compactToken = token => String(token).replace(/\s+/g, '');
 const hasToken = token => html.includes(token) || compactHtml.includes(compactToken(token));

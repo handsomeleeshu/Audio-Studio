@@ -5,9 +5,7 @@
 ### Frontend Logic Tests
 
 ```bash
-node tests/frontend/config-parser.test.mjs
-node tests/frontend/layout.test.mjs
-node tests/frontend/parameter-policy.test.mjs
+./scripts/run_tests.sh
 ```
 
 覆盖：
@@ -17,7 +15,10 @@ node tests/frontend/parameter-policy.test.mjs
 - 多 input/output 端口解析。
 - Auto Arrange 最小距离。
 - 静态/动态参数分类。
+- 新版统一 `parameters` 模型根据 `apply.settable_states` 映射为 static/runtime 默认值。
 - 参数类型和 UI 策略基础校验。
+
+前端逻辑测试运行在当前 host Node 环境，测试入口和被直接 import 的 `GUI/frontend/assets/js` 逻辑模块保持 Node 12 可解析语法，避免 `node:` builtin import、optional chaining 和 nullish coalescing 导致 `run_tests.sh` 在旧 Node 上失败。
 
 ### Backend Tests
 

@@ -60,7 +60,7 @@ export function defaultPanelVisibility() {
 }
 
 export function panelVisibilityFromClassList(classList) {
-  const has = typeof classList?.contains === 'function'
+  const has = classList && typeof classList.contains === 'function'
     ? cls => classList.contains(cls)
     : cls => Array.from(classList || []).includes(cls);
 
@@ -72,13 +72,13 @@ export function panelVisibilityFromClassList(classList) {
 }
 
 export function findDockButton(doc, dockLabel) {
-  const buttons = Array.from(doc.querySelectorAll?.('.panel-dock button') || []);
+  const buttons = Array.from(doc && typeof doc.querySelectorAll === 'function' ? doc.querySelectorAll('.panel-dock button') : []);
   return buttons.find(button => button.textContent.trim().toLowerCase() === dockLabel.toLowerCase()) || null;
 }
 
 export function readSavedPanelVisibility(storage = globalThis.localStorage) {
   try {
-    const raw = storage?.getItem?.('audioStudioPanelMenu');
+    const raw = storage && typeof storage.getItem === 'function' ? storage.getItem('audioStudioPanelMenu') : null;
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return { ...defaultPanelVisibility(), ...Object.fromEntries(PANEL_MENU_ITEMS.map(item => [item.key, parsed[item.key] !== false])) };
@@ -89,7 +89,7 @@ export function readSavedPanelVisibility(storage = globalThis.localStorage) {
 
 export function writeSavedPanelVisibility(visible, storage = globalThis.localStorage) {
   try {
-    storage?.setItem?.('audioStudioPanelMenu', JSON.stringify(visible));
+    if (storage && typeof storage.setItem === 'function') storage.setItem('audioStudioPanelMenu', JSON.stringify(visible));
   } catch {
     /* localStorage can be unavailable in private / restricted contexts. */
   }

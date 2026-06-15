@@ -1,8 +1,8 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
-const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
-const http = fs.readFileSync(new URL('../../backend/src/http_server.cpp', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
+const http = fs.readFileSync(new URL('../../GUI/backend/src/http_server.cpp', import.meta.url), 'utf8');
 
 for (const token of [
   'Pipeline runtime UX helper functions',

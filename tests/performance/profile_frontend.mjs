@@ -1,7 +1,7 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { spawn } from 'child_process';
 
 const root = path.resolve(new URL('../../', import.meta.url).pathname);
 const profileDir = path.join(root, 'profiles', 'frontend');
@@ -178,7 +178,7 @@ class CdpClient {
   }
 
   close() {
-    this.ws?.close();
+    if (this.ws) this.ws.close();
   }
 }
 
@@ -331,7 +331,7 @@ async function evaluate(client, sessionId, expression) {
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
   }
-  return result.result?.value;
+  return result.result ? result.result.value : undefined;
 }
 
 async function startInteractionDriver(client, sessionId) {

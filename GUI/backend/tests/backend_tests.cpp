@@ -49,9 +49,15 @@ int main() {
 
   audiostudio::HttpRequest page;
   page.method = "GET";
-  page.path = "/frontend/index.html";
+  page.path = "/GUI/frontend/index.html";
   auto page_res = server.handle(page);
   assert(page_res.status == 200 || page_res.status == 404);
+
+  audiostudio::HttpRequest legacy_page;
+  legacy_page.method = "GET";
+  legacy_page.path = "/frontend/index.html";
+  auto legacy_page_res = server.handle(legacy_page);
+  assert(legacy_page_res.status == 200 || legacy_page_res.status == 404);
 
   engine->stop("{\"session_id\":\"standalone_html_demo\"}");
   assert(!engine->running());

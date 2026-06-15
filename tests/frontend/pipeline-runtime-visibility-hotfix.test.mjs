@@ -1,7 +1,7 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
-const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
 
 // Regression coverage for the v85/v86 cumulative runtime visibility fix.
 // The important behavior is that runtime state must decorate the graph only;
