@@ -2449,23 +2449,25 @@ CONFIG 系统不是 Transport 的配置系统，而是整个 Audio Studio 工程
 是否编译 shared library / static library / CLI tools
 ```
 
-#### 4.2 Kconfig 风格设计
+#### 4.2 Kconfig/defconfig 风格设计
 
-Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。
+Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。当前实现采用轻量 Python resolver 解析 `configs/*_defconfig`，生成 CMake 和 C/C++ 可消费的配置文件；后续如果引入完整 Kconfig 工具，输出文件和 CMake 消费方式保持兼容。
 
 ```text
 Kconfig -> defconfig -> .config -> autoconf.h/autoconf.hpp/config.cmake/config.json -> CMake/Ninja
 ```
 
-生成文件建议：
+当前生成文件：
 
 ```text
-build/<profile>/.config
-build/<profile>/generated/autoconf.h
-build/<profile>/generated/autoconf.hpp
-build/<profile>/generated/config.cmake
-build/<profile>/generated/config.json
+out/<profile>/<target-os>-<toolchain>/<build-type>/.config
+out/<profile>/<target-os>-<toolchain>/<build-type>/generated/autoconf.h
+out/<profile>/<target-os>-<toolchain>/<build-type>/generated/autoconf.hpp
+out/<profile>/<target-os>-<toolchain>/<build-type>/generated/config.cmake
+out/<profile>/<target-os>-<toolchain>/<build-type>/generated/config.json
 ```
+
+当前 CONFIG 依赖关系以目标 OS 和 toolchain choice 为核心，`scripts/build_all` 会确保同一组 choice 中只有一个 `CONFIG_TARGET_OS_*` 和一个 `CONFIG_TOOLCHAIN_*` 为 `y`。模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，后续 `CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。
 
 #### 4.3 build_all 是推荐唯一入口
 
@@ -2473,24 +2475,26 @@ build/<profile>/generated/config.json
 
 ```bash
 ./scripts/build_all \
-  --platform a2 \
+  --profile host \
+  --platform host \
   --target-os linux \
   --toolchain gcc \
-  --defconfig configs/a2_linux_defconfig
+  --build-type Debug \
+  --defconfig configs/host_linux_defconfig
 ```
 
 内部流程：
 
 ```text
-1. 创建 build/<platform>-<target-os>-<toolchain>/
+1. 创建 out/<profile>/<target-os>-<toolchain>/<build-type>/
 2. 加载 defconfig
-3. 运行 Kconfig resolve
+3. 运行轻量 Kconfig/choice resolve
 4. 生成 .config
 5. 生成 autoconf.h/autoconf.hpp/config.cmake/config.json
 6. 选择 scripts/cmake/toolchain/<target>.cmake
 7. CMake configure
-8. Ninja/build
-9. 输出 lib + CLI tools
+8. CMake build
+9. 输出 bin/lib/test 产物到 build directory
 ```
 
 #### 4.4 Linux 构建环境与多目标产物
@@ -2505,10 +2509,12 @@ build/<profile>/generated/config.json
 示例 toolchain：
 
 ```text
-TARGET_OS_LINUX   -> linux-gcc / linux-clang
-TARGET_OS_WINDOWS -> windows-mingw / windows-msvc
-TARGET_OS_MACOS   -> macos-clang / osxcross-clang
+TARGET_OS_LINUX   -> scripts/cmake/toolchain/linux-gcc.cmake / linux-clang.cmake
+TARGET_OS_WINDOWS -> scripts/cmake/toolchain/windows-mingw.cmake
+TARGET_OS_MACOS   -> scripts/cmake/toolchain/macos-clang.cmake
 ```
+
+Windows/macOS toolchain 文件是结构化入口，实际编译依赖调用环境提供 MinGW 或 osxcross。host-alone CI 只强制验证 Linux/GCC 配置生成与 CMake configure。
 
 #### 4.5 CMake 的职责
 
@@ -2517,16 +2523,16 @@ CMake 只消费 CONFIG：
 ```cmake
 include(${AUDIO_STUDIO_CONFIG_FILE})
 
-if(CONFIG_FRAMEWORK_AUDIO)
-  add_subdirectory(framework/audio)
+if(CONFIG_GUI_BACKEND)
+  add_subdirectory(GUI/backend)
 endif()
 
-if(CONFIG_DRIVER_SOCKET_POSIX)
-  add_subdirectory(drivers/socket/posix)
+if(CONFIG_SERVER)
+  add_subdirectory(server)
 endif()
 
-if(CONFIG_PLATFORM_A2)
-  add_subdirectory(platform/a2)
+if(CONFIG_CLI)
+  add_subdirectory(cli)
 endif()
 ```
 

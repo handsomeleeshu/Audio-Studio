@@ -30,6 +30,18 @@ ctest --test-dir build --output-on-failure
 
 - validate/build/run/stop/telemetry mock runtime。
 
+### Build System Tests
+
+```bash
+python3 tests/build-system.test.py
+```
+
+覆盖：
+
+- `scripts/build_all` 解析 defconfig。
+- 生成 `.config`、`autoconf.h`、`autoconf.hpp`、`config.cmake`、`config.json`。
+- Linux/GCC host-alone CMake configure。
+
 ## 建议后续增加
 
 - 浏览器 E2E：Playwright 检查拖拽、连线、参数修改。

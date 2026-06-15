@@ -1,0 +1,69 @@
+menu "Audio Studio"
+
+config AUDIO_STUDIO
+  bool "Audio Studio build"
+  default y
+
+choice TARGET_OS
+  prompt "Target operating system"
+  default TARGET_OS_LINUX
+
+config TARGET_OS_LINUX
+  bool "Linux"
+
+config TARGET_OS_WINDOWS
+  bool "Windows"
+
+config TARGET_OS_MACOS
+  bool "macOS"
+
+endchoice
+
+choice TOOLCHAIN
+  prompt "Toolchain family"
+  default TOOLCHAIN_GCC if TARGET_OS_LINUX
+  default TOOLCHAIN_MINGW if TARGET_OS_WINDOWS
+  default TOOLCHAIN_OSXCROSS if TARGET_OS_MACOS
+
+config TOOLCHAIN_GCC
+  bool "GCC"
+
+config TOOLCHAIN_CLANG
+  bool "Clang"
+
+config TOOLCHAIN_MINGW
+  bool "MinGW"
+
+config TOOLCHAIN_MSVC
+  bool "MSVC"
+
+config TOOLCHAIN_OSXCROSS
+  bool "osxcross Clang"
+
+endchoice
+
+config GUI_BACKEND
+  bool "Build GUI backend"
+  default y
+
+config BUILD_TESTS
+  bool "Build unit tests"
+  default y
+
+config SERVER
+  bool "Build as_server"
+  default n
+
+config CLI
+  bool "Build CLI tools"
+  default n
+
+config FRAMEWORK_COMMON
+  bool "Build common framework library"
+  default n
+
+config DRIVER_DUMMY
+  bool "Build host-alone dummy driver"
+  default n
+
+endmenu

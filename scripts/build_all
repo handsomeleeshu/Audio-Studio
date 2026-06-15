@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+
+BOOL_DEFAULTS = {
+    'CONFIG_AUDIO_STUDIO': True,
+    'CONFIG_TARGET_OS_LINUX': True,
+    'CONFIG_TARGET_OS_WINDOWS': False,
+    'CONFIG_TARGET_OS_MACOS': False,
+    'CONFIG_TOOLCHAIN_GCC': True,
+    'CONFIG_TOOLCHAIN_CLANG': False,
+    'CONFIG_TOOLCHAIN_MINGW': False,
+    'CONFIG_TOOLCHAIN_MSVC': False,
+    'CONFIG_TOOLCHAIN_OSXCROSS': False,
+    'CONFIG_GUI_BACKEND': True,
+    'CONFIG_BUILD_TESTS': True,
+    'CONFIG_SERVER': False,
+    'CONFIG_CLI': False,
+    'CONFIG_FRAMEWORK_COMMON': False,
+    'CONFIG_DRIVER_DUMMY': False,
+}
+
+TARGET_OS_CONFIGS = {
+    'linux': 'CONFIG_TARGET_OS_LINUX',
+    'windows': 'CONFIG_TARGET_OS_WINDOWS',
+    'macos': 'CONFIG_TARGET_OS_MACOS',
+}
+
+TOOLCHAIN_CONFIGS = {
+    'gcc': 'CONFIG_TOOLCHAIN_GCC',
+    'clang': 'CONFIG_TOOLCHAIN_CLANG',
+    'mingw': 'CONFIG_TOOLCHAIN_MINGW',
+    'msvc': 'CONFIG_TOOLCHAIN_MSVC',
+    'osxcross': 'CONFIG_TOOLCHAIN_OSXCROSS',
+}
+
+TOOLCHAIN_FILES = {
+    ('linux', 'gcc'): 'linux-gcc.cmake',
+    ('linux', 'clang'): 'linux-clang.cmake',
+    ('windows', 'mingw'): 'windows-mingw.cmake',
+    ('macos', 'osxcross'): 'macos-clang.cmake',
+}
+
+
+def repo_root():
+    return pathlib.Path(__file__).resolve().parents[1]
+
+
+def parse_defconfig(path):
+    values = {}
+    if not path:
+        return values
+    with open(path, 'r', encoding='utf-8') as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' not in line:
+                raise SystemExit(f'Invalid defconfig line: {raw_line.rstrip()}')
+            key, value = line.split('=', 1)
+            if not key.startswith('CONFIG_'):
+                raise SystemExit(f'Invalid CONFIG key in defconfig: {key}')
+            values[key] = parse_value(value)
+    return values
+
+
+def parse_value(value):
+    if value == 'y':
+        return True
+    if value == 'n':
+        return False
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
+def select_one(values, selected, choices):
+    for key in choices.values():
+        values[key] = False
+    values[choices[selected]] = True
+
+
+def resolved_config(args):
+    values = dict(BOOL_DEFAULTS)
+    if args.defconfig:
+        values.update(parse_defconfig(args.defconfig))
+    select_one(values, args.target_os, TARGET_OS_CONFIGS)
+    select_one(values, args.toolchain, TOOLCHAIN_CONFIGS)
+    values['CONFIG_PROFILE'] = args.profile
+    values['CONFIG_PLATFORM'] = args.platform
+    values['CONFIG_BUILD_TYPE'] = args.build_type
+    return values
+
+
+def cmake_bool(value):
+    return 'ON' if value is True else 'OFF' if value is False else str(value)
+
+
+def config_value(value):
+    if value is True:
+        return 'y'
+    if value is False:
+        return 'n'
+    return json.dumps(str(value))
+
+
+def write_generated_config(values, build_dir):
+    generated = build_dir / 'generated'
+    generated.mkdir(parents=True, exist_ok=True)
+    with open(build_dir / '.config', 'w', encoding='utf-8') as f:
+        for key in sorted(values):
+            f.write(f'{key}={config_value(values[key])}\n')
+    with open(generated / 'config.cmake', 'w', encoding='utf-8') as f:
+        for key in sorted(values):
+            f.write(f'set({key} {cmake_bool(values[key])})\n')
+    with open(generated / 'config.json', 'w', encoding='utf-8') as f:
+        json.dump(values, f, indent=2, sort_keys=True)
+        f.write('\n')
+    with open(generated / 'autoconf.h', 'w', encoding='utf-8') as f:
+        f.write('#pragma once\n')
+        for key in sorted(values):
+            value = values[key]
+            if value is True:
+                f.write(f'#define {key} 1\n')
+            elif value is False:
+                f.write(f'/* #undef {key} */\n')
+            else:
+                f.write(f'#define {key} {json.dumps(str(value))}\n')
+    with open(generated / 'autoconf.hpp', 'w', encoding='utf-8') as f:
+        f.write('#pragma once\nnamespace audio_studio::config {\n')
+        for key in sorted(values):
+            name = key.removeprefix('CONFIG_').lower()
+            value = values[key]
+            if value is True or value is False:
+                f.write(f'constexpr bool {name} = {str(value).lower()};\n')
+            else:
+                f.write(f'constexpr const char* {name} = {json.dumps(str(value))};\n')
+        f.write('}\n')
+    return generated / 'config.cmake'
+
+
+def run(command, cwd):
+    print('+ ' + ' '.join(str(part) for part in command), flush=True)
+    subprocess.run(command, cwd=str(cwd), check=True)
+
+
+def main(argv):
+    root = repo_root()
+    parser = argparse.ArgumentParser(description='Configure and build Audio Studio targets.')
+    parser.add_argument('--profile', default='host')
+    parser.add_argument('--platform', default='host')
+    parser.add_argument('--target-os', choices=sorted(TARGET_OS_CONFIGS), default='linux')
+    parser.add_argument('--toolchain', choices=sorted(TOOLCHAIN_CONFIGS), default='gcc')
+    parser.add_argument('--build-type', choices=['Debug', 'Release', 'RelWithDebInfo'], default='Debug')
+    parser.add_argument('--defconfig', type=pathlib.Path, default=root / 'configs' / 'host_linux_defconfig')
+    parser.add_argument('--build-dir', type=pathlib.Path)
+    parser.add_argument('--configure-only', action='store_true')
+    args = parser.parse_args(argv)
+
+    if args.toolchain == 'msvc':
+        raise SystemExit('MSVC target selection is reserved; use a generated Visual Studio environment in a follow-up toolchain file.')
+
+    build_dir = args.build_dir or root / 'out' / args.profile / f'{args.target_os}-{args.toolchain}' / args.build_type
+    build_dir = build_dir.resolve()
+    values = resolved_config(args)
+    config_cmake = write_generated_config(values, build_dir)
+
+    cmake_command = [
+        'cmake',
+        '-S', str(root),
+        '-B', str(build_dir),
+        f'-DCMAKE_BUILD_TYPE={args.build_type}',
+        f'-DAUDIO_STUDIO_CONFIG_FILE={config_cmake}',
+    ]
+    toolchain_file = TOOLCHAIN_FILES.get((args.target_os, args.toolchain))
+    if toolchain_file:
+      cmake_command.append(f'-DCMAKE_TOOLCHAIN_FILE={root / "scripts" / "cmake" / "toolchain" / toolchain_file}')
+
+    run(cmake_command, root)
+    if not args.configure_only:
+        run(['cmake', '--build', str(build_dir), '--parallel'], root)
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
