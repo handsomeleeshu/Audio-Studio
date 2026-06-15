@@ -4,7 +4,7 @@ function(add_audio_studio_cli_tool tool_name)
   )
   target_compile_features(${tool_name} PRIVATE cxx_std_17)
   target_compile_definitions(${tool_name} PRIVATE
-    AUDIO_STUDIO_CLI_TOOL_NAME="${tool_name}"
+    AUDIO_STUDIO_CLI_TOOL_NAME=\"${tool_name}\"
   )
 endfunction()
 
