@@ -118,6 +118,11 @@ config DRIVER_SOCKET
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_FILESYSTEM
+  bool "Build host-alone filesystem driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

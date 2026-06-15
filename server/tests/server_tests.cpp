@@ -3,6 +3,7 @@
 
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
+#include "audio_studio/drivers/filesystem/filesystem_driver.hpp"
 #include "audio_studio/drivers/os/os_driver.hpp"
 #include "audio_studio/drivers/socket/socket_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
@@ -63,6 +64,17 @@ int main() {
   assert(socket_rx.size() == 2);
   assert(socket_driver.bytesSent() == 3);
   assert(socket_driver.bytesReceived() == 2);
+
+  audio_studio::drivers::filesystem::FileSystemDriver fs_driver;
+  assert(fs_driver.createDirectory("/tmp").ok());
+  const auto fs_path = fs_driver.joinPath({"/tmp", "audio-studio.txt"});
+  assert(fs_driver.writeText(fs_path, "content").ok());
+  std::string file_content;
+  assert(fs_driver.readText(fs_path, file_content).ok());
+  assert(file_content == "content");
+  std::vector<audio_studio::drivers::filesystem::FileInfo> entries;
+  assert(fs_driver.listDirectory("/tmp", entries).ok());
+  assert(entries.size() == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

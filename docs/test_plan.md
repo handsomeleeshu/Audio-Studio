@@ -63,6 +63,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `DriverManager` register/unregister/get/listByCategory 和 active 状态。
 - `OsDriver` deterministic clock/env/systemInfo。
 - `SocketDriver` loopback open/connect/send/receive。
+- `FileSystemDriver` in-memory write/read/list/joinPath。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。
