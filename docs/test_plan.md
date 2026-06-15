@@ -61,6 +61,7 @@ out/test-build-system/linux-gcc/Debug/as_server --self-test
 - `PluginManager` register/unregister/get/list/findByCapability 和 active 状态。
 - `FrameCodec` encode/decode 和 `TransportManager` logical channel 统计。
 - `DriverManager` register/unregister/get/listByCategory 和 active 状态。
+- `OsDriver` deterministic clock/env/systemInfo。
 - JSON-RPC request parse/result/error response helper。
 - dummy driver open/start/command/stop/telemetry。
 - `as_server` host-alone dummy self-test。

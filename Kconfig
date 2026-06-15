@@ -108,6 +108,11 @@ config DRIVERS_CORE
   default n
   depends on SERVER && FRAMEWORK_COMMON
 
+config DRIVER_OS
+  bool "Build host-alone OS driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

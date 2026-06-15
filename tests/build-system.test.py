@@ -53,6 +53,7 @@ def main():
     assert config['CONFIG_FRAMEWORK_PLUGIN'] is True
     assert config['CONFIG_FRAMEWORK_TRANSPORT'] is True
     assert config['CONFIG_DRIVERS_CORE'] is True
+    assert config['CONFIG_DRIVER_OS'] is True
     assert config['CONFIG_DRIVER_DUMMY'] is True
     assert (BUILD_DIR / 'CMakeCache.txt').exists()
     assert (BUILD_DIR / 'as_server').exists()

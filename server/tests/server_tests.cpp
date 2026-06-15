@@ -3,6 +3,7 @@
 
 #include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
+#include "audio_studio/drivers/os/os_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
 #include "audio_studio/framework/dump/dump_service.hpp"
@@ -41,6 +42,16 @@ int main() {
   assert(driver_manager.getDriver("audio", "dummy-audio", driver_info).ok());
   assert(driver_info.active);
   assert(driver_manager.listByCategory("audio").size() == 1);
+
+  audio_studio::drivers::os::OsDriver os_driver;
+  assert(os_driver.nowMs() == 0);
+  assert(os_driver.sleepForMs(25).ok());
+  assert(os_driver.nowMs() == 25);
+  assert(os_driver.setEnv("AS_TEST", "1").ok());
+  std::string env_value;
+  assert(os_driver.getEnv("AS_TEST", env_value).ok());
+  assert(env_value == "1");
+  assert(os_driver.systemInfo().platform == "host-alone");
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());
