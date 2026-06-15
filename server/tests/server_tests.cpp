@@ -4,6 +4,7 @@
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
+#include "audio_studio/framework/log/log_service.hpp"
 #include "audio_studio/framework/session/session_registry.hpp"
 #include "audio_studio/framework/service_registry.hpp"
 #include "audio_studio/framework/status.hpp"
@@ -52,6 +53,14 @@ int main() {
   assert(stream.running);
   assert(audio.stop("playback-1").ok());
   assert(!audio.create({"bad", audio_studio::framework::audio::StreamDirection::kCapture, 0, 2, false}).ok());
+
+  audio_studio::framework::log::LogService logs;
+  assert(logs.append("info", "server started").ok());
+  assert(logs.append("warn", "dummy warning").ok());
+  assert(logs.tail(1).front().message == "dummy warning");
+  assert(logs.size() == 2);
+  logs.clear();
+  assert(logs.size() == 0);
 
   audio_studio::rpc::JsonRpcRequest request;
   assert(audio_studio::rpc::parseRequest(R"({"jsonrpc":"2.0","id":"1","method":"health.ping","params":{"x":1}})", request).ok());

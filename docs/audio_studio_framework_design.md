@@ -1359,6 +1359,15 @@ Audio-Studio/server/framework/log/
     sof_ldc_parser.hpp
 ```
 
+当前已实现首批 host-alone log 模块：
+
+```text
+server/framework/log/include/audio_studio/framework/log/log_service.hpp
+server/framework/log/src/log_service.cpp
+```
+
+该阶段提供 append/tail/clear/size 内存日志缓冲能力，不读取 firmware trace 或 `.ldc` 字典；真实日志设备与解码由后续 drivers/log 和 log decoder 模块接入。
+
 ### 4.9 server/framework/dump
 
 ```text

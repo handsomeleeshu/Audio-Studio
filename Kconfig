@@ -83,6 +83,11 @@ config FRAMEWORK_AUDIO
   default n
   depends on FRAMEWORK_COMMON
 
+config FRAMEWORK_LOG
+  bool "Build log framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
