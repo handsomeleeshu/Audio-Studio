@@ -7,6 +7,7 @@
 #include "audio_studio/drivers/dynlib/dynlib_driver.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/drivers/filesystem/filesystem_driver.hpp"
+#include "audio_studio/drivers/log/log_device.hpp"
 #include "audio_studio/drivers/os/os_driver.hpp"
 #include "audio_studio/drivers/pipe/pipe_driver.hpp"
 #include "audio_studio/drivers/socket/socket_driver.hpp"
@@ -132,6 +133,15 @@ int main() {
   assert(control_device_value == "-6");
   assert(control_device.listControls().size() == 1);
   assert(control_device.stats().writes == 1);
+
+  audio_studio::drivers::log::LogDevice log_device;
+  assert(log_device.open("firmware").ok());
+  assert(log_device.appendChunk({1, {0xaa, 0xbb}}).ok());
+  assert(log_device.start().ok());
+  audio_studio::drivers::log::LogChunk raw_log_chunk;
+  assert(log_device.readChunk(raw_log_chunk).ok());
+  assert(raw_log_chunk.sequence == 1);
+  assert(log_device.stats().chunks_read == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

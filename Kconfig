@@ -148,6 +148,11 @@ config DRIVER_CONTROL
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_LOG
+  bool "Build host-alone log driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n
