@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
 const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
 const versionedInstalled = html.match(/__audioStudio[A-Za-z0-9_]*V\d+[A-Za-z0-9_]*Installed/g) || [];

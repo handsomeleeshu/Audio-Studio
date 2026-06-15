@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 import { convertPipeline } from '../../GUI/frontend/assets/js/configParser.js';
 import { autoLayout, checkMinDistance, getPortPosition, edgePath, MIN_X_DISTANCE, NODE_WIDTH } from '../../GUI/frontend/assets/js/layout.js';
 

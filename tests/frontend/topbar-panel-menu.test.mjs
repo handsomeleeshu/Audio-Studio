@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+import { strict as assert } from 'assert';
 import {
   PANEL_MENU_ITEMS,
   defaultPanelVisibility,
@@ -46,7 +46,7 @@ assert.equal(findDockButton(fakeDoc, 'Missing'), null);
 
 const store = new Map();
 const storage = {
-  getItem: key => store.get(key) ?? null,
+  getItem: key => store.has(key) ? store.get(key) : null,
   setItem: (key, value) => store.set(key, value),
 };
 writeSavedPanelVisibility({ library: true, inspector: false, cost: false, core: true, probe: true, health: true, io: true }, storage);

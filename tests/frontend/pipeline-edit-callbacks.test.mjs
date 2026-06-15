@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+import { strict as assert } from 'assert';
 import {
   PIPELINE_TOOL_ITEMS,
   getToolItem,

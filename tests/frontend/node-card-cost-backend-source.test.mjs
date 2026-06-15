@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { strict as assert } from 'assert';
+import { readFileSync } from 'fs';
 
 const html = readFileSync('GUI/frontend/index.html', 'utf8');
 
@@ -10,7 +10,8 @@ assert(html.includes('renderNodeCardRuntimeCostMarkupV98(n)'), 'renderNodes must
 assert(html.includes('nodeCardCostForV98'), 'PER-ALGORITHM COST API must expose node cost data for node cards');
 assert(html.includes('window.audioStudioNodeCardAlgorithmCostV98'), 'node card cost synchronization wrapper must be exposed for debugging');
 
-const renderNodesBlock = html.match(/function renderNodes\(\) \{[\s\S]*?function clearActivePorts\(\)/)?.[0] || '';
+const renderNodesMatch = html.match(/function renderNodes\(\) \{[\s\S]*?function clearActivePorts\(\)/);
+const renderNodesBlock = renderNodesMatch ? renderNodesMatch[0] : '';
 assert(renderNodesBlock.includes('renderNodeCardRuntimeCostMarkupV98(n)'), 'renderNodes block must use backend-owned node card cost markup');
 assert(!renderNodesBlock.includes('n.cpu.toFixed'), 'node card must not render CPU from n.cpu fallback');
 assert(!renderNodesBlock.includes('n.lat.toFixed'), 'node card must not render LAT from n.lat fallback');

@@ -57,23 +57,38 @@ function defaultPortForRole(role) {
 function buildParamDefaults(moduleType, presetValues = {}) {
   const staticParams = {};
   const runtimeParams = {};
-  for (const field of moduleType?.static_schema?.fields || []) {
-    staticParams[field.key] = Object.prototype.hasOwnProperty.call(presetValues, field.key) ? presetValues[field.key] : field.default;
+  const legacyStaticFields = moduleType && moduleType.static_schema ? moduleType.static_schema.fields || [] : [];
+  const legacyRuntimeFields = moduleType ? moduleType.runtime_params || [] : [];
+  const unifiedParams = moduleType ? moduleType.parameters || [] : [];
+  const staticFields = legacyStaticFields.concat(unifiedParams.filter(param => {
+    const states = param.apply ? param.apply.settable_states || [] : [];
+    return states.indexOf('RUNNING') < 0;
+  }));
+  const runtimeFields = legacyRuntimeFields.concat(unifiedParams.filter(param => {
+    const states = param.apply ? param.apply.settable_states || [] : [];
+    return states.indexOf('RUNNING') >= 0;
+  }));
+  for (const field of staticFields) {
+    const key = field.key || field.param_id;
+    if (!key) continue;
+    staticParams[key] = Object.prototype.hasOwnProperty.call(presetValues, key) ? presetValues[key] : field.default;
   }
-  for (const param of moduleType?.runtime_params || []) {
-    runtimeParams[param.param_id] = param.default;
+  for (const param of runtimeFields) {
+    const key = param.param_id || param.key;
+    if (!key) continue;
+    runtimeParams[key] = param.default;
   }
   return { staticParams, runtimeParams };
 }
 
 function normalizedLibraryCategory(moduleType) {
-  const text = `${moduleType?.type_id || ''} ${moduleType?.category || ''} ${moduleType?.name || ''}`.toLowerCase();
+  const text = `${moduleType && moduleType.type_id || ''} ${moduleType && moduleType.category || ''} ${moduleType && moduleType.name || ''}`.toLowerCase();
   if (text.includes('virtual.') || text.includes('port.source') || text.includes('port.sink') || text.includes('file') || text.includes('mic_input') || text.includes('audio_output')) return 'INPUT / OUTPUT';
   if (text.includes('neural') || text.includes('npu') || text.includes('/ai') || text.endsWith(' ai') || text.includes(' ai.')) return 'AI';
   if (text.includes('aec') || text.includes('beam') || text.includes('noise') || text.includes('ns') || text.includes('agc') || text.includes('vad') || text.includes('kws') || text.includes('asr') || text.includes('voice')) return 'VOICE';
   if (text.includes('eq') || text.includes('drc') || text.includes('mixer') || text.includes('mix') || text.includes('volume') || text.includes('gain') || text.includes('loudness') || text.includes('fader') || text.includes('balance') || text.includes('virtual') || text.includes('playback/eq') || text.includes('playback/dynamics')) return 'EFFECTS';
   if (text.includes('src') || text.includes('asrc') || text.includes('delay') || text.includes('route') || text.includes('mux') || text.includes('filter') || text.includes('resampler') || text.includes('graph/basic') || text.includes('graph/routing') || text.includes('common/filter')) return 'UTILITIES';
-  return String(moduleType?.category || 'UTILITIES').toUpperCase();
+  return String(moduleType && moduleType.category || 'UTILITIES').toUpperCase();
 }
 
 function normalizeModuleTypeForLibrary(moduleType) {
@@ -99,20 +114,21 @@ export function buildRegistry(productConfig) {
 export function resolveModuleForNode(productConfig, registry, node) {
   if (node.kind === 'module') {
     const inst = registry.instances.get(node.inst_ref);
-    const moduleType = registry.moduleTypes.get(inst?.module_type);
-    const preset = getByPath(productConfig, inst?.static_preset);
-    return { inst, moduleType, displayName: inst?.name || node.node_id, presetValues: preset?.values || {} };
+    const moduleType = registry.moduleTypes.get(inst && inst.module_type);
+    const preset = getByPath(productConfig, inst && inst.static_preset);
+    return { inst, moduleType, displayName: inst && inst.name || node.node_id, presetValues: preset && preset.values || {} };
   }
   if (node.kind === 'module_inline') {
-    const moduleType = registry.moduleTypes.get(node.inline?.module_type);
-    return { inst: null, moduleType, displayName: node.inline?.name || moduleType?.name || node.node_id, presetValues: {} };
+    const moduleType = registry.moduleTypes.get(node.inline && node.inline.module_type);
+    return { inst: null, moduleType, displayName: node.inline && node.inline.name || moduleType && moduleType.name || node.node_id, presetValues: {} };
   }
   return { inst: null, moduleType: null, displayName: node.node_id, presetValues: {} };
 }
 
 export function convertPipeline(productConfig, pipeId) {
   const registry = buildRegistry(productConfig);
-  const pipe = (productConfig.pipelines || []).find(p => p.pipe_id === pipeId) || productConfig.pipelines?.[0];
+  const pipelines = productConfig.pipelines || [];
+  const pipe = pipelines.find(p => p.pipe_id === pipeId) || pipelines[0];
   if (!pipe) throw new Error('No pipeline in product config');
   const portMap = new Map((pipe.ports || []).map(p => [p.port_id, p]));
   const nodes = [];
@@ -125,17 +141,18 @@ export function convertPipeline(productConfig, pipeId) {
     let subtitle = 'pipeline port';
     if (raw.kind === 'port') {
       const port = portMap.get(raw.port_ref);
-      const ports = defaultPortForRole(port?.role);
+      const portRole = port && port.role;
+      const ports = defaultPortForRole(portRole);
       inputs = ports.inputs;
       outputs = ports.outputs;
-      category = `port/${port?.role || 'io'}`;
-      moduleTypeId = `port.${port?.role || 'io'}`;
-      subtitle = `${port?.role || 'port'} · ${port?.hw?.id || raw.port_ref || ''}`;
+      category = `port/${portRole || 'io'}`;
+      moduleTypeId = `port.${portRole || 'io'}`;
+      subtitle = `${portRole || 'port'} · ${port && port.hw && port.hw.id || raw.port_ref || ''}`;
     } else {
-      inputs = moduleType?.io?.in_ports || [];
-      outputs = moduleType?.io?.out_ports || [];
-      category = moduleType?.category || 'module';
-      moduleTypeId = moduleType?.type_id || 'unknown';
+      inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
+      outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
+      category = moduleType && moduleType.category || 'module';
+      moduleTypeId = moduleType && moduleType.type_id || 'unknown';
       subtitle = moduleTypeId;
     }
     const defaults = buildParamDefaults(moduleType, presetValues);
@@ -153,7 +170,7 @@ export function convertPipeline(productConfig, pipeId) {
       outputs: outputs.map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
       staticParams: defaults.staticParams,
       runtimeParams: defaults.runtimeParams,
-      core: moduleType?.service_binding?.preferred_core ? Number(String(moduleType.service_binding.preferred_core).replace('core', '')) : 0,
+      core: moduleType && moduleType.service_binding && moduleType.service_binding.preferred_core ? Number(String(moduleType.service_binding.preferred_core).replace('core', '')) : 0,
       x: 0,
       y: 0,
       cost: { cpu: 0, memKb: 0, latencyMs: 0, rms: -60, peak: -60 }
@@ -181,8 +198,8 @@ export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
     subtitle: moduleType.type_id,
     raw: { node_id: id, kind: 'module_inline', inline: { module_type: moduleType.type_id, name: title } },
     moduleType: deepClone(moduleType),
-    inputs: (moduleType.io?.in_ports || []).map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
-    outputs: (moduleType.io?.out_ports || []).map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
+    inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
+    outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
     staticParams: defaults.staticParams,
     runtimeParams: defaults.runtimeParams,
     core: 0,
@@ -195,7 +212,7 @@ export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
 export function exportPipelineJson(state) {
   return {
     pipe_id: state.currentPipeId,
-    name: state.pipeline?.name || state.currentPipeId,
+    name: state.pipeline && state.pipeline.name || state.currentPipeId,
     nodes: state.nodes.map(n => ({
       node_id: n.id,
       kind: n.kind,

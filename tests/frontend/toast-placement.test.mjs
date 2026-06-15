@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { strict as assert } from 'assert';
+import { readFileSync } from 'fs';
 
 const html = readFileSync('GUI/frontend/index.html', 'utf8');
 const start = html.indexOf('/* Pipeline runtime UX polish. */');

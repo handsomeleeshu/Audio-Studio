@@ -1,5 +1,5 @@
-import fs from 'node:fs';
-import assert from 'node:assert';
+import fs from 'fs';
+import assert from 'assert';
 
 const html = fs.readFileSync('GUI/frontend/index.html', 'utf8');
 

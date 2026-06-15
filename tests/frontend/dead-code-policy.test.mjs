@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
 const root = new URL('../../', import.meta.url);
 const readText = path => fs.readFileSync(new URL(path, root), 'utf8');
@@ -30,7 +30,7 @@ for (const asset of deadAssets) {
 
 const packageJson = JSON.parse(readText('package.json'));
 for (const dependency of ['react', 'react-dom', 'vite', '@vitejs/plugin-react']) {
-  assert.ok(!packageJson.dependencies?.[dependency], `${dependency} is unused by the standalone frontend`);
+  assert.ok(!((packageJson.dependencies || {})[dependency]), `${dependency} is unused by the standalone frontend`);
 }
 
 const guide = readText('docs/frontend_development.md');

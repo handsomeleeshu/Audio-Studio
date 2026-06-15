@@ -2026,6 +2026,8 @@ Standalone/offline 模式：
 ```text
 Audio-Studio/GUI/frontend:
   当前为 standalone HTML/CSS/JS 前端，无 npm/Vite 构建要求；由 GUI/backend 托管静态资源。
+  GUI/frontend/assets/js 下被 Node 单元测试直接 import 的纯逻辑模块必须保持 Node 12 可解析语法；
+  不使用 node: builtin import、optional chaining、nullish coalescing 等会破坏当前 host-alone 测试入口的语法。
 
 Audio-Studio/GUI/backend:
   构建 GUI Web Backend、GUI REST 兼容层、mock runtime、JSON-RPC orchestrator。
@@ -2042,6 +2044,7 @@ Audio-Studio/audio_controller:
 
 Audio-Studio/scripts:
   build_all、Kconfig resolve、CMake configure、toolchain 管理、生成 autoconf。
+  scripts/run_tests.sh 是 host-alone 统一回归入口，必须先运行可执行的 GUI 逻辑测试，再构建 C++ 目标并运行 CTest。
 ```
 
 构建输出建议：

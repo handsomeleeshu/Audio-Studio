@@ -1,12 +1,12 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
 const root = new URL('../../', import.meta.url);
 const packageJson = JSON.parse(fs.readFileSync(new URL('package.json', root), 'utf8'));
 const profileScriptUrl = new URL('tests/performance/profile_frontend.mjs', root);
 
 assert.equal(
-  packageJson.scripts?.['profile:frontend'],
+  packageJson.scripts && packageJson.scripts['profile:frontend'],
   'node tests/performance/profile_frontend.mjs',
   'package.json must expose npm run profile:frontend'
 );

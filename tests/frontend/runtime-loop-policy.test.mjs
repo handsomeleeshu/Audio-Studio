@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { strict as assert } from 'assert';
+import fs from 'fs';
 
 const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
 const compactHtml = html.replace(/\s+/g, '');
