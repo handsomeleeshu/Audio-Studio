@@ -103,6 +103,11 @@ config FRAMEWORK_TRANSPORT
   default n
   depends on FRAMEWORK_COMMON
 
+config DRIVERS_CORE
+  bool "Build driver manager core"
+  default n
+  depends on SERVER && FRAMEWORK_COMMON
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

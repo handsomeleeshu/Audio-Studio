@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 
+#include "audio_studio/drivers/core/driver_manager.hpp"
 #include "audio_studio/drivers/dummy/dummy_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
@@ -30,6 +31,16 @@ int main() {
   assert(registry.describe("dummy") == "dummy driver");
   assert(!registry.registerService("", "bad").ok());
   assert(!registry.registerService("dummy", "duplicate").ok());
+
+  audio_studio::drivers::core::DriverManager driver_manager;
+  assert(driver_manager.registerDriver({"audio", "dummy-audio", "host-alone test driver", false}).ok());
+  assert(driver_manager.hasDriver("audio", "dummy-audio"));
+  assert(!driver_manager.registerDriver({"audio", "dummy-audio", "duplicate", false}).ok());
+  assert(driver_manager.setActive("audio", "dummy-audio", true).ok());
+  audio_studio::drivers::core::DriverInfo driver_info;
+  assert(driver_manager.getDriver("audio", "dummy-audio", driver_info).ok());
+  assert(driver_info.active);
+  assert(driver_manager.listByCategory("audio").size() == 1);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());
