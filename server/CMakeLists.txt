@@ -72,6 +72,15 @@ if(CONFIG_DRIVER_DYNLIB)
   target_compile_features(audio_studio_driver_dynlib PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_DRIVER_TRANSPORT)
+  add_library(audio_studio_driver_transport
+    drivers/transport/src/transport_driver.cpp
+  )
+  target_include_directories(audio_studio_driver_transport PUBLIC drivers/transport/include)
+  target_link_libraries(audio_studio_driver_transport PUBLIC audio_studio_framework_common)
+  target_compile_features(audio_studio_driver_transport PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_FRAMEWORK_SESSION)
   add_library(audio_studio_framework_session
     framework/session/src/session_registry.cpp
@@ -163,6 +172,9 @@ if(CONFIG_DRIVER_PIPE)
 endif()
 if(CONFIG_DRIVER_DYNLIB)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_dynlib)
+endif()
+if(CONFIG_DRIVER_TRANSPORT)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_transport)
 endif()
 if(CONFIG_FRAMEWORK_SESSION)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)

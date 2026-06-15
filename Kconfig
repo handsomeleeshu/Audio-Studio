@@ -133,6 +133,11 @@ config DRIVER_DYNLIB
   default n
   depends on DRIVERS_CORE
 
+config DRIVER_TRANSPORT
+  bool "Build host-alone transport driver"
+  default n
+  depends on DRIVERS_CORE
+
 config DRIVER_DUMMY
   bool "Build host-alone dummy driver"
   default n

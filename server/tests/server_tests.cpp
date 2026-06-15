@@ -8,6 +8,7 @@
 #include "audio_studio/drivers/os/os_driver.hpp"
 #include "audio_studio/drivers/pipe/pipe_driver.hpp"
 #include "audio_studio/drivers/socket/socket_driver.hpp"
+#include "audio_studio/drivers/transport/transport_driver.hpp"
 #include "audio_studio/framework/audio/audio_service.hpp"
 #include "audio_studio/framework/control/control_service.hpp"
 #include "audio_studio/framework/dump/dump_service.hpp"
@@ -97,6 +98,15 @@ int main() {
   void* symbol = nullptr;
   assert(dynlib_driver.getSymbol("studio_create_plugin", symbol).ok());
   assert(symbol == &test_symbol);
+
+  audio_studio::drivers::transport::TransportDriver transport_driver;
+  assert(transport_driver.open("memory").ok());
+  assert(transport_driver.write({4, 5, 6, 7}).ok());
+  std::vector<uint8_t> transport_rx;
+  assert(transport_driver.read(4, transport_rx).ok());
+  assert(transport_rx.size() == 4);
+  assert(transport_driver.bytesWritten() == 4);
+  assert(transport_driver.bytesRead() == 4);
 
   audio_studio::framework::session::SessionRegistry sessions;
   assert(sessions.create("sess-1", "server_tests").ok());

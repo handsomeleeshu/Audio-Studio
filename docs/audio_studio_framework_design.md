@@ -1501,11 +1501,13 @@ server/drivers/pipe/include/audio_studio/drivers/pipe/pipe_driver.hpp
 server/drivers/pipe/src/pipe_driver.cpp
 server/drivers/dynlib/include/audio_studio/drivers/dynlib/dynlib_driver.hpp
 server/drivers/dynlib/src/dynlib_driver.cpp
+server/drivers/transport/include/audio_studio/drivers/transport/transport_driver.hpp
+server/drivers/transport/src/transport_driver.cpp
 server/drivers/dummy/include/audio_studio/drivers/dummy/dummy_driver.hpp
 server/drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 host-alone `DriverManager`，用于注册 driver category/name/detail 和 active 状态，先验证 driver registry/factory 边界。`CONFIG_DRIVER_OS=y` 时构建 deterministic OS driver，提供测试用 monotonic clock、env 和 systemInfo 能力，不创建真实线程或进程。`CONFIG_DRIVER_SOCKET=y` 时构建 loopback socket driver，覆盖 open/connect/send/receive 状态，不打开真实 TCP/UDP socket。`CONFIG_DRIVER_FILESYSTEM=y` 时构建 in-memory filesystem driver，覆盖 write/read/exists/list/joinPath，不访问真实磁盘。`CONFIG_DRIVER_PIPE=y` 时构建 in-memory pipe driver，覆盖 create/open/read/write/remove，不创建 POSIX FIFO 或 Windows named pipe。`CONFIG_DRIVER_DYNLIB=y` 时构建 mock dynlib driver，覆盖 open/registerSymbol/getSymbol 生命周期，不调用 dlopen/LoadLibrary。`CONFIG_DRIVER_DUMMY=y` 时构建 dummy driver；它只在 host 内存中维护 open/start/stop/command/telemetry 状态，用于验证 server/framework 连接、CTest 和 CLI/RPC 后续接入，不访问真实设备。
+`CONFIG_DRIVERS_CORE=y` 时构建 host-alone `DriverManager`，用于注册 driver category/name/detail 和 active 状态，先验证 driver registry/factory 边界。`CONFIG_DRIVER_OS=y` 时构建 deterministic OS driver，提供测试用 monotonic clock、env 和 systemInfo 能力，不创建真实线程或进程。`CONFIG_DRIVER_SOCKET=y` 时构建 loopback socket driver，覆盖 open/connect/send/receive 状态，不打开真实 TCP/UDP socket。`CONFIG_DRIVER_FILESYSTEM=y` 时构建 in-memory filesystem driver，覆盖 write/read/exists/list/joinPath，不访问真实磁盘。`CONFIG_DRIVER_PIPE=y` 时构建 in-memory pipe driver，覆盖 create/open/read/write/remove，不创建 POSIX FIFO 或 Windows named pipe。`CONFIG_DRIVER_DYNLIB=y` 时构建 mock dynlib driver，覆盖 open/registerSymbol/getSymbol 生命周期，不调用 dlopen/LoadLibrary。`CONFIG_DRIVER_TRANSPORT=y` 时构建 memory transport driver，覆盖 open/write/read/flush/caps，不绑定 socket、pipe 或平台 transport。`CONFIG_DRIVER_DUMMY=y` 时构建 dummy driver；它只在 host 内存中维护 open/start/stop/command/telemetry 状态，用于验证 server/framework 连接、CTest 和 CLI/RPC 后续接入，不访问真实设备。
 
 ### 4.13 server/platform
 
