@@ -50,7 +50,7 @@ for (const label of ['cmake: build debug', 'cmake: build profile', 'wait: backen
 }
 
 const guide = readText('docs/debug_profile_guide.md');
-for (const phrase of ['Full Stack: Debug', 'Full Stack: Profile', 'Release Safety', 'scripts/build_backend.sh']) {
+for (const phrase of ['Full Stack: Debug', 'Full Stack: Profile', 'Release Safety', '--profile gui_backend']) {
   assert.ok(guide.includes(phrase), `debug/profile guide should mention ${phrase}`);
 }
 

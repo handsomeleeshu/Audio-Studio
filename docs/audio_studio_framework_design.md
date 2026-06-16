@@ -2664,6 +2664,7 @@ cli/Kconfig
 ./scripts/build_all.sh linux a2
 ./scripts/build_all.sh windows a2
 ./scripts/build_all.sh --dry-run windows a2
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
 
 `build_all.sh` 是 shell 脚本入口，风格和职责对齐 SOF/codec 的多平台脚本。第一个位置参数是 PC OS，用来选择 toolchain 文件和输出目录；后续位置参数是 target platform，用来选择 platform defconfig。命令行不传 `--toolchain`，toolchain 由 OS 映射决定；`configs/` 不包含 OS defconfig。
@@ -2674,7 +2675,7 @@ cli/Kconfig
 1. 根据 OS 选择 scripts/cmake/toolchain/<target>.cmake
 2. 根据 target platform 选择 configs/platform/<platform>_defconfig
 3. 拼接 profile defconfig 与 platform defconfig，生成 build-local initial.config
-4. 创建 out/<os>/<platform>/<Debug|Release>/
+4. 创建 out/<os>/<platform>/<profile>/<Debug|Release>/
 5. CMake configure
 6. Kconfig 生成 generated/.config 和 generated/include/autoconfig.h
 7. 可选 menuconfig
@@ -2687,6 +2688,7 @@ cli/Kconfig
 ```text
 linux/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake    -> out/linux/a2/as_server_minimal/Debug/as_server
 windows/a2 -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/windows-mingw.cmake -> out/windows/a2/as_server_minimal/Debug/as_server.exe
+linux/a2 gui_backend -> configs/profile/gui_backend_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake -> out/linux/a2/gui_backend/Release/audio_studio_server
 ```
 
 macOS 构建支持暂保留 toolchain 结构入口，但不纳入当前阶段的验证范围，后续在 macOS 开发环境下再验证。

@@ -9,6 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_ALL = ROOT / 'scripts' / 'build_all.sh'
 LINUX_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_server_minimal' / 'Debug'
 DRIVER_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'driver_interface_tests' / 'Debug'
+GUI_BACKEND_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'gui_backend' / 'Release'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
 
 
@@ -97,6 +98,7 @@ def exercise_kconfig_targets():
         'overrideconfig',
         'as_server_minimal_defconfig',
         'driver_interface_tests_defconfig',
+        'gui_backend_defconfig',
         'a2_defconfig',
         'simulator_defconfig',
     ]:
@@ -185,6 +187,18 @@ def main():
     require_contains(driver_header, '#define CONFIG_DRIVER_DUMP_LINUX_HOST 1')
     assert (DRIVER_BUILD_DIR / 'audio_studio_driver_interface_tests').exists()
     run(['ctest', '--test-dir', str(DRIVER_BUILD_DIR), '--output-on-failure'])
+
+    if GUI_BACKEND_BUILD_DIR.exists():
+        shutil.rmtree(GUI_BACKEND_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'gui_backend', '-r', 'linux', 'a2'])
+    gui_backend_config = read_text(GUI_BACKEND_BUILD_DIR / 'generated' / '.config')
+    gui_backend_header = read_text(GUI_BACKEND_BUILD_DIR / 'generated' / 'include' / 'autoconfig.h')
+    require_contains(gui_backend_config, 'CONFIG_GUI_BACKEND=y')
+    require_contains(gui_backend_config, '# CONFIG_SERVER is not set')
+    require_contains(gui_backend_header, '#define CONFIG_GUI_BACKEND 1')
+    assert (GUI_BACKEND_BUILD_DIR / 'audio_studio_server').exists()
+    assert (GUI_BACKEND_BUILD_DIR / 'audio_studio_backend_tests').exists()
+    run(['ctest', '--test-dir', str(GUI_BACKEND_BUILD_DIR), '--output-on-failure'])
 
     if shutil.which('x86_64-w64-mingw32-g++'):
         if WINDOWS_BUILD_DIR.exists():

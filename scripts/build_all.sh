@@ -5,7 +5,7 @@ DEFAULT_OS=linux
 DEFAULT_PROFILE=as_server_minimal
 DEFAULT_PLATFORMS=(a2)
 SUPPORTED_OSES=(linux windows)
-SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests)
+SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests gui_backend)
 SUPPORTED_PLATFORMS=(a2 simulator)
 
 BUILD_TYPE=Debug
@@ -18,6 +18,7 @@ SKIP_MISSING_TOOLCHAIN=no
 BUILD_ALL_PLATFORMS=no
 BUILD_OS=
 PROFILE="$DEFAULT_PROFILE"
+PROFILE_EXECUTABLES=()
 PLATFORMS=()
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,15 +96,35 @@ os_config() {
     linux)
       TOOLCHAIN_FILE="${ROOT}/scripts/cmake/toolchain/linux-gcc.cmake"
       REQUIRED_TOOLS=(c++)
-      EXECUTABLE_NAME=as_server
+      EXECUTABLE_SUFFIX=
       ;;
     windows)
       TOOLCHAIN_FILE="${ROOT}/scripts/cmake/toolchain/windows-mingw.cmake"
       REQUIRED_TOOLS=(x86_64-w64-mingw32-g++)
-      EXECUTABLE_NAME=as_server.exe
+      EXECUTABLE_SUFFIX=.exe
       ;;
     *)
       die 'unknown OS: %s\n' "$os"
+      ;;
+  esac
+}
+
+profile_config() {
+  case "$PROFILE" in
+    as_server_minimal)
+      PROFILE_EXECUTABLES=("as_server${EXECUTABLE_SUFFIX}")
+      ;;
+    driver_interface_tests)
+      PROFILE_EXECUTABLES=("as_server${EXECUTABLE_SUFFIX}" "audio_studio_driver_interface_tests${EXECUTABLE_SUFFIX}")
+      ;;
+    gui_backend)
+      if [[ "$BUILD_OS" != linux ]]; then
+        die 'profile gui_backend currently supports linux OS only; GUI/backend uses POSIX sockets today\n'
+      fi
+      PROFILE_EXECUTABLES=(audio_studio_server audio_studio_backend_tests)
+      ;;
+    *)
+      die 'unknown profile: %s\n' "$PROFILE"
       ;;
   esac
 }
@@ -232,6 +253,7 @@ if [[ ${#PLATFORMS[@]} -eq 0 ]]; then
 fi
 
 os_config "$BUILD_OS"
+profile_config
 
 for PLATFORM in "${PLATFORMS[@]}"; do
   platform_config "$PLATFORM"
@@ -246,7 +268,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
   printf 'INIT_CONFIG=%s\n' "$INIT_CONFIG"
   printf 'TOOLCHAIN_FILE=%s\n' "$TOOLCHAIN_FILE"
   printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
-  printf 'EXECUTABLE=%s\n' "${BUILD_DIR}/${EXECUTABLE_NAME}"
+  for executable in "${PROFILE_EXECUTABLES[@]}"; do
+    printf 'EXECUTABLE=%s\n' "${BUILD_DIR}/${executable}"
+  done
 
   if [[ "$DRY_RUN" == yes ]]; then
     continue

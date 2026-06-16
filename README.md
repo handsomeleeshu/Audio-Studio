@@ -204,7 +204,7 @@ Audio-Studio/
 ├── config/
 │   └── A2.json                     # product JSON example
 ├── scripts/
-│   ├── build_backend.sh
+│   ├── build_all.sh
 │   └── run_tests.sh
 └── tests/
     └── frontend/
@@ -220,13 +220,13 @@ Audio-Studio/
 ### 4.1 构建后端
 
 ```bash
-./scripts/build_backend.sh
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
 
 ### 4.2 启动本地 server
 
 ```bash
-./build/audio_studio_server . 8080
+./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
 ```
 
 ### 4.3 打开页面
@@ -260,7 +260,7 @@ node tests/frontend/standalone-features.test.mjs
 构建后端：
 
 ```bash
-./scripts/build_backend.sh
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
 
 ---
@@ -434,7 +434,7 @@ GUI/backend/src/main.cpp
 2. 在 `mock_runtime.cpp` 中实现 fake controller。
 3. 在 `http_server.cpp` 中增加 route。
 4. 在 `main.cpp` 中创建并注入 controller。
-5. 运行 `./scripts/build_backend.sh` 验证编译。
+5. 运行 `./scripts/build_all.sh --profile gui_backend -r linux a2` 验证编译。
 
 ---
 
@@ -442,13 +442,13 @@ GUI/backend/src/main.cpp
 
 ```bash
 # 构建后端
-./scripts/build_backend.sh
+./scripts/build_all.sh --profile gui_backend -r linux a2
 
 # 运行完整测试
 ./scripts/run_tests.sh
 
 # 启动本地服务
-./build/audio_studio_server . 8080
+./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
 
 # 打开本地页面
 open http://127.0.0.1:8080

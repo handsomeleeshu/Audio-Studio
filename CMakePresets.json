@@ -20,7 +20,7 @@
     {
       "name": "release",
       "displayName": "Release",
-      "description": "Optimized release-style build. This preset is separate from the existing scripts/build_backend.sh flow.",
+      "description": "Optimized release-style backend build for IDE/debug workflows. Product backend builds use scripts/build_all.sh --profile gui_backend.",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",

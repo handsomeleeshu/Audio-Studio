@@ -3,13 +3,13 @@
 ## 构建
 
 ```bash
-./scripts/build_backend.sh
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
 
 ## 运行
 
 ```bash
-./build/audio_studio_server . 8080
+./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
 ```
 
 ## API

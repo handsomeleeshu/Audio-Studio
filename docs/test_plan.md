@@ -46,6 +46,7 @@ python3 tests/build-system.test.py
 - `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
 - Linux/GCC host `as_server` 最小程序 CMake configure/build。
 - `as_server --version` 与 `as_server --health` 输出 tool OS 和 target platform。
+- `--profile gui_backend -r` 构建 GUI/backend mock server，确认 `audio_studio_server` 与 `audio_studio_backend_tests` 产物存在，并运行 backend CTest。
 - `--profile driver_interface_tests` 构建全部 Linux host driver 测试实现，并运行 `driver_interface_tests` CTest。
 - `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver singleton Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
 - Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/as_server_minimal/Debug/as_server.exe`。

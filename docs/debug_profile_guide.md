@@ -35,14 +35,14 @@ cmake --build --preset release --parallel
 pointers. `release` is separate from profiling and does not inherit profile
 flags.
 
-The existing product-style build remains unchanged:
+The product-style backend build is covered by `build_all.sh`:
 
 ```bash
-./scripts/build_backend.sh
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
 
-That script still builds `Release` into `build/`, so profiling/debug choices do
-not affect the release path.
+That profile builds `Release` into `out/linux/a2/gui_backend/Release`, so
+profiling/debug choices do not affect the release path.
 
 ## One-Click Full Stack Debug
 
@@ -253,10 +253,11 @@ The debug/profile setup is isolated from release behavior:
 - Profile-only flags live in the `profile` preset.
 - VSCode Chrome profiles live under `.vscode/chrome-*` and are ignored.
 - Profile outputs live under `profiles/` and are ignored.
-- `scripts/build_backend.sh` is unchanged and still builds Release.
+- `scripts/build_all.sh --profile gui_backend -r linux a2` is the release-style
+  backend build entry.
 
-Use `./scripts/build_backend.sh` or `cmake --build --preset release --parallel`
-for release-style builds.
+Use `./scripts/build_all.sh --profile gui_backend -r linux a2` for the product
+release-style backend build.
 
 ## Troubleshooting
 
