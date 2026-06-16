@@ -1,0 +1,4 @@
+config PLATFORM_A2
+  bool "Build A2 platform implementation"
+  default y if TARGET_PLATFORM_A2 && PLATFORM_CORE
+  depends on TARGET_PLATFORM_A2 && PLATFORM_CORE

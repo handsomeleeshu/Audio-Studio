@@ -1,0 +1,13 @@
+menu "Dynamic Library Driver"
+
+config DRIVER_DYNLIB
+  bool "Build dynamic library driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_DYNLIB_LINUX_HOST
+  bool "Build Linux host dynamic library driver implementation"
+  default n
+  depends on DRIVER_DYNLIB
+
+endmenu

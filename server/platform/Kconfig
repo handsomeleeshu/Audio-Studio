@@ -1,0 +1,22 @@
+menu "Platform"
+
+choice TARGET_PLATFORM
+  prompt "Audio target chip/platform profile"
+  default TARGET_PLATFORM_A2
+
+config TARGET_PLATFORM_A2
+  bool "A2"
+
+config TARGET_PLATFORM_SIMULATOR
+  bool "Simulator"
+
+endchoice
+
+config PLATFORM_CORE
+  bool "Build platform registry core"
+  default n
+  depends on SERVER && FRAMEWORK_COMMON
+
+source "server/platform/a2/Kconfig"
+
+endmenu

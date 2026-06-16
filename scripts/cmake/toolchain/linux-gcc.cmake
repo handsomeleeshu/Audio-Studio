@@ -1,0 +1,16 @@
+message(STATUS "Audio Studio toolchain: Linux host GCC")
+
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+if(DEFINED ENV{CC} AND NOT "$ENV{CC}" STREQUAL "")
+  set(CMAKE_C_COMPILER "$ENV{CC}" CACHE FILEPATH "C compiler")
+else()
+  set(CMAKE_C_COMPILER cc CACHE FILEPATH "C compiler" FORCE)
+endif()
+
+if(DEFINED ENV{CXX} AND NOT "$ENV{CXX}" STREQUAL "")
+  set(CMAKE_CXX_COMPILER "$ENV{CXX}" CACHE FILEPATH "C++ compiler")
+else()
+  set(CMAKE_CXX_COMPILER c++ CACHE FILEPATH "C++ compiler" FORCE)
+endif()

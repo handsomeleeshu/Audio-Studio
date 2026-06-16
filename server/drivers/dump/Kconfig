@@ -1,0 +1,13 @@
+menu "Dump Driver"
+
+config DRIVER_DUMP
+  bool "Build dump driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_DUMP_LINUX_HOST
+  bool "Build Linux host dump driver implementation"
+  default n
+  depends on DRIVER_DUMP
+
+endmenu

@@ -13,8 +13,8 @@ GUI/frontend/assets/verisilicon-logo.png
 C++ Mock Server 直接托管 `GUI/frontend/index.html`、静态资源和 `/api/*` 接口。本地调试推荐：
 
 ```bash
-./scripts/build_backend.sh
-./build/audio_studio_server . 8080
+./scripts/build_all.sh --profile gui_backend -r linux a2
+./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
 ```
 
 然后打开：

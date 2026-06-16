@@ -1,0 +1,120 @@
+#include "linux_host_dump_device.hpp"
+
+#include <algorithm>
+#include <utility>
+
+namespace audio_studio::drivers::dump {
+
+namespace {
+
+class LinuxHostDumpDeviceFactory final : public IDumpDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IDumpDevice> create(const DumpDeviceConfig& config) const override {
+    auto device = std::make_unique<LinuxHostDumpDevice>();
+    if (!device->open(config).ok()) return nullptr;
+    return device;
+  }
+};
+
+const bool kLinuxHostDumpDeviceRegistered = [] {
+  auto status = DumpDeviceRegistry::instance().registerFactory(std::make_unique<LinuxHostDumpDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
+DumpResult LinuxHostDumpDevice::open(const DumpDeviceConfig& config) {
+  if (config.device.empty()) return DumpResult::invalidArgument("dump device is empty");
+  device_config_ = config;
+  open_ = true;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::configure(const DumpSessionConfig& config) {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  session_config_ = config;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::listPoints(std::vector<DumpPointInfo>& points) {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  points = points_;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::addPoint(const ProbePoint& point) {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  if (point.point_id == 0) return DumpResult::invalidArgument("dump point id is zero");
+  if (point.name.empty()) return DumpResult::invalidArgument("dump point name is empty");
+  const auto exists = std::any_of(points_.begin(), points_.end(), [&](const DumpPointInfo& item) {
+    return item.point_id == point.point_id;
+  });
+  if (exists) return DumpResult::invalidArgument("dump point already exists");
+  points_.push_back({point.point_id, point.name});
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::removePoint(uint32_t point_id) {
+  const auto old_size = points_.size();
+  points_.erase(std::remove_if(points_.begin(), points_.end(), [&](const DumpPointInfo& item) {
+                  return item.point_id == point_id;
+                }),
+                points_.end());
+  if (points_.size() == old_size) return DumpResult::unavailable("dump point not found");
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::removeAllPoints() {
+  points_.clear();
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::start() {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  if (packets_.empty() && !points_.empty()) {
+    packets_.push_back({points_.front().point_id, {0x10, 0x20}});
+    ++packets_written_;
+  }
+  running_ = true;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::stop() {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  running_ = false;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::readPacket(DumpRawPacket& packet, uint32_t /*timeout_ms*/) {
+  if (!running_) return DumpResult::unavailable("dump device is not running");
+  if (packets_.empty()) return DumpResult::unavailable("no dump packet available");
+  packet = std::move(packets_.front());
+  packets_.erase(packets_.begin());
+  ++packets_read_;
+  return DumpResult::success();
+}
+
+DumpResult LinuxHostDumpDevice::getStats(DumpDeviceStats& stats) {
+  stats = {packets_written_, packets_read_, running_};
+  return DumpResult::success();
+}
+
+void LinuxHostDumpDevice::close() {
+  open_ = false;
+  running_ = false;
+  points_.clear();
+  packets_.clear();
+}
+
+DumpResult LinuxHostDumpDevice::appendPacket(DumpRawPacket packet) {
+  if (!open_) return DumpResult::unavailable("dump device is not open");
+  if (packet.point_id == 0) return DumpResult::invalidArgument("dump packet point id is zero");
+  if (packet.bytes.empty()) return DumpResult::invalidArgument("dump packet is empty");
+  packets_.push_back(std::move(packet));
+  ++packets_written_;
+  return DumpResult::success();
+}
+
+} // namespace audio_studio::drivers::dump

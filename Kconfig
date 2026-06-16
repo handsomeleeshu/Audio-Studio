@@ -1,0 +1,10 @@
+mainmenu "Audio Studio"
+
+config AUDIO_STUDIO
+  bool "Audio Studio build"
+  default y
+
+source "GUI/Kconfig"
+source "tests/Kconfig"
+source "server/Kconfig"
+source "cli/Kconfig"

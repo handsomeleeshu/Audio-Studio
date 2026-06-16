@@ -1,0 +1,13 @@
+menu "Filesystem Driver"
+
+config DRIVER_FILESYSTEM
+  bool "Build filesystem driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_FILESYSTEM_LINUX_HOST
+  bool "Build Linux host filesystem driver implementation"
+  default n
+  depends on DRIVER_FILESYSTEM
+
+endmenu

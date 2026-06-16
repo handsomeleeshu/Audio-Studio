@@ -1,0 +1,17 @@
+menu "Server"
+
+config SERVER
+  bool "Build as_server"
+  default n
+
+config RPC
+  bool "Build server RPC helpers"
+  default n
+  depends on SERVER && FRAMEWORK_COMMON
+
+source "server/framework/Kconfig"
+source "server/drivers/Kconfig"
+source "server/platform/Kconfig"
+source "server/tests/Kconfig"
+
+endmenu

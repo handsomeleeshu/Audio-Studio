@@ -373,6 +373,15 @@ Audio-Studio/server/rpc/
 
 这部分属于正式 `server/`，不是 `GUI/backend/`。
 
+当前已实现首批 host-alone RPC helper：
+
+```text
+server/rpc/include/audio_studio/rpc/json_rpc.hpp
+server/rpc/src/json_rpc.cpp
+```
+
+该阶段提供 JSON-RPC request method/id/params 提取，以及 result/error response 生成，用于后续 as_server dispatcher 和 CLI/GUI backend RPC transport 接入。
+
 ### 2.4 Backend-Orchestrated RPC / Client RPC Action Delegation
 
 该方案命名为：
@@ -925,7 +934,7 @@ Audio-Studio/
 | `cli/` | 命令行前端，包含 `as_config/as_control/as_play/as_record/as_log/as_dump` | C++ | 不直接包含平台驱动 |
 | `server/` | 正式 as_server、RPC server、framework、drivers、platform adapter | C++ | `server/platform/*` 包含 |
 | `audio_controller/` | Audio Studio 对端 controller 参考实现 | C | `audio_controller/platform/*` 包含 |
-| `scripts/` | Kconfig、build_all、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
+| `scripts/` | Kconfig、build_all.sh、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
 | `config/` | 当前产品 JSON 示例，例如 A2.json | JSON | 可包含平台示例 |
 | `configs/` | defconfig/profile 示例 | Kconfig defconfig/TOML/JSON | 可包含平台配置 |
 | `plugins/` | Audio Studio Host Plugin SDK 示例和三方插件目录 | C/C++ | 插件可平台无关 |
@@ -1117,6 +1126,20 @@ Audio-Studio/cli/
     as_dump_options.cpp
 ```
 
+当前已实现首批 host-alone CLI 骨架：
+
+```text
+cli/common/include/audio_studio/cli/cli_common.hpp
+cli/common/src/cli_common.cpp
+cli/tools/as_control.cpp
+cli/tools/as_play.cpp
+cli/tools/as_record.cpp
+cli/tools/as_log.cpp
+cli/tools/as_dump.cpp
+```
+
+该阶段的 CLI 只支持 `--target dummy` 和 `--help`，通过 dummy driver 输出 JSON 结果，用于验证 build、参数解析、命令入口和后续 RPC 接入边界。`as_config` 暂不实现。
+
 CLI 不应包含：
 
 ```text
@@ -1154,6 +1177,17 @@ Audio-Studio/server/framework/common/
     crc32.cpp
 ```
 
+当前已实现首批 host-alone common 模块：
+
+```text
+server/framework/common/include/audio_studio/framework/status.hpp
+server/framework/common/include/audio_studio/framework/service_registry.hpp
+server/framework/common/src/status.cpp
+server/framework/common/src/service_registry.cpp
+```
+
+该阶段只承载通用 `Status` 和 `ServiceRegistry`，用于后续 RPC service、framework service 和 dummy driver 测试共享；不包含平台逻辑。
+
 ### 4.4 server/framework/session
 
 ```text
@@ -1167,6 +1201,15 @@ Audio-Studio/server/framework/session/
     session_registry.cpp
     session_lifecycle.cpp
 ```
+
+当前已实现首批 host-alone session 模块：
+
+```text
+server/framework/session/include/audio_studio/framework/session/session_registry.hpp
+server/framework/session/src/session_registry.cpp
+```
+
+该阶段提供 session create/close/list/activeCount 基础生命周期能力，供后续 as_server RPC session、device session 和 stream session 复用。
 
 ### 4.5 server/framework/config
 
@@ -1240,6 +1283,15 @@ Audio-Studio/server/framework/control/
     control_value.cpp
 ```
 
+当前已实现首批 host-alone control 模块：
+
+```text
+server/framework/control/include/audio_studio/framework/control/control_service.hpp
+server/framework/control/src/control_service.cpp
+```
+
+该阶段提供参数 set/get/list 的通用状态层，不直接访问 tinymix、A2 transport 或物理 driver；后续由 driver/control 或 platform/control 负责真实下发。
+
 ### 4.7 server/framework/audio
 
 ```text
@@ -1268,6 +1320,15 @@ Audio-Studio/server/framework/audio/
     pcm_writer.cpp
     audio_stats.cpp
 ```
+
+当前已实现首批 host-alone audio 模块：
+
+```text
+server/framework/audio/include/audio_studio/framework/audio/audio_service.hpp
+server/framework/audio/src/audio_service.cpp
+```
+
+该阶段只维护 playback/capture stream 的 create/start/stop/get/list 状态，不直接访问 ALSA、浏览器音频或 Audio Controller；真实设备访问由后续 drivers/audio 承担。
 
 ### 4.8 server/framework/log
 
@@ -1298,6 +1359,15 @@ Audio-Studio/server/framework/log/
     sof_ldc_parser.hpp
 ```
 
+当前已实现首批 host-alone log 模块：
+
+```text
+server/framework/log/include/audio_studio/framework/log/log_service.hpp
+server/framework/log/src/log_service.cpp
+```
+
+该阶段提供 append/tail/clear/size 内存日志缓冲能力，不读取 firmware trace 或 `.ldc` 字典；真实日志设备与解码由后续 drivers/log 和 log decoder 模块接入。
+
 ### 4.9 server/framework/dump
 
 ```text
@@ -1324,6 +1394,15 @@ Audio-Studio/server/framework/dump/
     sof_probe_packet.hpp
 ```
 
+当前已实现首批 host-alone dump 模块：
+
+```text
+server/framework/dump/include/audio_studio/framework/dump/dump_service.hpp
+server/framework/dump/src/dump_service.cpp
+```
+
+该阶段提供 dump session start/write/stop/get/list 的内存统计能力，用于先打通 as_server、CTest 和构建配置；不解析 SOF probe packet，不操作真实 dump point，也不写 PCM/WAV 文件。真实 probe demux、dump sink 和 IDumpDevice 接入仍由后续 drivers/dump 与 framework/dump 扩展完成。
+
 ### 4.10 server/framework/plugin
 
 ```text
@@ -1341,6 +1420,15 @@ Audio-Studio/server/framework/plugin/
     plugin_descriptor.cpp
     plugin_scanner.cpp
 ```
+
+当前已实现首批 host-alone plugin 模块：
+
+```text
+server/framework/plugin/include/audio_studio/framework/plugin/plugin_manager.hpp
+server/framework/plugin/src/plugin_manager.cpp
+```
+
+该阶段提供 plugin descriptor register/unregister/get/list/findByCapability 和 active 状态管理，用于先打通 framework/plugin 的构建配置与 CTest；不扫描插件目录，不调用 dlopen/LoadLibrary，也不执行插件 ABI。真实插件发现和动态库加载必须通过后续 drivers/filesystem 与 drivers/dynlib 接入。
 
 ### 4.11 server/framework/transport
 
@@ -1364,14 +1452,29 @@ Audio-Studio/server/framework/transport/
     transport_session.cpp
 ```
 
+当前已实现首批 host-alone transport 模块：
+
+```text
+server/framework/transport/include/audio_studio/framework/transport/transport_frame.hpp
+server/framework/transport/include/audio_studio/framework/transport/frame_codec.hpp
+server/framework/transport/include/audio_studio/framework/transport/transport_manager.hpp
+server/framework/transport/src/frame_codec.cpp
+server/framework/transport/src/transport_manager.cpp
+```
+
+该阶段提供基础 frame encode/decode 和 logical channel 状态统计，用于先验证 TransportManager 的服务边界、构建开关和 CTest；不启动 TX/RX worker，不访问 socket/pipe/USB/PCIe，也不直接调用 OS API。真实 IO 必须通过后续 drivers/transport 与 drivers/os 接入。
+
 ### 4.12 server/drivers
 
 Driver 层同时提供 interface 和默认 implementation。每个默认实现均有 Kconfig 开关，platform 可以选择使用、禁用或替换。
 
 ```text
 Audio-Studio/server/drivers/
-  driver_manager.hpp
-  driver_manager.cpp
+  include/
+    driver_manager.hpp
+  src/
+    driver_manager.cpp
+    CMakeLists.txt
   os/
   socket/
   filesystem/
@@ -1385,6 +1488,58 @@ Audio-Studio/server/drivers/
 ```
 
 后续 driver 子目录详见本文 Driver 章节。
+
+当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择 `src/` 下的实现源文件。
+
+```text
+server/drivers/include/driver_manager.hpp
+server/drivers/src/driver_manager.cpp
+
+server/drivers/os/include/os_driver.hpp
+server/drivers/os/src/linux_host_os_driver.hpp
+server/drivers/os/src/linux_host_os_driver.cpp
+
+server/drivers/socket/include/socket_driver.hpp
+server/drivers/socket/src/linux_host_socket_driver.hpp
+server/drivers/socket/src/linux_host_socket_driver.cpp
+
+server/drivers/filesystem/include/filesystem_driver.hpp
+server/drivers/filesystem/src/linux_host_filesystem_driver.hpp
+server/drivers/filesystem/src/linux_host_filesystem_driver.cpp
+
+server/drivers/pipe/include/pipe_driver.hpp
+server/drivers/pipe/src/linux_host_pipe_driver.hpp
+server/drivers/pipe/src/linux_host_pipe_driver.cpp
+
+server/drivers/dynlib/include/dynlib_driver.hpp
+server/drivers/dynlib/src/linux_host_dynlib_driver.hpp
+server/drivers/dynlib/src/linux_host_dynlib_driver.cpp
+
+server/drivers/transport/include/transport_driver.hpp
+server/drivers/transport/src/linux_host_transport_driver.hpp
+server/drivers/transport/src/linux_host_transport_driver.cpp
+
+server/drivers/audio/include/audio_device.hpp
+server/drivers/audio/src/linux_host_audio_device.hpp
+server/drivers/audio/src/linux_host_audio_device.cpp
+
+server/drivers/control/include/control_device.hpp
+server/drivers/control/src/linux_host_control_device.hpp
+server/drivers/control/src/linux_host_control_device.cpp
+
+server/drivers/log/include/log_device.hpp
+server/drivers/log/src/linux_host_log_device.hpp
+server/drivers/log/src/linux_host_log_device.cpp
+
+server/drivers/dump/include/dump_device.hpp
+server/drivers/dump/src/linux_host_dump_device.hpp
+server/drivers/dump/src/linux_host_dump_device.cpp
+
+server/drivers/dummy/include/dummy_driver.hpp
+server/drivers/dummy/src/dummy_driver.cpp
+```
+
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`server/drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `server/drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
 
 ### 4.13 server/platform
 
@@ -1427,6 +1582,17 @@ Audio-Studio/server/platform/
     Kconfig
     customer_x_platform.cpp
 ```
+
+当前已实现首批 host-alone platform core：
+
+```text
+server/platform/core/include/audio_studio/platform/core/platform_registry.hpp
+server/platform/core/src/platform_registry.cpp
+server/platform/a2/include/audio_studio/platform/a2/a2_platform.hpp
+server/platform/a2/src/a2_platform.cpp
+```
+
+`CONFIG_PLATFORM_CORE=y` 时构建 `PlatformRegistry`，用于注册 platform id/name/transport/capabilities/available 状态，先打通 platform adapter 的选择和能力发现边界；不访问 A2 设备、simulator 进程或 customer platform。`CONFIG_PLATFORM_A2=y` 时构建 A2 platform profile skeleton，只声明 A2 的 audio/control/log/dump/transport 能力和 transport profile 名称，不实现 7870 tinyalsa、tinymix、debugfs、probe 或物理 transport。
 
 ### 4.14 audio_controller 对端 C 工程
 
@@ -1594,6 +1760,11 @@ classDiagram
     +instance() DriverManager
     +initialize(config) Result
     +shutdown()
+    +osRegistry() OsDriverRegistry
+    +socketRegistry() SocketDriverRegistry
+    +filesystemRegistry() FileSystemDriverRegistry
+    +pipeRegistry() PipeDriverRegistry
+    +dynlibRegistry() DynlibDriverRegistry
     +os() IOsDriver
     +filesystem() IFileSystemDriver
     +socket() ISocketDriver
@@ -1607,9 +1778,10 @@ classDiagram
   }
 
   class AudioDeviceRegistry {
-    +registerFactory(factory)
-    +createPlaybackDevice(name, config)
-    +createCaptureDevice(name, config)
+    +registerPlaybackFactory(factory)
+    +registerCaptureFactory(factory)
+    +createPlayback(name, params)
+    +createCapture(name, params)
   }
 
   class ControlDeviceRegistry {
@@ -1631,6 +1803,7 @@ classDiagram
   DriverManager --> ControlDeviceRegistry
   DriverManager --> LogDeviceRegistry
   DriverManager --> DumpDeviceRegistry
+  DriverManager --> TransportDriverRegistry
 ```
 
 ### 6.2 Audio / Control / Log / Dump Service 与 Device Interface
@@ -2035,6 +2208,8 @@ Audio-Studio/GUI/backend:
 
 Audio-Studio/cli:
   构建 as_config/as_control/as_play/as_record/as_log/as_dump。
+  当前阶段先实现 as_control/as_play/as_record/as_log/as_dump 的 host-alone dummy CLI；
+  as_config 按当前任务边界暂不实现。
 
 Audio-Studio/server:
   构建 as_server、framework 静态库/动态库、driver implementation、platform backend。
@@ -2043,7 +2218,7 @@ Audio-Studio/audio_controller:
   构建 simulator audio_controller 或 A2 侧可移植 controller reference。
 
 Audio-Studio/scripts:
-  build_all、Kconfig resolve、CMake configure、toolchain 管理、生成 autoconf。
+  build_all.sh、Kconfig resolve、CMake configure、toolchain 管理、生成 autoconf。
   scripts/run_tests.sh 是 host-alone 统一回归入口，必须先运行可执行的 GUI 逻辑测试，再构建 C++ 目标并运行 CTest。
 ```
 
@@ -2156,7 +2331,7 @@ config PLATFORM_A2_7870_CONTROL_TINYMIX
 - `platform/a2`
 - `platform/simulator`
 - `apps/as_*`
-- `scripts/build_all` 与 Kconfig 风格配置系统
+- `scripts/build_all.sh` 与 Kconfig 风格配置系统
 
 本文档中的 Audio Studio 是一个通用 PC 端音频调试、配置、控制、观测框架，不是 A2 专用工具。A2 只是第一个验证平台和平台实现示例。后续客户平台、DSP simulator 或其他音频控制器平台都应能够复用 Audio Studio 的 common framework。
 
@@ -2308,7 +2483,7 @@ Ctrl+C 清理
 Audio Studio
 │
 ├── 0. Build & Config System
-│     scripts/build_all
+│     scripts/build_all.sh
 │     scripts/cmake/
 │     Kconfig / defconfig / generated config
 │
@@ -2348,7 +2523,7 @@ audio_studio/
   Kconfig
 
   scripts/
-    build_all
+    build_all.sh
     kconfig/
       menuconfig
       genconfig.py
@@ -2444,54 +2619,79 @@ CONFIG 系统不是 Transport 的配置系统，而是整个 Audio Studio 工程
 是否启用 Audio Controller audio/log/dump driver
 是否启用 A2 platform
 是否启用 simulator platform
-目标运行系统是 Linux / macOS / Windows
-使用哪套 toolchain
 是否编译 shared library / static library / CLI tools
 ```
 
-#### 4.2 Kconfig 风格设计
+#### 4.2 Kconfig/defconfig 风格设计
 
-Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。
-
-```text
-Kconfig -> defconfig -> .config -> autoconf.h/autoconf.hpp/config.cmake/config.json -> CMake/Ninja
-```
-
-生成文件建议：
+Audio Studio 使用类似 SOF 的 Kconfig/defconfig 配置方式。CMake 不是配置系统，只是后端构建生成器。当前实现已引入 `scripts/kconfig` Kconfig 工具链，并通过 `scripts/cmake/kconfig.cmake` 在 configure 阶段从 `configs/*_defconfig` 生成 `.config` 和 C/C++ 可消费的 `autoconfig.h`。
 
 ```text
-build/<profile>/.config
-build/<profile>/generated/autoconf.h
-build/<profile>/generated/autoconf.hpp
-build/<profile>/generated/config.cmake
-build/<profile>/generated/config.json
+Kconfig -> defconfig -> generated/.config -> generated/include/autoconfig.h -> CMake/Ninja
 ```
 
-#### 4.3 build_all 是推荐唯一入口
+当前生成文件：
+
+```text
+out/<os>/<platform>/<profile>/<build-type>/generated/.config
+out/<os>/<platform>/<profile>/<build-type>/generated/include/autoconfig.h
+out/<os>/<platform>/<profile>/<build-type>/CMakeCache.txt
+```
+
+当前 CONFIG 依赖关系以 target platform choice 和模块开关为核心，Kconfig choice 保证同一组 platform choice 中只有一个 `CONFIG_TARGET_PLATFORM_*` 为 `y`。Kconfig tree 采用 SOF 风格的 source 分层，根 `Kconfig` 只保留顶层入口并 source 子目录：
+
+```text
+Kconfig
+GUI/Kconfig
+tests/Kconfig
+server/Kconfig
+server/framework/Kconfig
+server/drivers/Kconfig
+server/drivers/<module>/Kconfig
+server/platform/Kconfig
+server/platform/a2/Kconfig
+server/tests/Kconfig
+cli/Kconfig
+```
+
+模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `server/drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
+
+#### 4.3 build_all.sh 是推荐唯一入口
 
 示例：
 
 ```bash
-./scripts/build_all \
-  --platform a2 \
-  --target-os linux \
-  --toolchain gcc \
-  --defconfig configs/a2_linux_defconfig
+./scripts/build_all.sh linux a2
+./scripts/build_all.sh windows a2
+./scripts/build_all.sh --dry-run windows a2
+./scripts/build_all.sh --profile gui_backend -r linux a2
 ```
+
+`build_all.sh` 是 shell 脚本入口，风格和职责对齐 SOF/codec 的多平台脚本。第一个位置参数是 PC OS，用来选择 toolchain 文件和输出目录；后续位置参数是 target platform，用来选择 platform defconfig。命令行不传 `--toolchain`，toolchain 由 OS 映射决定；`configs/` 不包含 OS defconfig。
 
 内部流程：
 
 ```text
-1. 创建 build/<platform>-<target-os>-<toolchain>/
-2. 加载 defconfig
-3. 运行 Kconfig resolve
-4. 生成 .config
-5. 生成 autoconf.h/autoconf.hpp/config.cmake/config.json
-6. 选择 scripts/cmake/toolchain/<target>.cmake
-7. CMake configure
-8. Ninja/build
-9. 输出 lib + CLI tools
+1. 根据 OS 选择 scripts/cmake/toolchain/<target>.cmake
+2. 根据 target platform 选择 configs/platform/<platform>_defconfig
+3. 拼接 profile defconfig 与 platform defconfig，生成 build-local initial.config
+4. 创建 out/<os>/<platform>/<profile>/<Debug|Release>/
+5. CMake configure
+6. Kconfig 生成 generated/.config 和 generated/include/autoconfig.h
+7. 可选 menuconfig
+8. CMake build
+9. 输出 bin/lib/test 产物到 build directory
 ```
+
+当前第一阶段只要求打通最小 `server/as_server/main.cpp`：
+
+```text
+linux/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake    -> out/linux/a2/as_server_minimal/Debug/as_server
+windows/a2 -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/windows-mingw.cmake -> out/windows/a2/as_server_minimal/Debug/as_server.exe
+linux/a2 gui_backend -> configs/profile/gui_backend_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake -> out/linux/a2/gui_backend/Release/audio_studio_server
+```
+
+macOS 构建支持暂保留 toolchain 结构入口，但不纳入当前阶段的验证范围，后续在 macOS 开发环境下再验证。
 
 #### 4.4 Linux 构建环境与多目标产物
 
@@ -2499,34 +2699,37 @@ build/<profile>/generated/config.json
 
 ```text
 构建环境优先只要求 Linux。
-但工程结构必须支持生成 Linux / Windows / macOS 运行目标产物。
+当前阶段验证 Linux host 与 Windows/MinGW 映射；macOS 暂缓。
 ```
 
 示例 toolchain：
 
 ```text
-TARGET_OS_LINUX   -> linux-gcc / linux-clang
-TARGET_OS_WINDOWS -> windows-mingw / windows-msvc
-TARGET_OS_MACOS   -> macos-clang / osxcross-clang
+linux   -> scripts/cmake/toolchain/linux-gcc.cmake
+windows -> scripts/cmake/toolchain/windows-mingw.cmake
+macos   -> scripts/cmake/toolchain/macos-clang.cmake
 ```
+
+Windows/macOS toolchain 文件是结构化入口，实际编译依赖调用环境提供 MinGW 或 osxcross。当前 host-alone CI 强制验证 Linux/GCC 配置生成与 `as_server` 编译，并在缺少 MinGW 时只验证 Windows 平台映射。
 
 #### 4.5 CMake 的职责
 
 CMake 只消费 CONFIG：
 
 ```cmake
-include(${AUDIO_STUDIO_CONFIG_FILE})
+include(scripts/cmake/kconfig.cmake)
+read_kconfig_config("${DOT_CONFIG_PATH}")
 
-if(CONFIG_FRAMEWORK_AUDIO)
-  add_subdirectory(framework/audio)
+if(CONFIG_GUI_BACKEND)
+  add_subdirectory(GUI/backend)
 endif()
 
-if(CONFIG_DRIVER_SOCKET_POSIX)
-  add_subdirectory(drivers/socket/posix)
+if(CONFIG_SERVER)
+  add_subdirectory(server)
 endif()
 
-if(CONFIG_PLATFORM_A2)
-  add_subdirectory(platform/a2)
+if(CONFIG_CLI)
+  add_subdirectory(cli)
 endif()
 ```
 
@@ -4158,12 +4361,11 @@ drivers/
 
 ```text
 drivers/<module>/
-  Kconfig
-  include/        // interface
+  include/        // public interface + factory interface + module registry
+  src/            // implementation header/source + module CMakeLists.txt
   common/         // 平台无关 helper，可选
-  posix/          // Linux/macOS 默认实现
-  win32/          // Windows 默认实现
-  mock/           // 单元测试/仿真默认实现，可选
+  posix/          // 后续 Linux/macOS 默认实现，可选
+  win32/          // 后续 Windows 默认实现，可选
 ```
 
 #### 7.4 DriverManager
@@ -4189,6 +4391,152 @@ public:
     void shutdown();
 };
 ```
+
+当前实现落地为：
+
+```text
+server/drivers/include/driver_manager.hpp
+server/drivers/src/driver_manager.cpp
+```
+
+职责边界：
+
+1. `DriverManager` 是 framework 使用 driver 的唯一装配入口。framework/service 层不 include `linux_host_*`、A2 物理驱动或其他 implementation header。
+2. 每个 driver 模块在自己的 public interface 头里定义 `I*Factory` 和 `*Registry`，例如 `SocketDriverRegistry`、`AudioDeviceRegistry`、`ControlDeviceRegistry`。Registry 是 singleton，拥有 factory，按 factory name 创建 interface 对象。
+3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、A2 物理驱动或 customer implementation header。
+4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`。`initialize()` 只从各模块 singleton Registry 收集已注册 factory metadata，再为 OS/socket/filesystem/pipe/dynlib 这类全局 driver 创建 singleton service。
+5. transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。
+6. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
+7. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
+
+当前 Registry API 模式：
+
+```cpp
+class ISocketDriverFactory {
+public:
+    virtual std::string name() const = 0;
+    virtual std::unique_ptr<ISocketDriver> create() const = 0;
+};
+
+class SocketDriverRegistry {
+public:
+    static SocketDriverRegistry& instance();
+    DriverResult registerFactory(std::unique_ptr<ISocketDriverFactory> factory);
+    bool hasFactory(const std::string& name) const;
+    std::unique_ptr<ISocketDriver> create(const std::string& name) const;
+    std::vector<std::string> factoryNames() const;
+    void clear();
+};
+```
+
+Audio 因为 playback/capture 是两个独立 device interface，所以使用双 factory：
+
+```cpp
+class AudioDeviceRegistry {
+public:
+    static AudioDeviceRegistry& instance();
+    AudioResult registerPlaybackFactory(std::unique_ptr<IAudioPlaybackDeviceFactory> factory);
+    AudioResult registerCaptureFactory(std::unique_ptr<IAudioCaptureDeviceFactory> factory);
+    std::unique_ptr<IAudioPlaybackDevice> createPlayback(const std::string& name, const AudioOpenParams& params) const;
+    std::unique_ptr<IAudioCaptureDevice> createCapture(const std::string& name, const AudioOpenParams& params) const;
+};
+```
+
+#### 7.5 Driver 注册流程
+
+当前 driver 注册流程是“模块自注册 + DriverManager 消费 singleton Registry”，不是由 `DriverManager` include 每个 implementation 头文件后集中注册。
+
+以 audio Linux host 实现为例：
+
+```text
+server/drivers/audio/include/audio_device.hpp
+  - 定义 IAudioPlaybackDevice / IAudioCaptureDevice
+  - 定义 IAudioPlaybackDeviceFactory / IAudioCaptureDeviceFactory
+  - 定义 AudioDeviceRegistry::instance()
+
+server/drivers/audio/src/linux_host_audio_device.hpp
+  - 只声明 LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice 实现类
+
+server/drivers/audio/src/linux_host_audio_device.cpp
+  - 在匿名 namespace 中定义 LinuxHostAudioPlaybackDeviceFactory / LinuxHostAudioCaptureDeviceFactory
+  - 用静态 registrar 注册到 AudioDeviceRegistry::instance()
+
+server/drivers/audio/CMakeLists.txt
+  - 根据 CONFIG_DRIVER_AUDIO_LINUX_HOST 选择 src/linux_host_audio_device.cpp
+  - 构建 audio_studio_driver_audio OBJECT target
+```
+
+典型静态注册写法：
+
+```cpp
+namespace {
+
+class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
+public:
+    std::string name() const override { return "linux-host"; }
+    std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override;
+};
+
+const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
+    auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(
+        std::make_unique<LinuxHostAudioPlaybackDeviceFactory>());
+    (void)status;
+    return true;
+}();
+
+} // namespace
+```
+
+构建和初始化时序：
+
+```text
+1. Kconfig 选择 implementation：
+   CONFIG_DRIVER_AUDIO=y
+   CONFIG_DRIVER_AUDIO_LINUX_HOST=y
+
+2. server/drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
+
+3. 最终 executable 直接链接 audio_studio_driver_audio OBJECT target。
+   这样对象文件一定进入最终链接，静态 registrar 不会被 static archive 丢弃。
+
+4. 程序启动后，implementation .cpp 中的静态 registrar 执行，
+   factory 注册到 AudioDeviceRegistry::instance()。
+
+5. DriverManager::initialize() 不 include 或 new 任何 LinuxHost* class，
+   只从 AudioDeviceRegistry::instance() 收集 factory metadata，
+   并检查 DriverManagerConfig 中指定的默认 factory 是否存在。
+
+6. framework 需要具体 per-device 实例时，通过 registry 创建：
+   manager.audioRegistry().createPlayback("linux-host", params)
+```
+
+新增 platform/custom driver implementation 时遵循同一机制：
+
+```text
+1. 新实现只 include 对应 public interface 头文件，例如 audio_device.hpp。
+2. 在自己的 .cpp 中实现 device/driver class 和 factory class。
+3. 在同一个 .cpp 中用静态 registrar 注册到对应 Registry::instance()。
+4. 新增 Kconfig implementation 开关，例如 CONFIG_DRIVER_AUDIO_A2。
+5. 在模块根 CMakeLists.txt 中根据该 CONFIG 选择 platform/customer 源文件。
+6. 如默认 factory 名不是 linux-host，通过 DriverManagerConfig 指定，例如 audio_factory = "a2"。
+7. DriverManager 不需要修改，也不需要 include 新实现头。
+```
+
+命名约束：
+
+```text
+factory name 必须稳定，例如 linux-host、a2、customer-x。
+同一 Registry 内 factory name 不能重复。
+implementation header 放在实现目录，不能进入 public include。
+public include 只能暴露 interface、factory interface、Registry。
+```
+
+测试要求：
+
+- `server/tests/driver_interface_tests.cpp` 不 include 任何 `linux_host_*` 实现头。
+- 测试先 `DriverManager::initialize()`，再通过 `manager.os()`、`manager.socket()`、`manager.filesystem()`、`manager.pipe()`、`manager.dynlib()` 验证 singleton driver。
+- per-device driver 必须通过对应 Registry 创建，并仅通过 interface 调用。
+- Kconfig profile `driver_interface_tests` 必须打开全部 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST`，CTest 中执行 `driver_interface_tests`。
 
 ---
 
@@ -6036,36 +6384,16 @@ platform/simulator/
 
 以 socket 为例：
 
-```kconfig
-menu "Socket Driver"
+```text
+Kconfig:
+  CONFIG_DRIVER_SOCKET=y 只表示需要 socket driver interface/default implementation。
 
-config DRIVER_SOCKET
-    bool "Enable socket driver interface"
-    default n
-
-choice DRIVER_SOCKET_IMPL
-    prompt "Socket driver implementation"
-    depends on DRIVER_SOCKET
-    default DRIVER_SOCKET_POSIX if TARGET_OS_LINUX || TARGET_OS_MACOS
-    default DRIVER_SOCKET_WIN32 if TARGET_OS_WINDOWS
-
-config DRIVER_SOCKET_NONE
-    bool "No default socket implementation"
-
-config DRIVER_SOCKET_POSIX
-    bool "Use POSIX socket implementation"
-    depends on TARGET_OS_LINUX || TARGET_OS_MACOS
-
-config DRIVER_SOCKET_WIN32
-    bool "Use Win32 Winsock implementation"
-    depends on TARGET_OS_WINDOWS
-
-config DRIVER_SOCKET_MOCK
-    bool "Use mock socket implementation"
-
-endchoice
-
-endmenu
+CMake:
+  if(WIN32)
+    选择 Win32 Winsock source
+  elseif(APPLE OR UNIX)
+    选择 POSIX socket source
+  endif()
 ```
 
 同样模式适用于：
@@ -6296,7 +6624,7 @@ as_dump
 8. framework/transport 线程模型、flow control、frame codec
 9. framework/config 与 Plugin SDK
 10. platform/a2 profile 与 7870 tinyalsa/FIFO/tinymix backend
-11. Kconfig tree 与 build_all 实现细节
+11. Kconfig tree 与 build_all.sh 实现细节
 ```
 
 ---
@@ -6310,7 +6638,7 @@ as_dump
 
 2. A2 是第一个 platform profile；A2 相关实现只放在 platform/a2。
 
-3. 构建系统采用 Kconfig/defconfig + scripts/build_all + scripts/cmake，CMake 只消费 generated config。
+3. 构建系统采用 Kconfig/defconfig + scripts/build_all.sh + scripts/cmake，CMake 只消费 generated config。
 
 4. Driver 层同时提供 interface 和默认实现，platform 优先复用默认实现，必要时 override。
 

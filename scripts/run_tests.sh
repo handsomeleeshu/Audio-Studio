@@ -28,5 +28,5 @@ done
 echo "[test] tests/dev-environment.test.mjs"
 node "$ROOT/tests/dev-environment.test.mjs"
 
-"$ROOT/scripts/build_backend.sh"
-ctest --test-dir "$ROOT/build" --output-on-failure
+echo "[test] tests/build-system.test.py"
+python3 "$ROOT/tests/build-system.test.py"

@@ -1,0 +1,12 @@
+set(AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES)
+if(CONFIG_DRIVER_TRANSPORT_LINUX_HOST)
+  list(APPEND AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES src/linux_host_transport_driver.cpp)
+endif()
+audio_studio_require_sources(audio_studio_driver_transport "${AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES}")
+
+add_library(audio_studio_driver_transport OBJECT
+  ${AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES}
+)
+target_include_directories(audio_studio_driver_transport PUBLIC include)
+target_link_libraries(audio_studio_driver_transport PUBLIC audio_studio_framework_common)
+target_compile_features(audio_studio_driver_transport PUBLIC cxx_std_17)

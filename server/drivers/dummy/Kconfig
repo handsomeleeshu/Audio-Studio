@@ -1,0 +1,8 @@
+menu "Dummy Driver"
+
+config DRIVER_DUMMY
+  bool "Build host-alone dummy driver"
+  default n
+  depends on SERVER
+
+endmenu
