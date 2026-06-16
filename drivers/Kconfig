@@ -1,0 +1,20 @@
+menu "Drivers"
+
+config DRIVERS_CORE
+  bool "Build driver manager core"
+  default n
+  depends on SERVER && FRAMEWORK_COMMON
+
+source "drivers/os/Kconfig"
+source "drivers/socket/Kconfig"
+source "drivers/filesystem/Kconfig"
+source "drivers/pipe/Kconfig"
+source "drivers/dynlib/Kconfig"
+source "drivers/transport/Kconfig"
+source "drivers/audio/Kconfig"
+source "drivers/control/Kconfig"
+source "drivers/log/Kconfig"
+source "drivers/dump/Kconfig"
+source "drivers/dummy/Kconfig"
+
+endmenu

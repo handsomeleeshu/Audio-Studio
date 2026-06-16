@@ -47,12 +47,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 enable_testing()
 
-if(CONFIG_GUI_BACKEND)
-  add_subdirectory(GUI/backend)
+if(CONFIG_RPC AND NOT CONFIG_SERVER)
+  add_subdirectory(rpc)
 endif()
 
 if(CONFIG_SERVER)
   add_subdirectory(server)
+endif()
+
+if(CONFIG_GUI_BACKEND)
+  add_subdirectory(GUI/backend)
 endif()
 
 if(CONFIG_CLI)

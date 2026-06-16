@@ -5,7 +5,7 @@ DEFAULT_OS=linux
 DEFAULT_PROFILE=as_server_minimal
 DEFAULT_PLATFORMS=(a2)
 SUPPORTED_OSES=(linux windows)
-SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests gui_backend)
+SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests gui_backend rpc_socket rpc_pipe)
 SUPPORTED_PLATFORMS=(a2 simulator)
 
 BUILD_TYPE=Debug
@@ -115,13 +115,27 @@ profile_config() {
       PROFILE_EXECUTABLES=("as_server${EXECUTABLE_SUFFIX}")
       ;;
     driver_interface_tests)
-      PROFILE_EXECUTABLES=("as_server${EXECUTABLE_SUFFIX}" "audio_studio_driver_interface_tests${EXECUTABLE_SUFFIX}")
+      PROFILE_EXECUTABLES=(
+        "as_server${EXECUTABLE_SUFFIX}"
+        "audio_studio_server_tests${EXECUTABLE_SUFFIX}"
+        "audio_studio_driver_interface_tests${EXECUTABLE_SUFFIX}"
+      )
       ;;
     gui_backend)
       if [[ "$BUILD_OS" != linux ]]; then
         die 'profile gui_backend currently supports linux OS only; GUI/backend uses POSIX sockets today\n'
       fi
       PROFILE_EXECUTABLES=(audio_studio_server audio_studio_backend_tests)
+      ;;
+    rpc_socket|rpc_pipe)
+      PROFILE_EXECUTABLES=(
+        "as_server${EXECUTABLE_SUFFIX}"
+        "as_control${EXECUTABLE_SUFFIX}"
+        "as_play${EXECUTABLE_SUFFIX}"
+        "as_record${EXECUTABLE_SUFFIX}"
+        "as_log${EXECUTABLE_SUFFIX}"
+        "as_dump${EXECUTABLE_SUFFIX}"
+      )
       ;;
     *)
       die 'unknown profile: %s\n' "$PROFILE"

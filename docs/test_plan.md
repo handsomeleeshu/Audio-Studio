@@ -40,8 +40,8 @@ python3 tests/build-system.test.py
 
 - `scripts/build_all.sh` shell 入口用 OS 选择 toolchain，用 platform 选择 defconfig。
 - SOF-style `scripts/kconfig` 生成 `generated/.config` 与 `generated/include/autoconfig.h`。
-- Root `Kconfig` 通过 `source` 延伸到 `GUI/`、`server/`、`server/drivers/<module>/`、`server/platform/`、`cli/`、`tests/` 等子目录。
-- Driver CMake 和 Kconfig 一样以模块目录为入口，例如 `server/drivers/audio/CMakeLists.txt` 与 `server/drivers/audio/Kconfig`；`src/` 目录只放实现源码。
+- Root `Kconfig` 通过 `source` 延伸到 `GUI/`、`server/`、`drivers/<module>/`、`rpc/`、`server/platform/`、`cli/`、`tests/` 等子目录。
+- Driver CMake 和 Kconfig 一样以模块目录为入口，例如 `drivers/audio/CMakeLists.txt` 与 `drivers/audio/Kconfig`；`src/` 目录只放实现源码。
 - Kconfig non-interactive targets：`olddefconfig`、`savedefconfig`、`alldefconfig`、`overrideconfig`、`*_defconfig`、`genconfig`。
 - `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
 - Linux/GCC host `as_server` 最小程序 CMake configure/build。
@@ -49,6 +49,9 @@ python3 tests/build-system.test.py
 - `--profile gui_backend -r` 构建 GUI/backend mock server，确认 `audio_studio_server` 与 `audio_studio_backend_tests` 产物存在，并运行 backend CTest。
 - `--profile driver_interface_tests` 构建全部 Linux host driver 测试实现，并运行 `driver_interface_tests` CTest。
 - `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver singleton Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
+- `--profile rpc_socket` 构建同一 platform 下的 `as_server` 与 CLI，启动 `as_server --rpc socket`，通过 `as_control --rpc socket` 调用 `server.health`。
+- `--profile rpc_pipe` 构建同一 platform 下的 `as_server` 与 CLI，启动 `as_server --rpc pipe`，通过 `as_control --rpc pipe` 调用 `server.health`。
+- `rpc_socket` 和 `rpc_pipe` build dir 都运行 CTest，覆盖对应 profile 下的 CLI common 单元测试。
 - Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/as_server_minimal/Debug/as_server.exe`。
 
 ### Server Host-Alone Tests
@@ -68,11 +71,18 @@ out/linux/a2/as_server_minimal/Debug/as_server --health
 ```bash
 out/linux/a2/as_server_minimal/Debug/as_control --target dummy --action get-health
 out/linux/a2/as_server_minimal/Debug/as_play --target dummy --file demo.wav
+
+out/linux/a2/rpc_socket/Debug/as_server --rpc socket 127.0.0.1 18765 --max-requests 1
+out/linux/a2/rpc_socket/Debug/as_control --rpc socket --host 127.0.0.1 --port 18765 --action get-health
+
+out/linux/a2/rpc_pipe/Debug/as_server --rpc pipe /tmp/audio-studio.req /tmp/audio-studio.rsp --max-requests 1
+out/linux/a2/rpc_pipe/Debug/as_control --rpc pipe --request-pipe /tmp/audio-studio.req --response-pipe /tmp/audio-studio.rsp --action get-health
 ```
 
 覆盖：
 
-- 待 CLI/RPC 正式接入 as_server 后恢复。
+- dummy mode 验证 CLI 参数解析和本地输出不依赖 server。
+- RPC mode 验证 CLI 通过 socket/pipe transport 与 as_server 进行 JSON-RPC 通信。
 
 ## 建议后续增加
 

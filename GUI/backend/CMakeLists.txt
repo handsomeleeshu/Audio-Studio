@@ -8,6 +8,11 @@ add_library(audio_studio_core
   src/http_server.cpp
 )
 target_include_directories(audio_studio_core PUBLIC include)
+target_link_libraries(audio_studio_core PUBLIC audio_studio_config)
+if(CONFIG_RPC_CORE)
+  target_link_libraries(audio_studio_core PUBLIC audio_studio_rpc_core)
+  target_compile_definitions(audio_studio_core PRIVATE AUDIO_STUDIO_GUI_BACKEND_RPC=1)
+endif()
 
 add_executable(audio_studio_server src/main.cpp)
 target_link_libraries(audio_studio_server PRIVATE audio_studio_core)

@@ -9,7 +9,12 @@ if(CONFIG_FRAMEWORK_COMMON)
   target_compile_features(audio_studio_framework_common PUBLIC cxx_std_17)
 endif()
 
-add_subdirectory(drivers)
+if(CONFIG_DRIVERS_CORE OR CONFIG_DRIVER_DUMMY OR CONFIG_DRIVER_OS OR CONFIG_DRIVER_SOCKET OR
+   CONFIG_DRIVER_FILESYSTEM OR CONFIG_DRIVER_PIPE OR CONFIG_DRIVER_DYNLIB OR
+   CONFIG_DRIVER_TRANSPORT OR CONFIG_DRIVER_AUDIO OR CONFIG_DRIVER_CONTROL OR
+   CONFIG_DRIVER_LOG OR CONFIG_DRIVER_DUMP)
+  add_subdirectory("${PROJECT_SOURCE_DIR}/drivers" "${CMAKE_BINARY_DIR}/drivers")
+endif()
 
 if(CONFIG_PLATFORM_CORE)
   add_library(audio_studio_platform_core
@@ -94,12 +99,7 @@ if(CONFIG_FRAMEWORK_TRANSPORT)
 endif()
 
 if(CONFIG_RPC)
-  add_library(audio_studio_rpc
-    rpc/src/json_rpc.cpp
-  )
-  target_include_directories(audio_studio_rpc PUBLIC rpc/include)
-  target_link_libraries(audio_studio_rpc PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_rpc PUBLIC cxx_std_17)
+  add_subdirectory("${PROJECT_SOURCE_DIR}/rpc" "${CMAKE_BINARY_DIR}/rpc")
 endif()
 
 set(AUDIO_STUDIO_SERVER_LIBS)
@@ -169,8 +169,17 @@ endif()
 if(CONFIG_FRAMEWORK_TRANSPORT)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_transport)
 endif()
-if(CONFIG_RPC)
-  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc)
+if(CONFIG_RPC_CORE)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc_core)
+endif()
+if(CONFIG_RPC_AUDIO_METHODS)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc_audio)
+endif()
+if(CONFIG_RPC_SERVER)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc_server)
+endif()
+if(CONFIG_RPC_CLIENT)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_rpc_client)
 endif()
 
 add_executable(as_server as_server/main.cpp)

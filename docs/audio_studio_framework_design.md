@@ -31,7 +31,9 @@ Audio-Studio/
     frontend/                 # 当前 HTML GUI 前端代码的逻辑归属
     backend/                  # 当前 GUI Web Backend / mock runtime 的逻辑归属
   cli/                        # 后续新增 CLI 前端，包含 as_config/as_control/as_play/as_record/as_log/as_dump
-  server/                     # 后续新增正式 as_server，包含 rpc/framework/drivers/platform
+  rpc/                        # 顶层 JSON-RPC codec/client/server/transport helper
+  drivers/                    # 顶层 driver interface、registry 与 host/platform 实现
+  server/                     # 后续新增正式 as_server，组合 framework、rpc、drivers、platform
   audio_controller/            # 后续新增 Audio Studio 对端 controller 参考实现，主要用 C 实现
   scripts/                    # 构建、Kconfig、CMake、toolchain、代码生成、打包脚本
   config/                     # 当前产品 JSON 示例目录，当前示例为 A2.json
@@ -60,7 +62,9 @@ Audio-Studio/backend/platform/...
 ```text
 正确：
 Audio-Studio/GUI/backend/              # GUI Web Backend，仅做页面托管、GUI REST 兼容、RPC 编排
-Audio-Studio/server/                   # 正式 as_server，承载 framework/drivers/platform/transport
+Audio-Studio/rpc/                      # 共享 JSON-RPC core、client/server transport
+Audio-Studio/drivers/                  # 共享 driver interface、registry、默认实现
+Audio-Studio/server/                   # 正式 as_server，承载 framework/platform，并链接 rpc/drivers
 Audio-Studio/cli/                      # 命令行前端
 Audio-Studio/audio_controller/          # Audio Controller peer 参考实现
 ```
@@ -106,7 +110,7 @@ GUI/backend/src/main.cpp
 2. 原 Audio-Studio/backend/ 已迁移为 GUI/backend/。
 3. GUI/backend/ 不承载正式 framework/drivers/platform，不作为 as_server 的实现目录。
 4. GUI/backend/ 继续保留当前 GUI REST API、页面托管、mock runtime 与 GUI session。
-5. 正式 as_server 新增到顶层 server/，负责 framework service、driver、platform、TransportManager。
+5. 正式 as_server 位于顶层 server/，负责 framework service、platform、TransportManager，并通过顶层 rpc/drivers 组合通信与硬件抽象。
 6. GUI/backend/ 只通过 JSON-RPC 调用 audio_studio_server，不链接、不编译、不拥有 server/framework。
 7. GUI/frontend/ 只增加轻量 JSON-RPC action executor、target registry、probe stream client 等适配代码。
 8. CLI 新增到顶层 cli/，通过 JSON-RPC 直接调用 audio_studio_server，不经过 GUI/backend/。
@@ -358,7 +362,7 @@ WebSocketJsonRpcTransport:
 建议源码位置：
 
 ```text
-Audio-Studio/server/rpc/
+Audio-Studio/rpc/
   http_jsonrpc_transport.hpp
   http_jsonrpc_transport.cpp
   websocket_jsonrpc_transport.hpp
@@ -371,16 +375,49 @@ Audio-Studio/server/rpc/
   rpc_method_allowlist.cpp
 ```
 
-这部分属于正式 `server/`，不是 `GUI/backend/`。
+这部分属于顶层 `rpc/`，由正式 `server/`、`cli/` 和 `GUI/backend/` 按 Kconfig 选择性链接，不属于 `GUI/backend/` 私有实现。
 
-当前已实现首批 host-alone RPC helper：
+当前已实现首批 RPC 基础设施：
 
 ```text
-server/rpc/include/audio_studio/rpc/json_rpc.hpp
-server/rpc/src/json_rpc.cpp
+rpc/Kconfig
+rpc/CMakeLists.txt
+rpc/include/audio_studio/rpc/json_value.hpp
+rpc/include/audio_studio/rpc/json_rpc.hpp
+rpc/include/audio_studio/rpc/audio_rpc.hpp
+rpc/include/audio_studio/rpc/rpc_framing.hpp
+rpc/include/audio_studio/rpc/rpc_socket_transport.hpp
+rpc/include/audio_studio/rpc/rpc_pipe_transport.hpp
+rpc/include/audio_studio/rpc/rpc_server.hpp
+rpc/src/json_value.cpp
+rpc/src/json_rpc.cpp
+rpc/src/audio_rpc.cpp
+rpc/src/rpc_framing.cpp
+rpc/src/rpc_socket_transport.cpp
+rpc/src/rpc_pipe_transport.cpp
+rpc/src/rpc_socket_server.cpp
+rpc/src/rpc_pipe_server.cpp
+rpc/src/rpc_server.cpp
 ```
 
-该阶段提供 JSON-RPC request method/id/params 提取，以及 result/error response 生成，用于后续 as_server dispatcher 和 CLI/GUI backend RPC transport 接入。
+该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。
+
+命令行统一格式：
+
+```bash
+as_server --rpc socket <host> <port> [--max-requests N]
+as_server --rpc pipe <request-fifo> <response-fifo> [--max-requests N]
+
+as_control --rpc socket --host <host> --port <port> --action get-health
+as_control --rpc pipe --request-pipe <request-fifo> --response-pipe <response-fifo> --action get-health
+```
+
+构建 profile 选择 transport：
+
+```text
+configs/profile/rpc_socket_defconfig -> CONFIG_RPC_TRANSPORT_SOCKET=y
+configs/profile/rpc_pipe_defconfig   -> CONFIG_RPC_TRANSPORT_PIPE=y
+```
 
 ### 2.4 Backend-Orchestrated RPC / Client RPC Action Delegation
 
@@ -772,14 +809,14 @@ GUI/backend 不需要保存原始音频数据。
 
 ### 2.9 as_log / as_dump / as_play / as_control 的影响
 
-`as_log / as_dump / as_play / as_control` 是 CLI JSON-RPC client，它们不走 GUI/backend，而是直接调用 Audio Studio Server：
+`as_log / as_dump / as_play / as_control` 是 CLI JSON-RPC client，它们不走 GUI/backend，而是直接调用 Audio Studio Server。当前第一阶段已支持 socket 与 pipe 两种控制面 transport，命令格式统一使用 `--rpc socket` 或 `--rpc pipe`：
 
 ```text
-as_log   -> POST /rpc or local RPC -> audio_studio_server
-as_dump  -> POST /rpc or local RPC -> audio_studio_server
-as_play  -> POST /rpc or local RPC -> audio_studio_server
-as_record-> POST /rpc or local RPC -> audio_studio_server
-as_control -> POST /rpc or local RPC -> audio_studio_server
+as_log    --rpc socket/pipe -> audio_studio_server
+as_dump   --rpc socket/pipe -> audio_studio_server
+as_play   --rpc socket/pipe -> audio_studio_server
+as_record --rpc socket/pipe -> audio_studio_server
+as_control --rpc socket/pipe -> audio_studio_server
 ```
 
 数据策略与 GUI 一致：
@@ -932,7 +969,9 @@ Audio-Studio/
 | `GUI/frontend/` | 已实现 HTML GUI，负责工程管理、pipeline UI、参数面板、probe/log 可视化 | HTML/CSS/JavaScript | 不直接包含平台驱动 |
 | `GUI/backend/` | GUI Web Backend / mock runtime / REST 兼容 / RPC 编排 | C++/可选 Node/Python | 不包含正式 platform driver |
 | `cli/` | 命令行前端，包含 `as_config/as_control/as_play/as_record/as_log/as_dump` | C++ | 不直接包含平台驱动 |
-| `server/` | 正式 as_server、RPC server、framework、drivers、platform adapter | C++ | `server/platform/*` 包含 |
+| `rpc/` | JSON-RPC codec、client helper、server helper、socket/pipe/http/ws transport adapter | C++ | 不包含平台特化 |
+| `drivers/` | Driver interface、singleton registry、默认 Linux host 实现、后续平台实现入口 | C++ | 可包含 platform/host driver implementation |
+| `server/` | 正式 as_server、framework、platform adapter，并链接 rpc/drivers | C++ | `server/platform/*` 包含 |
 | `audio_controller/` | Audio Studio 对端 controller 参考实现 | C | `audio_controller/platform/*` 包含 |
 | `scripts/` | Kconfig、build_all.sh、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
 | `config/` | 当前产品 JSON 示例，例如 A2.json | JSON | 可包含平台示例 |
@@ -945,7 +984,7 @@ Audio-Studio/
 
 ### 3.3 server 目标内部目录
 
-`server/` 是 Audio Studio 的核心 C++ 工程。其内部按 `rpc / framework / drivers / platform` 组织。Audio Studio 不设置正式 `client_sdk/` 架构层；CLI 和 GUI/backend 只使用各自目录下的轻量 JSON-RPC codec/transport helper。
+`server/` 是 Audio Studio 的核心运行时工程，负责 as_server main、framework service、platform adapter 和运行期组合。`rpc/` 与 `drivers/` 提升为顶层共享目录，便于 server、CLI、GUI/backend、测试目标按 Kconfig 链接同一套 JSON-RPC 与 driver abstraction。Audio Studio 不设置正式 `client_sdk/` 架构层；CLI 和 GUI/backend 只链接顶层 `rpc/` 中薄的 JSON-RPC codec/transport helper。
 
 ```text
 Audio-Studio/server/
@@ -957,27 +996,6 @@ Audio-Studio/server/
     as_server_main.cpp
     server_app.hpp
     server_app.cpp
-  rpc/
-    rpc_frame.hpp
-    rpc_frame.cpp
-    rpc_codec.hpp
-    rpc_codec.cpp
-    rpc_connection.hpp
-    rpc_connection.cpp
-    rpc_server.hpp
-    rpc_server.cpp
-    service_router.hpp
-    service_router.cpp
-    rpc_error.hpp
-    rpc_error.cpp
-    http_jsonrpc_transport.hpp
-    http_jsonrpc_transport.cpp
-    websocket_jsonrpc_transport.hpp
-    websocket_jsonrpc_transport.cpp
-    cors_policy.hpp
-    cors_policy.cpp
-    browser_access_policy.hpp
-    browser_access_policy.cpp
   framework/
     common/
     session/
@@ -991,21 +1009,27 @@ Audio-Studio/server/
     plugin/
     transport/
     protocol/
-  drivers/
-    os/
-    socket/
-    filesystem/
-    pipe/
-    dynlib/
-    transport/
-    audio/
-    control/
-    log/
-    dump/
   platform/
     a2/
     simulator/
     customer_x/
+```
+
+共享目录：
+
+```text
+Audio-Studio/rpc/
+  include/audio_studio/rpc/
+  src/
+  Kconfig
+  CMakeLists.txt
+
+Audio-Studio/drivers/
+  include/
+  src/
+  os/ socket/ filesystem/ pipe/ dynlib/ transport/ audio/ control/ log/ dump/
+  Kconfig
+  CMakeLists.txt
 ```
 
 ### 3.4 GUI/backend 不等于 server
@@ -1138,7 +1162,7 @@ cli/tools/as_log.cpp
 cli/tools/as_dump.cpp
 ```
 
-该阶段的 CLI 只支持 `--target dummy` 和 `--help`，通过 dummy driver 输出 JSON 结果，用于验证 build、参数解析、命令入口和后续 RPC 接入边界。`as_config` 暂不实现。
+该阶段 CLI 保留 `--target dummy` host-alone 模式，同时支持 `--rpc socket` 与 `--rpc pipe` 调用 as_server。`as_control --action get-health` 已作为首个端到端 RPC smoke command；`as_play` 可通过 `audio.createPlaybackSession` 建立首个音频 session，后续再补真实音频数据平面。`as_config` 暂不实现。
 
 CLI 不应包含：
 
@@ -1464,12 +1488,12 @@ server/framework/transport/src/transport_manager.cpp
 
 该阶段提供基础 frame encode/decode 和 logical channel 状态统计，用于先验证 TransportManager 的服务边界、构建开关和 CTest；不启动 TX/RX worker，不访问 socket/pipe/USB/PCIe，也不直接调用 OS API。真实 IO 必须通过后续 drivers/transport 与 drivers/os 接入。
 
-### 4.12 server/drivers
+### 4.12 顶层 drivers
 
 Driver 层同时提供 interface 和默认 implementation。每个默认实现均有 Kconfig 开关，platform 可以选择使用、禁用或替换。
 
 ```text
-Audio-Studio/server/drivers/
+Audio-Studio/drivers/
   include/
     driver_manager.hpp
   src/
@@ -1492,54 +1516,54 @@ Audio-Studio/server/drivers/
 当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择 `src/` 下的实现源文件。
 
 ```text
-server/drivers/include/driver_manager.hpp
-server/drivers/src/driver_manager.cpp
+drivers/include/driver_manager.hpp
+drivers/src/driver_manager.cpp
 
-server/drivers/os/include/os_driver.hpp
-server/drivers/os/src/linux_host_os_driver.hpp
-server/drivers/os/src/linux_host_os_driver.cpp
+drivers/os/include/os_driver.hpp
+drivers/os/src/linux_host_os_driver.hpp
+drivers/os/src/linux_host_os_driver.cpp
 
-server/drivers/socket/include/socket_driver.hpp
-server/drivers/socket/src/linux_host_socket_driver.hpp
-server/drivers/socket/src/linux_host_socket_driver.cpp
+drivers/socket/include/socket_driver.hpp
+drivers/socket/src/linux_host_socket_driver.hpp
+drivers/socket/src/linux_host_socket_driver.cpp
 
-server/drivers/filesystem/include/filesystem_driver.hpp
-server/drivers/filesystem/src/linux_host_filesystem_driver.hpp
-server/drivers/filesystem/src/linux_host_filesystem_driver.cpp
+drivers/filesystem/include/filesystem_driver.hpp
+drivers/filesystem/src/linux_host_filesystem_driver.hpp
+drivers/filesystem/src/linux_host_filesystem_driver.cpp
 
-server/drivers/pipe/include/pipe_driver.hpp
-server/drivers/pipe/src/linux_host_pipe_driver.hpp
-server/drivers/pipe/src/linux_host_pipe_driver.cpp
+drivers/pipe/include/pipe_driver.hpp
+drivers/pipe/src/linux_host_pipe_driver.hpp
+drivers/pipe/src/linux_host_pipe_driver.cpp
 
-server/drivers/dynlib/include/dynlib_driver.hpp
-server/drivers/dynlib/src/linux_host_dynlib_driver.hpp
-server/drivers/dynlib/src/linux_host_dynlib_driver.cpp
+drivers/dynlib/include/dynlib_driver.hpp
+drivers/dynlib/src/linux_host_dynlib_driver.hpp
+drivers/dynlib/src/linux_host_dynlib_driver.cpp
 
-server/drivers/transport/include/transport_driver.hpp
-server/drivers/transport/src/linux_host_transport_driver.hpp
-server/drivers/transport/src/linux_host_transport_driver.cpp
+drivers/transport/include/transport_driver.hpp
+drivers/transport/src/linux_host_transport_driver.hpp
+drivers/transport/src/linux_host_transport_driver.cpp
 
-server/drivers/audio/include/audio_device.hpp
-server/drivers/audio/src/linux_host_audio_device.hpp
-server/drivers/audio/src/linux_host_audio_device.cpp
+drivers/audio/include/audio_device.hpp
+drivers/audio/src/linux_host_audio_device.hpp
+drivers/audio/src/linux_host_audio_device.cpp
 
-server/drivers/control/include/control_device.hpp
-server/drivers/control/src/linux_host_control_device.hpp
-server/drivers/control/src/linux_host_control_device.cpp
+drivers/control/include/control_device.hpp
+drivers/control/src/linux_host_control_device.hpp
+drivers/control/src/linux_host_control_device.cpp
 
-server/drivers/log/include/log_device.hpp
-server/drivers/log/src/linux_host_log_device.hpp
-server/drivers/log/src/linux_host_log_device.cpp
+drivers/log/include/log_device.hpp
+drivers/log/src/linux_host_log_device.hpp
+drivers/log/src/linux_host_log_device.cpp
 
-server/drivers/dump/include/dump_device.hpp
-server/drivers/dump/src/linux_host_dump_device.hpp
-server/drivers/dump/src/linux_host_dump_device.cpp
+drivers/dump/include/dump_device.hpp
+drivers/dump/src/linux_host_dump_device.hpp
+drivers/dump/src/linux_host_dump_device.cpp
 
-server/drivers/dummy/include/dummy_driver.hpp
-server/drivers/dummy/src/dummy_driver.cpp
+drivers/dummy/include/dummy_driver.hpp
+drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`server/drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `server/drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
 
 ### 4.13 server/platform
 
@@ -2089,7 +2113,7 @@ cli/as_control
   -> cli/common/json_rpc_client
   -> JSON-RPC control.*
   -> server/framework/control/ControlService
-  -> server/drivers/control/include/IControlDevice
+  -> drivers/control/include/IControlDevice
   -> selected control device implementation
 ```
 
@@ -2208,11 +2232,19 @@ Audio-Studio/GUI/backend:
 
 Audio-Studio/cli:
   构建 as_config/as_control/as_play/as_record/as_log/as_dump。
-  当前阶段先实现 as_control/as_play/as_record/as_log/as_dump 的 host-alone dummy CLI；
+  当前阶段支持 host-alone dummy CLI 和 --rpc socket/pipe 两种 as_server RPC 调用；
   as_config 按当前任务边界暂不实现。
 
+Audio-Studio/rpc:
+  构建 JSON-RPC core、audio RPC method binding、client transport、server transport。
+  CONFIG_RPC_CLIENT 与 CONFIG_RPC_SERVER 分开控制；CONFIG_RPC_TRANSPORT_SOCKET/PIPE 由 profile 决定。
+
+Audio-Studio/drivers:
+  构建 DriverManager、driver interface registry、Linux host socket/pipe/os/filesystem/dynlib/audio/control/log/dump 等默认实现。
+  每个模块自己的 CMakeLists.txt 和 Kconfig 由顶层 drivers/CMakeLists.txt、drivers/Kconfig 递归接入。
+
 Audio-Studio/server:
-  构建 as_server、framework 静态库/动态库、driver implementation、platform backend。
+  构建 as_server、framework 静态库/动态库、platform backend，并按 profile 链接 rpc/drivers。
 
 Audio-Studio/audio_controller:
   构建 simulator audio_controller 或 A2 侧可移植 controller reference。
@@ -2646,15 +2678,15 @@ GUI/Kconfig
 tests/Kconfig
 server/Kconfig
 server/framework/Kconfig
-server/drivers/Kconfig
-server/drivers/<module>/Kconfig
+drivers/Kconfig
+drivers/<module>/Kconfig
 server/platform/Kconfig
 server/platform/a2/Kconfig
 server/tests/Kconfig
 cli/Kconfig
 ```
 
-模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `server/drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
+模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
 
 #### 4.3 build_all.sh 是推荐唯一入口
 
@@ -4395,8 +4427,8 @@ public:
 当前实现落地为：
 
 ```text
-server/drivers/include/driver_manager.hpp
-server/drivers/src/driver_manager.cpp
+drivers/include/driver_manager.hpp
+drivers/src/driver_manager.cpp
 ```
 
 职责边界：
@@ -4449,19 +4481,19 @@ public:
 以 audio Linux host 实现为例：
 
 ```text
-server/drivers/audio/include/audio_device.hpp
+drivers/audio/include/audio_device.hpp
   - 定义 IAudioPlaybackDevice / IAudioCaptureDevice
   - 定义 IAudioPlaybackDeviceFactory / IAudioCaptureDeviceFactory
   - 定义 AudioDeviceRegistry::instance()
 
-server/drivers/audio/src/linux_host_audio_device.hpp
+drivers/audio/src/linux_host_audio_device.hpp
   - 只声明 LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice 实现类
 
-server/drivers/audio/src/linux_host_audio_device.cpp
+drivers/audio/src/linux_host_audio_device.cpp
   - 在匿名 namespace 中定义 LinuxHostAudioPlaybackDeviceFactory / LinuxHostAudioCaptureDeviceFactory
   - 用静态 registrar 注册到 AudioDeviceRegistry::instance()
 
-server/drivers/audio/CMakeLists.txt
+drivers/audio/CMakeLists.txt
   - 根据 CONFIG_DRIVER_AUDIO_LINUX_HOST 选择 src/linux_host_audio_device.cpp
   - 构建 audio_studio_driver_audio OBJECT target
 ```
@@ -4494,7 +4526,7 @@ const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
    CONFIG_DRIVER_AUDIO=y
    CONFIG_DRIVER_AUDIO_LINUX_HOST=y
 
-2. server/drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
+2. drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
 
 3. 最终 executable 直接链接 audio_studio_driver_audio OBJECT target。
    这样对象文件一定进入最终链接，静态 registrar 不会被 static archive 丢弃。

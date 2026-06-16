@@ -22,5 +22,6 @@ std::string jsonEscape(const std::string& input);
 std::string okJson(const std::string& tool, const std::string& detail);
 std::string usageText(const std::string& tool, const std::string& action);
 int runDummyTool(const std::string& tool, const std::string& action, const Args& args);
+int runCliTool(const std::string& tool, const std::string& action, const Args& args);
 
 } // namespace audio_studio::cli

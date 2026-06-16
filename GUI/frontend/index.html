@@ -3683,6 +3683,16 @@
     const AUDIO_STUDIO_RUNNING_RT_PROBE_POLL_MS = 200;
 
     const API_SESSION_ID = 'standalone_html_demo';
+    let audioStudioJsonRpcNextId = 1;
+    async function jsonRpcCall(method, params = {}, endpoint = '/rpc') {
+      const request = { jsonrpc: '2.0', id: audioStudioJsonRpcNextId++, method, params };
+      const response = await apiPost(endpoint, request);
+      if (!response) throw new Error('JSON-RPC request failed: ' + method);
+      if (response.error) throw new Error(response.error.message || 'JSON-RPC error');
+      return response.result;
+    }
+    window.AudioStudioJsonRpc = { call: jsonRpcCall };
+
     async function apiPost(path, body = {}) {
       console.info('[AudioStudio Frontend -> Backend]', path, body);
       try {

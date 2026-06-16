@@ -1,0 +1,67 @@
+#include "audio_studio/rpc/rpc_server.hpp"
+
+#include <memory>
+
+#include "audio_studio/rpc/rpc_framing.hpp"
+#include "socket_driver.hpp"
+
+namespace audio_studio::rpc {
+namespace {
+
+void writeAll(drivers::socket::ISocket& socket, const uint8_t* data, size_t size, uint32_t timeout_ms) {
+  size_t offset = 0;
+  while (offset < size) {
+    size_t sent = 0;
+    auto status = socket.send(data + offset, size - offset, sent, timeout_ms);
+    if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+    if (sent == 0) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "socket server send made no progress");
+    offset += sent;
+  }
+}
+
+char readByte(drivers::socket::ISocket& socket, uint32_t timeout_ms) {
+  uint8_t byte = 0;
+  size_t received = 0;
+  auto status = socket.recv(&byte, 1, received, timeout_ms);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+  if (received != 1) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "socket server recv made no progress");
+  return static_cast<char>(byte);
+}
+
+} // namespace
+
+RpcSocketServer::RpcSocketServer(drivers::socket::ISocketDriver& driver, JsonRpcEndpoint& endpoint)
+  : driver_(driver), endpoint_(endpoint) {}
+
+void RpcSocketServer::serve(const std::string& host, uint16_t port, RpcServerLimits limits) {
+  auto server = driver_.createSocket(drivers::socket::SocketType::Tcp);
+  if (!server) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "failed to create socket RPC server");
+  auto status = server->open({drivers::socket::SocketType::Tcp});
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+  status = server->bind({host, port});
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+  status = server->listen(8);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+
+  size_t handled = 0;
+  while (limits.max_requests == 0 || handled < limits.max_requests) {
+    std::unique_ptr<drivers::socket::ISocket> client;
+    status = server->accept(client, limits.timeout_ms);
+    if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+    if (!client) continue;
+
+    const std::string request = readContentLengthFrame([&] { return readByte(*client, limits.timeout_ms); });
+    const std::string response = endpoint_.handleRequest(request);
+    if (!response.empty()) {
+      writeContentLengthFrame([&](const uint8_t* data, size_t size) {
+        writeAll(*client, data, size, limits.timeout_ms);
+      }, response);
+    }
+    client->shutdown();
+    client->close();
+    ++handled;
+  }
+  server->close();
+}
+
+} // namespace audio_studio::rpc

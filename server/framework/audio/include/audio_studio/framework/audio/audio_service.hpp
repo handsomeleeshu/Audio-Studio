@@ -18,14 +18,18 @@ struct AudioStream {
   StreamDirection direction = StreamDirection::kPlayback;
   int sample_rate = 48000;
   int channels = 2;
+  int bytes_per_sample = 2;
+  bool prepared = false;
   bool running = false;
 };
 
 class AudioService {
 public:
   framework::Status create(AudioStream stream);
+  framework::Status prepare(const std::string& id);
   framework::Status start(const std::string& id);
   framework::Status stop(const std::string& id);
+  framework::Status remove(const std::string& id);
   framework::Status get(const std::string& id, AudioStream& out) const;
   std::vector<AudioStream> list() const;
 
