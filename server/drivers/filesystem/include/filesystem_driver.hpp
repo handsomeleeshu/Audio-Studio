@@ -67,6 +67,11 @@ public:
 
 class FileSystemDriverRegistry {
 public:
+  static FileSystemDriverRegistry& instance() {
+    static FileSystemDriverRegistry registry;
+    return registry;
+  }
+
   DriverResult registerFactory(std::unique_ptr<IFileSystemDriverFactory> factory) {
     if (!factory) return DriverResult::invalidArgument("filesystem driver factory is null");
     const auto factory_name = factory->name();

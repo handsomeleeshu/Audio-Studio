@@ -37,15 +37,4 @@ private:
   std::map<std::string, void*> symbols_;
 };
 
-class LinuxHostDynlibDriverFactory final : public IDynlibDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IDynlibDriver> create() const override {
-    static int default_symbol = 42;
-    auto driver = std::make_unique<LinuxHostDynlibDriver>();
-    driver->registerTestSymbol("studio_create_plugin", &default_symbol);
-    return driver;
-  }
-};
-
 } // namespace audio_studio::drivers::dynlib

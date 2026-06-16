@@ -1,0 +1,8 @@
+menu "CLI"
+
+config CLI
+  bool "Build CLI tools"
+  default n
+  depends on SERVER
+
+endmenu

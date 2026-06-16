@@ -4,6 +4,27 @@
 
 namespace audio_studio::drivers::dynlib {
 
+namespace {
+
+class LinuxHostDynlibDriverFactory final : public IDynlibDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IDynlibDriver> create() const override {
+    static int default_symbol = 42;
+    auto driver = std::make_unique<LinuxHostDynlibDriver>();
+    driver->registerTestSymbol("studio_create_plugin", &default_symbol);
+    return driver;
+  }
+};
+
+const bool kLinuxHostDynlibDriverRegistered = [] {
+  auto status = DynlibDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostDynlibDriverFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 LinuxHostDynlib::LinuxHostDynlib(LinuxHostDynlibDriver& driver) : driver_(driver) {}
 
 DriverResult LinuxHostDynlib::open(const std::string& path, const DynlibOpenOptions& /*options*/) {

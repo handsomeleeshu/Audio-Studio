@@ -25,14 +25,4 @@ private:
   std::vector<LogRawChunk> chunks_;
 };
 
-class LinuxHostLogDeviceFactory final : public ILogDeviceFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<ILogDevice> create(const LogDeviceConfig& config) const override {
-    auto device = std::make_unique<LinuxHostLogDevice>();
-    if (!device->open(config).ok()) return nullptr;
-    return device;
-  }
-};
-
 } // namespace audio_studio::drivers::log

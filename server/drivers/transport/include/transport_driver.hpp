@@ -47,6 +47,11 @@ public:
 
 class TransportDriverRegistry {
 public:
+  static TransportDriverRegistry& instance() {
+    static TransportDriverRegistry registry;
+    return registry;
+  }
+
   TransportResult registerFactory(std::unique_ptr<ITransportDriverFactory> factory) {
     if (!factory) return TransportResult::invalidArgument("transport driver factory is null");
     const auto factory_name = factory->name();

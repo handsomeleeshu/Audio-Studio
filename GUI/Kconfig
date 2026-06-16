@@ -1,0 +1,7 @@
+menu "GUI"
+
+config GUI_BACKEND
+  bool "Build GUI backend"
+  default y
+
+endmenu

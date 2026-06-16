@@ -120,6 +120,11 @@ public:
 
 class OsDriverRegistry {
 public:
+  static OsDriverRegistry& instance() {
+    static OsDriverRegistry registry;
+    return registry;
+  }
+
   OsResult registerFactory(std::unique_ptr<IOsDriverFactory> factory) {
     if (!factory) return OsResult::invalidArgument("OS driver factory is null");
     const auto factory_name = factory->name();

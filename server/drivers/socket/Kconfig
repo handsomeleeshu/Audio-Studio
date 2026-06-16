@@ -1,0 +1,13 @@
+menu "Socket Driver"
+
+config DRIVER_SOCKET
+  bool "Build socket driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_SOCKET_LINUX_HOST
+  bool "Build Linux host socket driver implementation"
+  default n
+  depends on DRIVER_SOCKET
+
+endmenu

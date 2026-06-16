@@ -1,0 +1,13 @@
+menu "Log Driver"
+
+config DRIVER_LOG
+  bool "Build log driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_LOG_LINUX_HOST
+  bool "Build Linux host log driver implementation"
+  default n
+  depends on DRIVER_LOG
+
+endmenu

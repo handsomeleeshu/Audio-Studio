@@ -4,6 +4,26 @@
 
 namespace audio_studio::drivers::control {
 
+namespace {
+
+class LinuxHostControlDeviceFactory final : public IControlDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IControlDevice> create(const ControlDeviceConfig& config) const override {
+    auto device = std::make_unique<LinuxHostControlDevice>();
+    if (!device->open(config).ok()) return nullptr;
+    return device;
+  }
+};
+
+const bool kLinuxHostControlDeviceRegistered = [] {
+  auto status = ControlDeviceRegistry::instance().registerFactory(std::make_unique<LinuxHostControlDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 ControlResult LinuxHostControlDevice::open(const ControlDeviceConfig& config) {
   if (config.profile.empty()) return ControlResult::invalidArgument("control profile is empty");
   config_ = config;

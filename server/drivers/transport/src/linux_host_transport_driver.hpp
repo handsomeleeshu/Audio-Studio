@@ -28,14 +28,4 @@ private:
   std::vector<uint8_t> rx_buffer_;
 };
 
-class LinuxHostTransportDriverFactory final : public ITransportDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<ITransportDriver> create(const TransportConfig& config) const override {
-    auto driver = std::make_unique<LinuxHostTransportDriver>();
-    if (!driver->open(config).ok()) return nullptr;
-    return driver;
-  }
-};
-
 } // namespace audio_studio::drivers::transport

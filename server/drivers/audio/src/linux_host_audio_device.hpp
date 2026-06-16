@@ -50,24 +50,4 @@ private:
   std::vector<AudioFrame> capture_frames_;
 };
 
-class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override {
-    auto device = std::make_unique<LinuxHostAudioPlaybackDevice>();
-    if (!device->open(params).ok()) return nullptr;
-    return device;
-  }
-};
-
-class LinuxHostAudioCaptureDeviceFactory final : public IAudioCaptureDeviceFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IAudioCaptureDevice> create(const AudioOpenParams& params) const override {
-    auto device = std::make_unique<LinuxHostAudioCaptureDevice>();
-    if (!device->open(params).ok()) return nullptr;
-    return device;
-  }
-};
-
 } // namespace audio_studio::drivers::audio

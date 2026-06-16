@@ -53,10 +53,4 @@ private:
   std::set<std::string> directories_;
 };
 
-class LinuxHostFileSystemDriverFactory final : public IFileSystemDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IFileSystemDriver> create() const override { return std::make_unique<LinuxHostFileSystemDriver>(); }
-};
-
 } // namespace audio_studio::drivers::filesystem

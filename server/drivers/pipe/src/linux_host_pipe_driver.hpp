@@ -44,10 +44,4 @@ private:
   std::map<std::string, PipeState> pipes_;
 };
 
-class LinuxHostPipeDriverFactory final : public IPipeDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IPipeDriver> create() const override { return std::make_unique<LinuxHostPipeDriver>(); }
-};
-
 } // namespace audio_studio::drivers::pipe

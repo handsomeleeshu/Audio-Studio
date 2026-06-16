@@ -5,6 +5,26 @@
 
 namespace audio_studio::drivers::transport {
 
+namespace {
+
+class LinuxHostTransportDriverFactory final : public ITransportDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<ITransportDriver> create(const TransportConfig& config) const override {
+    auto driver = std::make_unique<LinuxHostTransportDriver>();
+    if (!driver->open(config).ok()) return nullptr;
+    return driver;
+  }
+};
+
+const bool kLinuxHostTransportDriverRegistered = [] {
+  auto status = TransportDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostTransportDriverFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 TransportResult LinuxHostTransportDriver::open(const TransportConfig& config) {
   if (config.name.empty()) return TransportResult::invalidArgument("transport name is empty");
   name_ = config.name;

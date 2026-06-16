@@ -45,10 +45,4 @@ private:
   bool initialized_ = false;
 };
 
-class LinuxHostSocketDriverFactory final : public ISocketDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<ISocketDriver> create() const override { return std::make_unique<LinuxHostSocketDriver>(); }
-};
-
 } // namespace audio_studio::drivers::socket

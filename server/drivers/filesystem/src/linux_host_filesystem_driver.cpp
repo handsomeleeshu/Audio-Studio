@@ -6,6 +6,22 @@
 
 namespace audio_studio::drivers::filesystem {
 
+namespace {
+
+class LinuxHostFileSystemDriverFactory final : public IFileSystemDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IFileSystemDriver> create() const override { return std::make_unique<LinuxHostFileSystemDriver>(); }
+};
+
+const bool kLinuxHostFileSystemDriverRegistered = [] {
+  auto status = FileSystemDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostFileSystemDriverFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 LinuxHostFile::LinuxHostFile(LinuxHostFileSystemDriver& driver) : driver_(driver) {}
 
 DriverResult LinuxHostFile::open(const std::string& path, const FileOpenOptions& options) {

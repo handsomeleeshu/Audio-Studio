@@ -4,6 +4,26 @@
 
 namespace audio_studio::drivers::log {
 
+namespace {
+
+class LinuxHostLogDeviceFactory final : public ILogDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<ILogDevice> create(const LogDeviceConfig& config) const override {
+    auto device = std::make_unique<LinuxHostLogDevice>();
+    if (!device->open(config).ok()) return nullptr;
+    return device;
+  }
+};
+
+const bool kLinuxHostLogDeviceRegistered = [] {
+  auto status = LogDeviceRegistry::instance().registerFactory(std::make_unique<LinuxHostLogDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 LogResult LinuxHostLogDevice::open(const LogDeviceConfig& config) {
   if (config.source.empty()) return LogResult::invalidArgument("log source is empty");
   config_ = config;

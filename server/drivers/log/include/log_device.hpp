@@ -51,6 +51,11 @@ public:
 
 class LogDeviceRegistry {
 public:
+  static LogDeviceRegistry& instance() {
+    static LogDeviceRegistry registry;
+    return registry;
+  }
+
   LogResult registerFactory(std::unique_ptr<ILogDeviceFactory> factory) {
     if (!factory) return LogResult::invalidArgument("log device factory is null");
     const auto factory_name = factory->name();

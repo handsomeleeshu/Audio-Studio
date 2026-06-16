@@ -1489,7 +1489,7 @@ Audio-Studio/server/drivers/
 
 后续 driver 子目录详见本文 Driver 章节。
 
-当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/src/` 都有自己的 `CMakeLists.txt`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择实现源文件。
+当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择 `src/` 下的实现源文件。
 
 ```text
 server/drivers/include/driver_manager.hpp
@@ -1539,7 +1539,7 @@ server/drivers/dummy/include/dummy_driver.hpp
 server/drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`server/drivers/CMakeLists.txt` 先进入各模块 `src/CMakeLists.txt` 构建被 Kconfig 选中的 implementation target，最后进入 `server/drivers/src` 构建 `DriverManager` 并链接已启用的 driver target。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`server/drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `server/drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
 
 ### 4.13 server/platform
 
@@ -2633,12 +2633,28 @@ Kconfig -> defconfig -> generated/.config -> generated/include/autoconfig.h -> C
 当前生成文件：
 
 ```text
-out/<os>/<platform>/<build-type>/generated/.config
-out/<os>/<platform>/<build-type>/generated/include/autoconfig.h
-out/<os>/<platform>/<build-type>/CMakeCache.txt
+out/<os>/<platform>/<profile>/<build-type>/generated/.config
+out/<os>/<platform>/<profile>/<build-type>/generated/include/autoconfig.h
+out/<os>/<platform>/<profile>/<build-type>/CMakeCache.txt
 ```
 
-当前 CONFIG 依赖关系以 target platform choice 和模块开关为核心，Kconfig choice 保证同一组 platform choice 中只有一个 `CONFIG_TARGET_PLATFORM_*` 为 `y`。模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，后续 `CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
+当前 CONFIG 依赖关系以 target platform choice 和模块开关为核心，Kconfig choice 保证同一组 platform choice 中只有一个 `CONFIG_TARGET_PLATFORM_*` 为 `y`。Kconfig tree 采用 SOF 风格的 source 分层，根 `Kconfig` 只保留顶层入口并 source 子目录：
+
+```text
+Kconfig
+GUI/Kconfig
+tests/Kconfig
+server/Kconfig
+server/framework/Kconfig
+server/drivers/Kconfig
+server/drivers/<module>/Kconfig
+server/platform/Kconfig
+server/platform/a2/Kconfig
+server/tests/Kconfig
+cli/Kconfig
+```
+
+模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `server/drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
 
 #### 4.3 build_all.sh 是推荐唯一入口
 
@@ -4384,12 +4400,12 @@ server/drivers/src/driver_manager.cpp
 职责边界：
 
 1. `DriverManager` 是 framework 使用 driver 的唯一装配入口。framework/service 层不 include `linux_host_*`、A2 物理驱动或其他 implementation header。
-2. 每个 driver 模块在自己的 public interface 头里定义 `I*Factory` 和 `*Registry`，例如 `SocketDriverRegistry`、`AudioDeviceRegistry`、`ControlDeviceRegistry`。Registry 拥有 factory，按 factory name 创建 interface 对象。
-3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class 与 factory，例如 `LinuxHostSocketDriverFactory`。这些头只供模块实现和 `DriverManager` 装配层 include。
-4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`。`initialize()` 根据 `autoconfig.h` 中的 `CONFIG_DRIVER_*_LINUX_HOST` 注册默认 factory，再为 OS/socket/filesystem/pipe/dynlib 这类全局 driver 创建 singleton service。
+2. 每个 driver 模块在自己的 public interface 头里定义 `I*Factory` 和 `*Registry`，例如 `SocketDriverRegistry`、`AudioDeviceRegistry`、`ControlDeviceRegistry`。Registry 是 singleton，拥有 factory，按 factory name 创建 interface 对象。
+3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、A2 物理驱动或 customer implementation header。
+4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`。`initialize()` 只从各模块 singleton Registry 收集已注册 factory metadata，再为 OS/socket/filesystem/pipe/dynlib 这类全局 driver 创建 singleton service。
 5. transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。
-6. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。内置 factory 注册时先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
-7. `shutdown()` 负责关闭 socket driver、释放 singleton service、清空各 Registry 与元数据表，保证下一次测试或进程内重初始化从干净状态开始。
+6. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
+7. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
 
 当前 Registry API 模式：
 
@@ -4402,6 +4418,7 @@ public:
 
 class SocketDriverRegistry {
 public:
+    static SocketDriverRegistry& instance();
     DriverResult registerFactory(std::unique_ptr<ISocketDriverFactory> factory);
     bool hasFactory(const std::string& name) const;
     std::unique_ptr<ISocketDriver> create(const std::string& name) const;

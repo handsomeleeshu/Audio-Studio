@@ -6,6 +6,22 @@
 
 namespace audio_studio::drivers::socket {
 
+namespace {
+
+class LinuxHostSocketDriverFactory final : public ISocketDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<ISocketDriver> create() const override { return std::make_unique<LinuxHostSocketDriver>(); }
+};
+
+const bool kLinuxHostSocketDriverRegistered = [] {
+  auto status = SocketDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostSocketDriverFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 LinuxHostSocket::LinuxHostSocket(SocketType type) : type_(type) {}
 
 DriverResult LinuxHostSocket::open(const SocketConfig& config) {

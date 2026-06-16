@@ -1,0 +1,13 @@
+menu "Audio Driver"
+
+config DRIVER_AUDIO
+  bool "Build audio driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_AUDIO_LINUX_HOST
+  bool "Build Linux host audio driver implementation"
+  default n
+  depends on DRIVER_AUDIO
+
+endmenu

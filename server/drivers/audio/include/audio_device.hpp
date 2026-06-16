@@ -83,6 +83,11 @@ public:
 
 class AudioDeviceRegistry {
 public:
+  static AudioDeviceRegistry& instance() {
+    static AudioDeviceRegistry registry;
+    return registry;
+  }
+
   AudioResult registerPlaybackFactory(std::unique_ptr<IAudioPlaybackDeviceFactory> factory) {
     if (!factory) return AudioResult::invalidArgument("audio playback factory is null");
     const auto factory_name = factory->name();

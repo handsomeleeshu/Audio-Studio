@@ -1,0 +1,13 @@
+menu "OS Driver"
+
+config DRIVER_OS
+  bool "Build OS driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_OS_LINUX_HOST
+  bool "Build Linux host OS driver implementation"
+  default n
+  depends on DRIVER_OS
+
+endmenu

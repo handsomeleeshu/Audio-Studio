@@ -45,6 +45,11 @@ public:
 
 class DynlibDriverRegistry {
 public:
+  static DynlibDriverRegistry& instance() {
+    static DynlibDriverRegistry registry;
+    return registry;
+  }
+
   DriverResult registerFactory(std::unique_ptr<IDynlibDriverFactory> factory) {
     if (!factory) return DriverResult::invalidArgument("dynamic library driver factory is null");
     const auto factory_name = factory->name();

@@ -1,0 +1,42 @@
+menu "Framework"
+
+config FRAMEWORK_COMMON
+  bool "Build common framework library"
+  default n
+
+config FRAMEWORK_SESSION
+  bool "Build session framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_CONTROL
+  bool "Build control framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_AUDIO
+  bool "Build audio framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_LOG
+  bool "Build log framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_DUMP
+  bool "Build dump framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_PLUGIN
+  bool "Build plugin framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+config FRAMEWORK_TRANSPORT
+  bool "Build transport framework library"
+  default n
+  depends on FRAMEWORK_COMMON
+
+endmenu

@@ -1,0 +1,7 @@
+menu "Tests"
+
+config BUILD_TESTS
+  bool "Build unit tests"
+  default y
+
+endmenu

@@ -10,6 +10,18 @@ namespace audio_studio::drivers::os {
 
 namespace {
 
+class LinuxHostOsDriverFactory final : public IOsDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IOsDriver> create() const override { return std::make_unique<LinuxHostOsDriver>(); }
+};
+
+const bool kLinuxHostOsDriverRegistered = [] {
+  auto status = OsDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostOsDriverFactory>());
+  (void)status;
+  return true;
+}();
+
 class LinuxHostThread final : public IOsThread {
 public:
   ~LinuxHostThread() override {

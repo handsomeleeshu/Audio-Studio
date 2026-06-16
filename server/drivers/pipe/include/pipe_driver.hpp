@@ -60,6 +60,11 @@ public:
 
 class PipeDriverRegistry {
 public:
+  static PipeDriverRegistry& instance() {
+    static PipeDriverRegistry registry;
+    return registry;
+  }
+
   DriverResult registerFactory(std::unique_ptr<IPipeDriverFactory> factory) {
     if (!factory) return DriverResult::invalidArgument("pipe driver factory is null");
     const auto factory_name = factory->name();

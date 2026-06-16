@@ -27,7 +27,6 @@ struct DriverInfo {
 };
 
 struct DriverManagerConfig {
-  bool install_linux_host_defaults = true;
   std::string os_factory = "linux-host";
   std::string socket_factory = "linux-host";
   std::string filesystem_factory = "linux-host";
@@ -77,26 +76,16 @@ public:
 private:
   static std::string key(const std::string& category, const std::string& name);
 
-  framework::Status installDefaultFactories();
+  framework::Status collectRegisteredFactories();
   framework::Status createDefaultServices();
   framework::Status rememberDefaultDriver(std::string category, std::string name, std::string detail);
+  framework::Status rememberFactoryNames(const std::string& category, const std::vector<std::string>& names, const std::string& detail);
   framework::Status activateDriver(std::string category, std::string name, std::string detail);
   framework::Status requireFactory(bool present, const std::string& category, const std::string& name) const;
 
   bool initialized_ = false;
   DriverManagerConfig config_;
   std::map<std::string, DriverInfo> drivers_;
-
-  os::OsDriverRegistry os_registry_;
-  socket::SocketDriverRegistry socket_registry_;
-  filesystem::FileSystemDriverRegistry filesystem_registry_;
-  pipe::PipeDriverRegistry pipe_registry_;
-  dynlib::DynlibDriverRegistry dynlib_registry_;
-  transport::TransportDriverRegistry transport_registry_;
-  audio::AudioDeviceRegistry audio_registry_;
-  control::ControlDeviceRegistry control_registry_;
-  log::LogDeviceRegistry log_registry_;
-  dump::DumpDeviceRegistry dump_registry_;
 
   std::unique_ptr<os::IOsDriver> os_driver_;
   std::unique_ptr<socket::ISocketDriver> socket_driver_;

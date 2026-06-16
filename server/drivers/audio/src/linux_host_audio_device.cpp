@@ -6,6 +6,38 @@ namespace audio_studio::drivers::audio {
 
 namespace {
 
+class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override {
+    auto device = std::make_unique<LinuxHostAudioPlaybackDevice>();
+    if (!device->open(params).ok()) return nullptr;
+    return device;
+  }
+};
+
+class LinuxHostAudioCaptureDeviceFactory final : public IAudioCaptureDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IAudioCaptureDevice> create(const AudioOpenParams& params) const override {
+    auto device = std::make_unique<LinuxHostAudioCaptureDevice>();
+    if (!device->open(params).ok()) return nullptr;
+    return device;
+  }
+};
+
+const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
+  auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(std::make_unique<LinuxHostAudioPlaybackDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
+const bool kLinuxHostAudioCaptureDeviceRegistered = [] {
+  auto status = AudioDeviceRegistry::instance().registerCaptureFactory(std::make_unique<LinuxHostAudioCaptureDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
 AudioResult validateParams(const AudioStreamParams& params) {
   if (params.sample_rate == 0) return AudioResult::invalidArgument("audio sample rate is zero");
   if (params.channels == 0) return AudioResult::invalidArgument("audio channels is zero");

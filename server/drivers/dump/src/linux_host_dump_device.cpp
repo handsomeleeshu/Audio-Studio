@@ -5,6 +5,26 @@
 
 namespace audio_studio::drivers::dump {
 
+namespace {
+
+class LinuxHostDumpDeviceFactory final : public IDumpDeviceFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IDumpDevice> create(const DumpDeviceConfig& config) const override {
+    auto device = std::make_unique<LinuxHostDumpDevice>();
+    if (!device->open(config).ok()) return nullptr;
+    return device;
+  }
+};
+
+const bool kLinuxHostDumpDeviceRegistered = [] {
+  auto status = DumpDeviceRegistry::instance().registerFactory(std::make_unique<LinuxHostDumpDeviceFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 DumpResult LinuxHostDumpDevice::open(const DumpDeviceConfig& config) {
   if (config.device.empty()) return DumpResult::invalidArgument("dump device is empty");
   device_config_ = config;

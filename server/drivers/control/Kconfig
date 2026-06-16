@@ -1,0 +1,13 @@
+menu "Control Driver"
+
+config DRIVER_CONTROL
+  bool "Build control driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_CONTROL_LINUX_HOST
+  bool "Build Linux host control driver implementation"
+  default n
+  depends on DRIVER_CONTROL
+
+endmenu

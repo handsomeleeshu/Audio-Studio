@@ -1,0 +1,13 @@
+menu "Pipe Driver"
+
+config DRIVER_PIPE
+  bool "Build pipe driver interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_PIPE_LINUX_HOST
+  bool "Build Linux host pipe driver implementation"
+  default n
+  depends on DRIVER_PIPE
+
+endmenu

@@ -98,6 +98,11 @@ public:
 
 class ControlDeviceRegistry {
 public:
+  static ControlDeviceRegistry& instance() {
+    static ControlDeviceRegistry registry;
+    return registry;
+  }
+
   ControlResult registerFactory(std::unique_ptr<IControlDeviceFactory> factory) {
     if (!factory) return ControlResult::invalidArgument("control device factory is null");
     const auto factory_name = factory->name();

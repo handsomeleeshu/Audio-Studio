@@ -40,12 +40,14 @@ python3 tests/build-system.test.py
 
 - `scripts/build_all.sh` shell 入口用 OS 选择 toolchain，用 platform 选择 defconfig。
 - SOF-style `scripts/kconfig` 生成 `generated/.config` 与 `generated/include/autoconfig.h`。
+- Root `Kconfig` 通过 `source` 延伸到 `GUI/`、`server/`、`server/drivers/<module>/`、`server/platform/`、`cli/`、`tests/` 等子目录。
+- Driver CMake 和 Kconfig 一样以模块目录为入口，例如 `server/drivers/audio/CMakeLists.txt` 与 `server/drivers/audio/Kconfig`；`src/` 目录只放实现源码。
 - Kconfig non-interactive targets：`olddefconfig`、`savedefconfig`、`alldefconfig`、`overrideconfig`、`*_defconfig`、`genconfig`。
 - `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
 - Linux/GCC host `as_server` 最小程序 CMake configure/build。
 - `as_server --version` 与 `as_server --health` 输出 tool OS 和 target platform。
 - `--profile driver_interface_tests` 构建全部 Linux host driver 测试实现，并运行 `driver_interface_tests` CTest。
-- `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
+- `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver singleton Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
 - Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/as_server_minimal/Debug/as_server.exe`。
 
 ### Server Host-Alone Tests

@@ -31,14 +31,4 @@ private:
   std::vector<DumpRawPacket> packets_;
 };
 
-class LinuxHostDumpDeviceFactory final : public IDumpDeviceFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IDumpDevice> create(const DumpDeviceConfig& config) const override {
-    auto device = std::make_unique<LinuxHostDumpDevice>();
-    if (!device->open(config).ok()) return nullptr;
-    return device;
-  }
-};
-
 } // namespace audio_studio::drivers::dump

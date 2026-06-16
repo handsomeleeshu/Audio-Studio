@@ -25,14 +25,4 @@ private:
   std::map<ControlId, ControlValue> values_;
 };
 
-class LinuxHostControlDeviceFactory final : public IControlDeviceFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IControlDevice> create(const ControlDeviceConfig& config) const override {
-    auto device = std::make_unique<LinuxHostControlDevice>();
-    if (!device->open(config).ok()) return nullptr;
-    return device;
-  }
-};
-
 } // namespace audio_studio::drivers::control

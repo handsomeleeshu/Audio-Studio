@@ -6,6 +6,22 @@
 
 namespace audio_studio::drivers::pipe {
 
+namespace {
+
+class LinuxHostPipeDriverFactory final : public IPipeDriverFactory {
+public:
+  std::string name() const override { return "linux-host"; }
+  std::unique_ptr<IPipeDriver> create() const override { return std::make_unique<LinuxHostPipeDriver>(); }
+};
+
+const bool kLinuxHostPipeDriverRegistered = [] {
+  auto status = PipeDriverRegistry::instance().registerFactory(std::make_unique<LinuxHostPipeDriverFactory>());
+  (void)status;
+  return true;
+}();
+
+} // namespace
+
 LinuxHostPipeStream::LinuxHostPipeStream(LinuxHostPipeDriver& driver, PipeType type) : driver_(driver), type_(type) {}
 
 DriverResult LinuxHostPipeStream::open(const PipeConfig& config) {

@@ -62,6 +62,11 @@ public:
 
 class SocketDriverRegistry {
 public:
+  static SocketDriverRegistry& instance() {
+    static SocketDriverRegistry registry;
+    return registry;
+  }
+
   DriverResult registerFactory(std::unique_ptr<ISocketDriverFactory> factory) {
     if (!factory) return DriverResult::invalidArgument("socket driver factory is null");
     const auto factory_name = factory->name();

@@ -69,6 +69,11 @@ public:
 
 class DumpDeviceRegistry {
 public:
+  static DumpDeviceRegistry& instance() {
+    static DumpDeviceRegistry registry;
+    return registry;
+  }
+
   DumpResult registerFactory(std::unique_ptr<IDumpDeviceFactory> factory) {
     if (!factory) return DumpResult::invalidArgument("dump device factory is null");
     const auto factory_name = factory->name();

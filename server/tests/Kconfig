@@ -1,0 +1,13 @@
+menu "Server Tests"
+
+config DRIVER_INTERFACE_TESTS
+  bool "Build driver interface tests"
+  default n
+  depends on BUILD_TESTS
+
+config SERVER_FRAMEWORK_TESTS
+  bool "Build server framework tests"
+  default n
+  depends on BUILD_TESTS && FRAMEWORK_COMMON
+
+endmenu

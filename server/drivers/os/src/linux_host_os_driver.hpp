@@ -33,10 +33,4 @@ private:
   std::map<std::string, std::string> env_;
 };
 
-class LinuxHostOsDriverFactory final : public IOsDriverFactory {
-public:
-  std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IOsDriver> create() const override { return std::make_unique<LinuxHostOsDriver>(); }
-};
-
 } // namespace audio_studio::drivers::os

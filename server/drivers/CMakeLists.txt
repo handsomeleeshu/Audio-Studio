@@ -5,49 +5,69 @@ function(audio_studio_require_sources target sources)
 endfunction()
 
 if(CONFIG_DRIVER_DUMMY)
-  add_subdirectory(dummy/src)
+  add_subdirectory(dummy)
 endif()
 
 if(CONFIG_DRIVER_OS)
-  add_subdirectory(os/src)
+  add_subdirectory(os)
 endif()
 
 if(CONFIG_DRIVER_SOCKET)
-  add_subdirectory(socket/src)
+  add_subdirectory(socket)
 endif()
 
 if(CONFIG_DRIVER_FILESYSTEM)
-  add_subdirectory(filesystem/src)
+  add_subdirectory(filesystem)
 endif()
 
 if(CONFIG_DRIVER_PIPE)
-  add_subdirectory(pipe/src)
+  add_subdirectory(pipe)
 endif()
 
 if(CONFIG_DRIVER_DYNLIB)
-  add_subdirectory(dynlib/src)
+  add_subdirectory(dynlib)
 endif()
 
 if(CONFIG_DRIVER_TRANSPORT)
-  add_subdirectory(transport/src)
+  add_subdirectory(transport)
 endif()
 
 if(CONFIG_DRIVER_AUDIO)
-  add_subdirectory(audio/src)
+  add_subdirectory(audio)
 endif()
 
 if(CONFIG_DRIVER_CONTROL)
-  add_subdirectory(control/src)
+  add_subdirectory(control)
 endif()
 
 if(CONFIG_DRIVER_LOG)
-  add_subdirectory(log/src)
+  add_subdirectory(log)
 endif()
 
 if(CONFIG_DRIVER_DUMP)
-  add_subdirectory(dump/src)
+  add_subdirectory(dump)
 endif()
 
 if(CONFIG_DRIVERS_CORE)
-  add_subdirectory(src)
+  add_library(audio_studio_drivers_core
+    src/driver_manager.cpp
+  )
+  target_include_directories(audio_studio_drivers_core PUBLIC
+    include
+    audio/include
+    control/include
+    dump/include
+    dynlib/include
+    filesystem/include
+    log/include
+    os/include
+    pipe/include
+    socket/include
+    transport/include
+  )
+  target_link_libraries(audio_studio_drivers_core PUBLIC
+    audio_studio_config
+    audio_studio_framework_common
+  )
+  target_compile_features(audio_studio_drivers_core PUBLIC cxx_std_17)
 endif()
