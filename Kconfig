@@ -6,5 +6,7 @@ config AUDIO_STUDIO
 
 source "GUI/Kconfig"
 source "tests/Kconfig"
+source "drivers/Kconfig"
+source "rpc/Kconfig"
 source "server/Kconfig"
 source "cli/Kconfig"

@@ -2,5 +2,5 @@
 
 int main(int argc, char** argv) {
   audio_studio::cli::Args args(argc, argv);
-  return audio_studio::cli::runDummyTool("as_play", args.valueAfter("--file", "dummy.wav"), args);
+  return audio_studio::cli::runCliTool("as_play", args.valueAfter("--file", "dummy.wav"), args);
 }

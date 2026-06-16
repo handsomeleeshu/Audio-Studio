@@ -1,7 +1,7 @@
 # Audio Studio Framework 设计文档
 
-版本：0.7  
-日期：2026-06-15  
+版本：0.8
+日期：2026-06-16
 文档状态：正式设计基线，按当前 `handsomeleeshu/Audio-Studio` 仓库继续演进  
 适用范围：Audio Studio GUI、GUI Web Backend、CLI、as_server、Framework、Driver Abstraction Layer、Platform Adapter、Audio Controller Peer、Build System、as_config、as_control、as_play/as_record、as_log/as_dump、HTML GUI 与 Audio Studio Server JSON-RPC 部署设计。
 
@@ -9,7 +9,7 @@
 > Audio Studio 是通用 PC 端音频配置、控制、调试、观测框架；A2 是第一个平台 profile 和验证平台。  
 > GUI 已基本开发完成，后续不重新设计 GUI 内部 UI、UML 或核心源码结构，只在现有 GUI 工程下补充与 `as_server` 通信所需的轻量 RPC 适配层。  
 > **重要修正：`frontend` / `backend` 是 GUI 子工程内部概念，不是 Audio Studio 正式 server 架构。正式 `as_server` 必须是独立顶层 `server/` 子工程，不能放到 GUI 的 `backend/` 目录下。**
-> **重要修正：Audio Studio 不定义正式 Client SDK 层。GUI、GUI/backend、CLI 都通过 JSON-RPC 直接与 `as_server` 通信；可复用的只是很薄的 RPC codec/transport helper，不形成独立 SDK 架构层。**
+> **重要修正：Audio Studio 不定义独立发布的正式 Client SDK 层。GUI、GUI/backend、CLI 都通过 JSON-RPC 与 `as_server` 通信；工程内部必须提供 typed RPC facade 和 remote handle，让业务代码像调用本地 API 一样调用远端能力，但这些 facade 属于 `rpc/` 的轻量适配层，不形成独立 SDK 架构层。**
 
 ---
 
@@ -31,7 +31,9 @@ Audio-Studio/
     frontend/                 # 当前 HTML GUI 前端代码的逻辑归属
     backend/                  # 当前 GUI Web Backend / mock runtime 的逻辑归属
   cli/                        # 后续新增 CLI 前端，包含 as_config/as_control/as_play/as_record/as_log/as_dump
-  server/                     # 后续新增正式 as_server，包含 rpc/framework/drivers/platform
+  rpc/                        # 顶层 JSON-RPC codec/client/server/transport helper
+  drivers/                    # 顶层 driver interface、registry 与 host/platform 实现
+  server/                     # 后续新增正式 as_server，组合 framework/platform，并链接 rpc/drivers
   audio_controller/            # 后续新增 Audio Studio 对端 controller 参考实现，主要用 C 实现
   scripts/                    # 构建、Kconfig、CMake、toolchain、代码生成、打包脚本
   config/                     # 当前产品 JSON 示例目录，当前示例为 A2.json
@@ -60,7 +62,9 @@ Audio-Studio/backend/platform/...
 ```text
 正确：
 Audio-Studio/GUI/backend/              # GUI Web Backend，仅做页面托管、GUI REST 兼容、RPC 编排
-Audio-Studio/server/                   # 正式 as_server，承载 framework/drivers/platform/transport
+Audio-Studio/rpc/                      # 共享 JSON-RPC core、client/server transport
+Audio-Studio/drivers/                  # 共享 driver interface、registry、默认实现
+Audio-Studio/server/                   # 正式 as_server，承载 framework/platform，并链接 rpc/drivers
 Audio-Studio/cli/                      # 命令行前端
 Audio-Studio/audio_controller/          # Audio Controller peer 参考实现
 ```
@@ -106,7 +110,7 @@ GUI/backend/src/main.cpp
 2. 原 Audio-Studio/backend/ 已迁移为 GUI/backend/。
 3. GUI/backend/ 不承载正式 framework/drivers/platform，不作为 as_server 的实现目录。
 4. GUI/backend/ 继续保留当前 GUI REST API、页面托管、mock runtime 与 GUI session。
-5. 正式 as_server 新增到顶层 server/，负责 framework service、driver、platform、TransportManager。
+5. 正式 as_server 位于顶层 server/，负责 framework service、platform、TransportManager，并通过顶层 rpc/drivers 组合通信与硬件抽象。
 6. GUI/backend/ 只通过 JSON-RPC 调用 audio_studio_server，不链接、不编译、不拥有 server/framework。
 7. GUI/frontend/ 只增加轻量 JSON-RPC action executor、target registry、probe stream client 等适配代码。
 8. CLI 新增到顶层 cli/，通过 JSON-RPC 直接调用 audio_studio_server，不经过 GUI/backend/。
@@ -192,7 +196,7 @@ Audio-Studio/GUI/
 5. 新增 AudioStudioRpcOrchestrator，把 GUI REST 操作翻译为 JSON-RPC 请求。
 6. 当 Audio Studio Server 在后端可达网络时，由 GUI/backend 直接 JSON-RPC 调用。
 7. 当 Audio Studio Server 只在浏览器本机/前端局域网可达时，由 GUI/backend 返回声明式 client_rpc_action。
-8. 接收 GUI/frontend 回传的 client_rpc_result 和 client_telemetry，但以 as_server 状态为最终事实来源。
+8. 接收 GUI/frontend 回传的 client_rpc_result/client_rpc_error 和 client_telemetry，但以 as_server 状态为最终事实来源。
 ```
 
 它不应该包含：
@@ -358,7 +362,7 @@ WebSocketJsonRpcTransport:
 建议源码位置：
 
 ```text
-Audio-Studio/server/rpc/
+Audio-Studio/rpc/
   http_jsonrpc_transport.hpp
   http_jsonrpc_transport.cpp
   websocket_jsonrpc_transport.hpp
@@ -371,16 +375,296 @@ Audio-Studio/server/rpc/
   rpc_method_allowlist.cpp
 ```
 
-这部分属于正式 `server/`，不是 `GUI/backend/`。
+这部分属于顶层 `rpc/`，由正式 `server/`、`cli/` 和 `GUI/backend/` 按 Kconfig 选择性链接，不属于 `GUI/backend/` 私有实现。
 
-当前已实现首批 host-alone RPC helper：
+当前 RPC 基础设施已收敛为以下目标结构：
 
 ```text
-server/rpc/include/audio_studio/rpc/json_rpc.hpp
-server/rpc/src/json_rpc.cpp
+rpc/Kconfig
+rpc/CMakeLists.txt
+rpc/api/audio_studio_rpc_api.cpp
+rpc/include/rpc_api_registry.hpp
+rpc/include/rpc_runtime_context.hpp
+rpc/include/json_value.hpp
+rpc/include/json_rpc.hpp
+rpc/include/audio_rpc.hpp
+rpc/include/audio_rpc_client.hpp
+rpc/include/rpc_stream_transport.hpp
+rpc/include/rpc_framing.hpp
+rpc/include/rpc_socket_transport.hpp
+rpc/include/rpc_pipe_transport.hpp
+rpc/include/rpc_server.hpp
+rpc/src/rpc_api_registry.cpp
+rpc/src/rpc_runtime_context.cpp
+rpc/src/json_value.cpp
+rpc/src/json_rpc.cpp
+rpc/src/audio_rpc.cpp
+rpc/src/audio_rpc_client.cpp
+rpc/src/rpc_framing.cpp
+rpc/src/rpc_socket_transport.cpp
+rpc/src/rpc_pipe_transport.cpp
+rpc/src/rpc_socket_server.cpp
+rpc/src/rpc_pipe_server.cpp
+rpc/src/rpc_server.cpp
 ```
 
-该阶段提供 JSON-RPC request method/id/params 提取，以及 result/error response 生成，用于后续 as_server dispatcher 和 CLI/GUI backend RPC transport 接入。
+该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。socket server 必须按 accepted connection 并发处理请求，避免两个 `as_play`/`as_record` 客户端互相阻塞；pipe transport 保持单 FIFO/单连接语义，用于受限或脚本化场景。
+
+RPC public header 直接放在 `rpc/include/` 下，不使用 `rpc/include/audio_studio/rpc/` 这种深层路径。工程内 include 统一使用短路径：
+
+```cpp
+#include "json_rpc.hpp"
+#include "audio_rpc_client.hpp"
+#include "rpc_socket_transport.hpp"
+```
+
+命令行统一格式：
+
+```bash
+as_server
+as_server --rpc
+as_server --rpc --host <host> --port <port> [--max-requests N]
+as_server --rpc socket --host <host> --port <port> [--max-requests N]
+as_server --rpc pipe <request-fifo> <response-fifo> [--max-requests N]
+
+as_control --host <host> --port <port> --action get-health
+as_control --rpc socket --host <host> --port <port> --action get-health
+as_control --rpc pipe --request-pipe <request-fifo> --response-pipe <response-fifo> --action get-health
+```
+
+`--rpc socket`、`--host 127.0.0.1`、`--port 9900` 均可省略。CLI 与 `as_server` 的正式通信任何时候都走 RPC；`--target dummy` 只保留为显式 host-alone 测试模式。
+
+构建 profile 选择 transport：
+
+```text
+configs/profile/rpc_socket_defconfig -> CONFIG_RPC_TRANSPORT_SOCKET=y
+configs/profile/rpc_pipe_defconfig   -> CONFIG_RPC_TRANSPORT_PIPE=y
+```
+
+#### 2.3.1 RPC API 单点定义原则
+
+RPC transport、JSON codec、server endpoint、CLI、GUI/backend、GUI/frontend 都不能各自硬编码业务 method。业务 RPC API 的唯一手写 contract 文件是：
+
+```text
+rpc/api/audio_studio_rpc_api.cpp
+```
+
+新增或修改一个 RPC API 时，只允许在该文件中新增或修改一个 API block。该 block 必须同时定义：
+
+```text
+method name
+summary / service / version
+request params schema 或 typed request struct
+result schema 或 typed result struct
+server handler
+typed C++ facade method
+HTML/JS facade method
+CLI tool/action 映射
+smoke test params
+权限 / allowlist / placement 策略
+文档描述信息
+```
+
+通用代码从该 registry 派生以下行为：
+
+```text
+as_server endpoint registration
+rpc.describe / rpc.listMethods
+C++ typed facade
+HTML/JS typed facade
+CLI --method / tool default action mapping
+in-process / socket / pipe smoke tests
+API 文档快照
+```
+
+禁止再次出现以下散点：
+
+```text
+CLI 源码硬编码业务 method name
+server main 逐个 include/register 业务 method
+测试脚本硬编码每个业务 API 的 JSON params
+文档手写一份和代码分离的 API 参数表
+CMake/Kconfig 为每个新增 API 单独改 source/target
+```
+
+如果一个新 RPC API 需要底层新能力，可以修改对应 `framework/` service 或 `drivers/` implementation；但“把该能力暴露为 RPC API”的 contract、默认参数、typed facade、smoke test 和文档描述必须仍然只改 `rpc/api/audio_studio_rpc_api.cpp` 中的一处 API block。
+
+示例 API block 形态：
+
+```cpp
+RPC_METHOD({
+  .method = "audio.createPlaybackSession",
+  .summary = "Create an audio playback session",
+  .service = "audio",
+  .params_example = R"({
+    "sample_rate": 48000,
+    "channels": 2,
+    "bytes_per_sample": 2
+  })",
+  .cli = {
+    .tools = {"as_play"},
+    .default_action = "play"
+  },
+  .handler = [](RpcRuntimeContext& ctx, const JsonValue& params) {
+    return ctx.audio().createPlaybackSessionRpc(params);
+  },
+  .smoke_test = {
+    .enabled = true,
+    .params = R"({
+      "sample_rate": 48000,
+      "channels": 2,
+      "bytes_per_sample": 2
+    })"
+  }
+})
+```
+
+验收规则：
+
+```bash
+rg "audio.createPlaybackSession"
+```
+
+除 `rpc/api/audio_studio_rpc_api.cpp`、生成产物和必要文档快照外，不应在 CLI、server main、测试脚本中出现散落的业务 method 字符串。
+
+#### 2.3.2 Typed RPC facade 与 remote handle
+
+业务代码不能直接拼 JSON-RPC method 和 `session_id`。C++ 调用必须接近本地 API：
+
+```cpp
+AudioRpcClient audio(rpc_client);
+
+auto audio_playback = audio.createPlaybackSession({
+  .sample_rate = 48000,
+  .channels = 2,
+  .bytes_per_sample = 2,
+});
+
+audio_playback.start();
+audio_playback.writeFrames(pcm_bytes, {.timeout_ms = 1000});
+audio_playback.drain();
+audio_playback.stop();
+audio_playback.close();
+```
+
+`audio_playback` 是 typed remote handle，内部持有 RPC client 和 server 返回的 session handle。普通业务代码不直接读写 `session_id`；`session_id` 只允许存在于 JSON-RPC contract、facade 内部、CLI 显式 `--session` 场景和调试日志中。
+
+HTML/JS 调用也必须是对象式 facade：
+
+```js
+const audio = new AudioRpcClient(rpcClient);
+
+const audioPlayback = await audio.createPlaybackSession({
+  sampleRate: 48000,
+  channels: 2,
+  bytesPerSample: 2,
+});
+
+await audioPlayback.start();
+await audioPlayback.writeFrames(arrayBuffer, { timeoutMs: 1000 });
+await audioPlayback.drain();
+await audioPlayback.stop();
+await audioPlayback.close();
+```
+
+HTML 页面组件不能直接调用：
+
+```js
+jsonRpcCall('audio.start', { session_id: '...' })
+```
+
+这种裸 JSON-RPC 调用只允许出现在 `jsonRpcClient`、transport、typed facade 或底层测试中。
+
+CLI 用户态命令应保持工具语义。socket 是默认 RPC transport，`--rpc socket` 可以省略；pipe 必须显式指定 FIFO：
+
+```bash
+as_play --host 127.0.0.1 --port 9900 --file demo.wav --device plughw:2,0
+as_record --host 127.0.0.1 --port 9900 --output capture.wav --duration-ms 1000
+as_play --rpc pipe --request-pipe /tmp/as.req --response-pipe /tmp/as.rsp --file demo.wav
+```
+
+同时保留通用调试命令：
+
+```bash
+as_rpc --rpc socket --host 127.0.0.1 --port 9900 \
+  --method audio.createPlaybackSession \
+  --params-json '{"sample_rate":48000,"channels":2,"bytes_per_sample":2}'
+```
+
+#### 2.3.3 Stream Descriptor 与大块数据面
+
+`open/create session` 这类 JSON-RPC control API 必须返回 stream descriptor。JSON-RPC 只负责控制面，大块 audio/probe/dump/log 数据通过 descriptor 指向的数据面 endpoint 传输。
+
+示例返回：
+
+```json
+{
+  "session": {
+    "session_id": "playback_1",
+    "numeric_session_id": 1,
+    "direction": "playback",
+    "prepared": false,
+    "running": false
+  },
+  "format": {
+    "sample_rate": 48000,
+    "channels": 2,
+    "bytes_per_sample": 2,
+    "sample_format": "s16le"
+  },
+  "stream": {
+    "stream_id": "stream_playback_1",
+    "numeric_stream_id": 2,
+    "uri": "tcp://127.0.0.1:9900/streams/stream_playback_1",
+    "direction": "write",
+    "framing": "asrp-v1",
+    "payload": "audio/pcm",
+    "max_chunk_bytes": 65536,
+    "default_timeout_ms": 5000,
+    "blocking": true,
+    "token_usage": "first_frame"
+  }
+}
+```
+
+字段要求：
+
+```text
+uri:
+  数据面 endpoint，不限定为 ws://。可为 tcp://、pipe://、unix://、ws://、wss://。
+
+framing:
+  当前为 asrp-v1，即 RpcFrameHeader/RpcBinaryFrame。
+
+direction:
+  playback/write 类 stream 使用 write；record/probe/dump 类 stream 使用 read；双向控制流可扩展为 duplex。
+
+payload:
+  audio/pcm、probe/raw、dump/raw、log/raw 等。
+```
+
+`audio.writeFrames` 的 JSON-RPC method 只允许作为 debug/small-payload path，默认限制为小块数据。正式 `AudioPlayback::writeFrames(buffer)` 必须走 `stream.uri` 对应的 binary stream transport：
+
+```text
+1. createPlaybackSession 返回 AudioPlayback remote handle + stream descriptor。
+2. audio_playback.writeFrames(buffer) 按 max_chunk_bytes 切块。
+3. 每块发送 RpcMessageType::StreamData / RpcPayloadType::Binary。
+4. server 返回 RpcMessageType::StreamAck / RpcPayloadType::Json。
+5. facade 根据 accepted_bytes、queued_bytes、credit_bytes 实现阻塞写入和 backpressure。
+```
+
+默认阻塞语义：
+
+```text
+writeFrames(buffer, timeout):
+  阻塞到整块 buffer 被 server/driver 接收到内部队列，或超时/出错。
+  不表示硬件已经播放完成。
+
+drain(timeout):
+  等待 server/driver 已接收数据播放或处理完成。
+```
+
+record/probe/dump 使用同一套 stream descriptor 和 ASRP binary frame，只是方向变为 read，server 发送 StreamData，client 发送 StreamAck。
 
 ### 2.4 Backend-Orchestrated RPC / Client RPC Action Delegation
 
@@ -410,7 +694,7 @@ sequenceDiagram
     participant BE as GUI/backend Web Backend
     participant AS as Audio Studio Server
 
-    GUI->>BE: audio.start 请求
+    GUI->>BE: audioPlayback.start 请求
     BE->>AS: JSON-RPC audio.start
     AS-->>BE: JSON-RPC result
     BE-->>GUI: final result
@@ -435,7 +719,7 @@ sequenceDiagram
     participant BE as GUI/backend Web Backend
     participant AS as Frontend LAN Audio Studio Server
 
-    GUI->>BE: audio.start 请求
+    GUI->>BE: audioPlayback.start 请求
     BE-->>GUI: client_rpc_action(audio.start)
     GUI->>AS: JSON-RPC audio.start
     AS-->>GUI: JSON-RPC result
@@ -481,9 +765,12 @@ GUI/backend 面向 HTML GUI 的响应统一为三类。
   "request_id": "req_002",
   "action": {
     "action_id": "act_001",
-    "transport": "http_jsonrpc",
+    "kind": "json_rpc",
     "target": {
-      "target_id": "local_audio_studio_server"
+      "target_id": "local_audio_studio_server",
+      "placement": "client",
+      "endpoint": "http://127.0.0.1:9900/rpc",
+      "transport": "http_jsonrpc"
     },
     "auth": {
       "action_nonce": "nonce_001",
@@ -497,13 +784,30 @@ GUI/backend 面向 HTML GUI 的响应统一为三类。
       }
     },
     "timeout_ms": 5000,
+    "complete_url": "/api/audio-studio/client-rpc-actions/act_001/complete",
     "continuation": {
       "required": true,
       "report_control_result": true,
-      "url": "/api/audio-studio/client-rpc-result"
+      "url": "/api/audio-studio/client-rpc-actions/act_001/complete"
     }
   }
 }
+```
+
+字段约束：
+
+```text
+kind:
+  当前只允许 json_rpc；后续 stream/control action 可扩展但不能复用裸 JSON-RPC 字段。
+
+target:
+  描述前端可访问的 as_server endpoint。浏览器不能直接使用 raw socket/pipe，因此 HTML 侧 target transport 只能是 http_jsonrpc 或 websocket。
+
+rpc:
+  后端生成的声明式 RPC 调用。前端不能自由改 method 或 params，只能按 action 执行。
+
+complete_url:
+  前端执行完成后回传控制面结果的 URL。该 URL 必须绑定 action_id、request_id、nonce 和过期时间。
 ```
 
 #### 2.5.3 BackendErrorResponse
@@ -520,6 +824,55 @@ GUI/backend 面向 HTML GUI 的响应统一为三类。
     }
   }
 }
+```
+
+#### 2.5.4 HTML typed API wrapper 行为
+
+HTML 页面组件永远调用 GUI typed API，不直接判断 as_server placement，也不直接拼 `client_rpc_action`。
+
+推荐调用形态：
+
+```js
+const audioPlayback = await audioApi.createPlaybackSession({
+  sampleRate: 48000,
+  channels: 2,
+  bytesPerSample: 2,
+});
+
+await audioPlayback.start();
+```
+
+内部流程：
+
+```text
+audioApi.createPlaybackSession()
+  -> POST /api/audio/playback-sessions
+  -> GUI/backend 返回 result 或 client_rpc_action
+  -> 如果是 result:
+       直接构造 AudioPlayback remote handle
+  -> 如果是 client_rpc_action:
+       clientRpcActionExecutor 执行 action.rpc
+       POST action.complete_url 回传 rpc_result 或 rpc_error
+       GUI/backend 校验 action 后返回 final result
+       前端构造 AudioPlayback remote handle
+```
+
+`AudioPlayback` remote handle 隐藏 `session_id`：
+
+```js
+class AudioPlayback {
+  async start() {}
+  async writeFrames(arrayBuffer, { timeoutMs = 1000 } = {}) {}
+  async drain() {}
+  async stop() {}
+  async close() {}
+}
+```
+
+页面组件不能直接调用：
+
+```js
+await jsonRpcCall('audio.start', { session_id });
 ```
 
 ### 2.6 GUI/backend Orchestrator
@@ -550,26 +903,35 @@ Audio-Studio/GUI/backend/src/
 3. 如果 Audio Studio Server 在后端局域网：直接 JSON-RPC 调用 server/ 产物。
 4. 如果 Audio Studio Server 在前端局域网：生成 client_rpc_action。
 5. 校验 action_id、request_id、action_nonce、过期时间和 target。
-6. 接收前端回传的 client_rpc_result。
+6. 接收前端回传的 client_rpc_result 或 client_rpc_error。
 7. 更新 GUI/backend session 状态、操作审计和页面状态。
 8. 返回最终结果给 HTML GUI。
 ```
 
 ### 2.7 client_rpc_result 校验
 
-前端执行后回传：
+前端执行后回传成功结果：
 
 ```json
 {
   "request_id": "req_002",
   "action_id": "act_001",
-  "rpc_response": {
-    "jsonrpc": "2.0",
-    "id": "act_001",
-    "result": {
-      "session_id": 1001,
-      "state": "started"
-    }
+  "rpc_result": {
+    "session_id": 1001,
+    "state": "started"
+  }
+}
+```
+
+前端执行失败时回传：
+
+```json
+{
+  "request_id": "req_002",
+  "action_id": "act_001",
+  "rpc_error": {
+    "code": -32603,
+    "message": "as_server not reachable"
   }
 }
 ```
@@ -582,8 +944,9 @@ action_id 是否属于当前 session
 action_id 是否未过期
 action_nonce 是否匹配且未被重复使用
 method 是否与后端生成的 pending action 一致
+params hash 是否与后端生成的 pending action 一致
 target_id 是否一致
-JSON-RPC response id 是否匹配 action_id
+complete_url 是否匹配 action_id
 result/error 是否符合预期 schema
 ```
 
@@ -661,9 +1024,9 @@ sequenceDiagram
     GUI->>BE: start probe request
     BE-->>GUI: client_rpc_action(dump.start or probe.start)
     GUI->>AS: JSON-RPC dump.start/probe.start
-    AS-->>GUI: probe_id / stream_id / stream_url
+    AS-->>GUI: probe_id / stream descriptor
     GUI->>BE: client_rpc_result(control result)
-    GUI->>AS: connect stream_url
+    GUI->>AS: connect stream.uri
     AS-->>GUI: binary audio frames
     GUI->>Worker: audio frames
     Worker-->>GUI: waveform/meter display data
@@ -678,9 +1041,12 @@ sequenceDiagram
   "request_id": "req_1001",
   "action": {
     "action_id": "act_probe_start_001",
-    "transport": "http_jsonrpc",
+    "kind": "json_rpc",
     "target": {
-      "target_id": "local_audio_studio_server"
+      "target_id": "local_audio_studio_server",
+      "placement": "client",
+      "endpoint": "http://127.0.0.1:9900/rpc",
+      "transport": "http_jsonrpc"
     },
     "rpc": {
       "method": "dump.start",
@@ -695,10 +1061,11 @@ sequenceDiagram
         "output_mode": "live_demux"
       }
     },
+    "complete_url": "/api/audio-studio/client-rpc-actions/act_probe_start_001/complete",
     "continuation": {
       "required": true,
       "report_control_result": true,
-      "url": "/api/audio-studio/client-rpc-result"
+      "url": "/api/audio-studio/client-rpc-actions/act_probe_start_001/complete"
     },
     "stream_policy": {
       "has_stream": true,
@@ -772,14 +1139,15 @@ GUI/backend 不需要保存原始音频数据。
 
 ### 2.9 as_log / as_dump / as_play / as_control 的影响
 
-`as_log / as_dump / as_play / as_control` 是 CLI JSON-RPC client，它们不走 GUI/backend，而是直接调用 Audio Studio Server：
+`as_log / as_dump / as_play / as_record / as_control` 是 CLI JSON-RPC client，它们不走 GUI/backend，而是直接调用 Audio Studio Server。当前实现支持 socket 与 pipe 两种 transport；socket 为默认值，`--rpc socket` 可省略，pipe 使用 `--rpc pipe`。通用 `as_rpc` 只作为调试入口，正式工具命令应通过 registry 映射默认 API，不要求用户手写 method name。
 
 ```text
-as_log   -> POST /rpc or local RPC -> audio_studio_server
-as_dump  -> POST /rpc or local RPC -> audio_studio_server
-as_play  -> POST /rpc or local RPC -> audio_studio_server
-as_record-> POST /rpc or local RPC -> audio_studio_server
-as_control -> POST /rpc or local RPC -> audio_studio_server
+as_rpc    --rpc socket/pipe --method ... --params-json ... -> audio_studio_server
+as_log    --rpc socket/pipe -> audio_studio_server
+as_dump   --rpc socket/pipe -> audio_studio_server
+as_play   --rpc socket/pipe -> audio_studio_server
+as_record --rpc socket/pipe -> audio_studio_server
+as_control --rpc socket/pipe -> audio_studio_server
 ```
 
 数据策略与 GUI 一致：
@@ -793,8 +1161,14 @@ as_dump:
   原始 dump 数据通常很大，不自动回传 GUI/backend。
 
 as_play:
-  控制类 RPC 为 audio.createPlaybackSession/audio.start/audio.writeFrames/audio.stop/audio.closeSession。
-  音频播放数据本身不需要回传 GUI/backend。
+  CLI 只负责打开 WAV/PCM 文件、解析格式、分块读文件和打印结果。
+  CLI 内部通过 AudioRpcClient 创建 AudioPlayback remote handle，后续调用 audio_playback.start/writeFrames/drain/stop/close。
+  大块 PCM 经 createPlaybackSession 返回的 stream.uri，以 asrp-v1 binary frame 发送。
+
+as_record:
+  CLI 只负责创建本地 WAV 输出、计算 duration/chunk、分块写文件和打印结果。
+  CLI 内部通过 AudioRpcClient 创建 AudioCapture remote handle，后续调用 audio_capture.start/readFrames/stop/close。
+  大块 PCM 经 createCaptureSession 返回的 stream.uri，以 asrp-v1 binary frame 接收。
 
 as_control:
   通过 control.openSession/control.list/control.get/control.set/control.closeSession 等 JSON-RPC method 控制参数。
@@ -822,7 +1196,7 @@ Audio Studio Server Browser Access Mode 要求：
 3. 开启 Browser Access Mode 后必须配置 allowed origin 或允许本地开发 origin。
 4. 支持 token 鉴权。
 5. WebSocket 校验 Origin。
-6. RPC method 做 allowlist 或权限分级。
+6. RPC method 做 allowlist 或权限分级，allowlist 默认由 `rpc/api/audio_studio_rpc_api.cpp` registry 派生。
 7. probe/dump/play 等高风险操作可要求更高权限。
 8. 限制单 session 最大 stream 数量和带宽。
 9. 限制 dump/probe 持续时间或提供 watchdog。
@@ -844,6 +1218,7 @@ GUI/frontend runtime 配置：
     }
   },
   "clientRpc": {
+    "allowMethodsSource": "rpc_api_registry",
     "allowMethods": [
       "system.ping",
       "system.getInfo",
@@ -910,7 +1285,9 @@ Audio-Studio/
     frontend/
     backend/
   cli/
+  rpc/
   server/
+  drivers/
   audio_controller/
   scripts/
   config/
@@ -932,7 +1309,9 @@ Audio-Studio/
 | `GUI/frontend/` | 已实现 HTML GUI，负责工程管理、pipeline UI、参数面板、probe/log 可视化 | HTML/CSS/JavaScript | 不直接包含平台驱动 |
 | `GUI/backend/` | GUI Web Backend / mock runtime / REST 兼容 / RPC 编排 | C++/可选 Node/Python | 不包含正式 platform driver |
 | `cli/` | 命令行前端，包含 `as_config/as_control/as_play/as_record/as_log/as_dump` | C++ | 不直接包含平台驱动 |
-| `server/` | 正式 as_server、RPC server、framework、drivers、platform adapter | C++ | `server/platform/*` 包含 |
+| `rpc/` | JSON-RPC codec、单点 API registry、typed facade、client/server helper、socket/pipe/http/ws transport adapter | C++/JavaScript facade | 不包含平台特化 |
+| `drivers/` | Driver interface、singleton registry、默认 Linux host 实现、后续平台实现入口 | C++ | 可包含 platform/host driver implementation |
+| `server/` | 正式 as_server、framework、platform adapter，并链接 rpc/drivers | C++ | `server/platform/*` 包含 |
 | `audio_controller/` | Audio Studio 对端 controller 参考实现 | C | `audio_controller/platform/*` 包含 |
 | `scripts/` | Kconfig、build_all.sh、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
 | `config/` | 当前产品 JSON 示例，例如 A2.json | JSON | 可包含平台示例 |
@@ -945,7 +1324,7 @@ Audio-Studio/
 
 ### 3.3 server 目标内部目录
 
-`server/` 是 Audio Studio 的核心 C++ 工程。其内部按 `rpc / framework / drivers / platform` 组织。Audio Studio 不设置正式 `client_sdk/` 架构层；CLI 和 GUI/backend 只使用各自目录下的轻量 JSON-RPC codec/transport helper。
+`server/` 是 Audio Studio 的核心运行时工程，负责 as_server main、framework service、platform adapter 和运行期组合。`rpc/` 与 `drivers/` 提升为顶层共享目录，便于 server、CLI、GUI/backend、测试目标按 Kconfig 链接同一套 JSON-RPC 与 driver abstraction。Audio Studio 不设置独立发布的正式 `client_sdk/` 架构层；CLI 和 GUI/backend/GUI frontend 使用顶层 `rpc/` 内部提供的 JSON-RPC core、transport helper、typed facade 和 remote handle。
 
 ```text
 Audio-Studio/server/
@@ -957,27 +1336,6 @@ Audio-Studio/server/
     as_server_main.cpp
     server_app.hpp
     server_app.cpp
-  rpc/
-    rpc_frame.hpp
-    rpc_frame.cpp
-    rpc_codec.hpp
-    rpc_codec.cpp
-    rpc_connection.hpp
-    rpc_connection.cpp
-    rpc_server.hpp
-    rpc_server.cpp
-    service_router.hpp
-    service_router.cpp
-    rpc_error.hpp
-    rpc_error.cpp
-    http_jsonrpc_transport.hpp
-    http_jsonrpc_transport.cpp
-    websocket_jsonrpc_transport.hpp
-    websocket_jsonrpc_transport.cpp
-    cors_policy.hpp
-    cors_policy.cpp
-    browser_access_policy.hpp
-    browser_access_policy.cpp
   framework/
     common/
     session/
@@ -991,21 +1349,28 @@ Audio-Studio/server/
     plugin/
     transport/
     protocol/
-  drivers/
-    os/
-    socket/
-    filesystem/
-    pipe/
-    dynlib/
-    transport/
-    audio/
-    control/
-    log/
-    dump/
   platform/
     a2/
     simulator/
     customer_x/
+```
+
+共享目录：
+
+```text
+Audio-Studio/rpc/
+  api/
+  include/
+  src/
+  Kconfig
+  CMakeLists.txt
+
+Audio-Studio/drivers/
+  include/
+  src/
+  os/ socket/ filesystem/ pipe/ dynlib/ transport/ audio/ control/ log/ dump/
+  Kconfig
+  CMakeLists.txt
 ```
 
 ### 3.4 GUI/backend 不等于 server
@@ -1041,8 +1406,11 @@ Audio-Studio/GUI/
         rpc/
           backendApi.js
           clientRpcActionExecutor.js
+          jsonRpcClient.js
           jsonRpcHttpExecutor.js
           jsonRpcWsExecutor.js
+          audioRpcClient.js
+          audioPlayback.js
           rpcTargetRegistry.js
           clientRpcContinuation.js
           clientTelemetryReporter.js
@@ -1126,11 +1494,12 @@ Audio-Studio/cli/
     as_dump_options.cpp
 ```
 
-当前已实现首批 host-alone CLI 骨架：
+当前已实现首批 host-alone CLI 骨架，下一阶段增加通用 `as_rpc` 调试入口：
 
 ```text
 cli/common/include/audio_studio/cli/cli_common.hpp
 cli/common/src/cli_common.cpp
+cli/tools/as_rpc.cpp
 cli/tools/as_control.cpp
 cli/tools/as_play.cpp
 cli/tools/as_record.cpp
@@ -1138,7 +1507,7 @@ cli/tools/as_log.cpp
 cli/tools/as_dump.cpp
 ```
 
-该阶段的 CLI 只支持 `--target dummy` 和 `--help`，通过 dummy driver 输出 JSON 结果，用于验证 build、参数解析、命令入口和后续 RPC 接入边界。`as_config` 暂不实现。
+该阶段 CLI 保留 `--target dummy` host-alone 模式，同时支持默认 socket RPC 与 `--rpc pipe` 调用 as_server。`as_control --action get-health` 走 JSON-RPC；`as_play` 已通过 `AudioRpcClient` 创建 `AudioPlayback` remote handle，并以 `audio_playback.start/writeFrames/drain/stop/close` 语义执行播放流程；`as_record` 已通过 `AudioCapture` remote handle 执行 `start/readFrames/stop/close` 并写 WAV。`as_config` 暂不实现。
 
 CLI 不应包含：
 
@@ -1464,12 +1833,12 @@ server/framework/transport/src/transport_manager.cpp
 
 该阶段提供基础 frame encode/decode 和 logical channel 状态统计，用于先验证 TransportManager 的服务边界、构建开关和 CTest；不启动 TX/RX worker，不访问 socket/pipe/USB/PCIe，也不直接调用 OS API。真实 IO 必须通过后续 drivers/transport 与 drivers/os 接入。
 
-### 4.12 server/drivers
+### 4.12 顶层 drivers
 
 Driver 层同时提供 interface 和默认 implementation。每个默认实现均有 Kconfig 开关，platform 可以选择使用、禁用或替换。
 
 ```text
-Audio-Studio/server/drivers/
+Audio-Studio/drivers/
   include/
     driver_manager.hpp
   src/
@@ -1492,54 +1861,54 @@ Audio-Studio/server/drivers/
 当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择 `src/` 下的实现源文件。
 
 ```text
-server/drivers/include/driver_manager.hpp
-server/drivers/src/driver_manager.cpp
+drivers/include/driver_manager.hpp
+drivers/src/driver_manager.cpp
 
-server/drivers/os/include/os_driver.hpp
-server/drivers/os/src/linux_host_os_driver.hpp
-server/drivers/os/src/linux_host_os_driver.cpp
+drivers/os/include/os_driver.hpp
+drivers/os/src/linux_host_os_driver.hpp
+drivers/os/src/linux_host_os_driver.cpp
 
-server/drivers/socket/include/socket_driver.hpp
-server/drivers/socket/src/linux_host_socket_driver.hpp
-server/drivers/socket/src/linux_host_socket_driver.cpp
+drivers/socket/include/socket_driver.hpp
+drivers/socket/src/linux_host_socket_driver.hpp
+drivers/socket/src/linux_host_socket_driver.cpp
 
-server/drivers/filesystem/include/filesystem_driver.hpp
-server/drivers/filesystem/src/linux_host_filesystem_driver.hpp
-server/drivers/filesystem/src/linux_host_filesystem_driver.cpp
+drivers/filesystem/include/filesystem_driver.hpp
+drivers/filesystem/src/linux_host_filesystem_driver.hpp
+drivers/filesystem/src/linux_host_filesystem_driver.cpp
 
-server/drivers/pipe/include/pipe_driver.hpp
-server/drivers/pipe/src/linux_host_pipe_driver.hpp
-server/drivers/pipe/src/linux_host_pipe_driver.cpp
+drivers/pipe/include/pipe_driver.hpp
+drivers/pipe/src/linux_host_pipe_driver.hpp
+drivers/pipe/src/linux_host_pipe_driver.cpp
 
-server/drivers/dynlib/include/dynlib_driver.hpp
-server/drivers/dynlib/src/linux_host_dynlib_driver.hpp
-server/drivers/dynlib/src/linux_host_dynlib_driver.cpp
+drivers/dynlib/include/dynlib_driver.hpp
+drivers/dynlib/src/linux_host_dynlib_driver.hpp
+drivers/dynlib/src/linux_host_dynlib_driver.cpp
 
-server/drivers/transport/include/transport_driver.hpp
-server/drivers/transport/src/linux_host_transport_driver.hpp
-server/drivers/transport/src/linux_host_transport_driver.cpp
+drivers/transport/include/transport_driver.hpp
+drivers/transport/src/linux_host_transport_driver.hpp
+drivers/transport/src/linux_host_transport_driver.cpp
 
-server/drivers/audio/include/audio_device.hpp
-server/drivers/audio/src/linux_host_audio_device.hpp
-server/drivers/audio/src/linux_host_audio_device.cpp
+drivers/audio/include/audio_device.hpp
+drivers/audio/src/linux_host_audio_device.hpp
+drivers/audio/src/linux_host_audio_device.cpp
 
-server/drivers/control/include/control_device.hpp
-server/drivers/control/src/linux_host_control_device.hpp
-server/drivers/control/src/linux_host_control_device.cpp
+drivers/control/include/control_device.hpp
+drivers/control/src/linux_host_control_device.hpp
+drivers/control/src/linux_host_control_device.cpp
 
-server/drivers/log/include/log_device.hpp
-server/drivers/log/src/linux_host_log_device.hpp
-server/drivers/log/src/linux_host_log_device.cpp
+drivers/log/include/log_device.hpp
+drivers/log/src/linux_host_log_device.hpp
+drivers/log/src/linux_host_log_device.cpp
 
-server/drivers/dump/include/dump_device.hpp
-server/drivers/dump/src/linux_host_dump_device.hpp
-server/drivers/dump/src/linux_host_dump_device.cpp
+drivers/dump/include/dump_device.hpp
+drivers/dump/src/linux_host_dump_device.hpp
+drivers/dump/src/linux_host_dump_device.cpp
 
-server/drivers/dummy/include/dummy_driver.hpp
-server/drivers/dummy/src/dummy_driver.cpp
+drivers/dummy/include/dummy_driver.hpp
+drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`server/drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `server/drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
 
 ### 4.13 server/platform
 
@@ -1813,10 +2182,27 @@ classDiagram
   class AudioService {
     +createPlaybackSession(config)
     +createCaptureSession(config)
-    +start(session)
-    +stop(session)
-    +writeFrames(session, data)
-    +readFrames(session)
+    +playbackSession(id)
+    +captureSession(id)
+    +closeSession(id)
+    +listSessions()
+  }
+
+  class AudioPlaybackSession {
+    +prepare()
+    +start()
+    +writeFrames(data)
+    +drain()
+    +stop()
+    +close()
+  }
+
+  class AudioCaptureSession {
+    +prepare()
+    +start()
+    +readFrames(max_bytes)
+    +stop()
+    +close()
   }
 
   class ControlService {
@@ -1848,12 +2234,16 @@ classDiagram
   class ILogDevice
   class IDumpDevice
 
-  AudioService --> IAudioPlaybackDevice
-  AudioService --> IAudioCaptureDevice
+  AudioService --> AudioPlaybackSession
+  AudioService --> AudioCaptureSession
+  AudioPlaybackSession --> IAudioPlaybackDevice
+  AudioCaptureSession --> IAudioCaptureDevice
   ControlService --> IControlDevice
   LogService --> ILogDevice
   DumpService --> IDumpDevice
 ```
+
+`AudioService` 是 audio framework 的 session factory 和 registry，不直接在所有读写路径上持有全局大锁。每个 `AudioPlaybackSession` / `AudioCaptureSession` 持有一个 driver instance 和自己的状态锁；不同 session 使用不同 device 时可以并发执行。RPC wire 上的 `numeric_session_id` 只属于 `RpcRuntimeContext` 与 stream frame，不能泄漏进 framework service API。
 
 ### 6.3 Controller 类默认实现
 
@@ -1914,7 +2304,7 @@ sequenceDiagram
   participant TDrv as Selected Transport Driver
   participant AC as Audio Controller Peer
 
-  CLI->>RPC: create JSON-RPC audio.createPlaybackSession
+  CLI->>RPC: AudioRpcClient::createPlaybackSession
   RPC->>Server: JSON-RPC audio.createPlaybackSession
   Server->>Service: createPlaybackSession
   Service->>Dev: open/prepare
@@ -1926,9 +2316,25 @@ sequenceDiagram
   TM-->>Dev: response
   Dev-->>Service: ok
   Service-->>Server: session_id
-  Server-->>RPC: session_id
-  CLI->>RPC: loop JSON-RPC audio.writeFrames()
+  Server-->>RPC: session + stream descriptor
+  CLI->>RPC: loop audio_playback.writeFrames(buffer)
+  RPC->>Server: ASRP StreamData over stream.uri
+  Server-->>RPC: ASRP StreamAck
 ```
+
+Linux host profile 当前落地路径为：
+
+```text
+as_play/as_record
+  -> AudioRpcClient typed facade
+  -> JSON-RPC control plane + ASRP binary stream plane
+  -> as_server AudioService
+  -> DriverManager::audioRegistry()
+  -> drivers/audio LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice
+  -> ALSA device, e.g. default/null/plughw:2,0
+```
+
+A2/controller profile 后续沿用同一 `IAudioPlaybackDevice` / `IAudioCaptureDevice` interface，只替换 registry 中的 factory implementation。
 
 ### 7.2 as_control：A2 直连 Controller 模式
 
@@ -2089,7 +2495,7 @@ cli/as_control
   -> cli/common/json_rpc_client
   -> JSON-RPC control.*
   -> server/framework/control/ControlService
-  -> server/drivers/control/include/IControlDevice
+  -> drivers/control/include/IControlDevice
   -> selected control device implementation
 ```
 
@@ -2207,12 +2613,20 @@ Audio-Studio/GUI/backend:
   不构建 as_server、framework、driver implementation、platform backend。
 
 Audio-Studio/cli:
-  构建 as_config/as_control/as_play/as_record/as_log/as_dump。
-  当前阶段先实现 as_control/as_play/as_record/as_log/as_dump 的 host-alone dummy CLI；
+  构建 as_config/as_rpc/as_control/as_play/as_record/as_log/as_dump。
+  当前阶段支持 host-alone dummy CLI、默认 socket RPC，以及 --rpc pipe 两种 as_server RPC 调用；
   as_config 按当前任务边界暂不实现。
 
+Audio-Studio/rpc:
+  构建 JSON-RPC core、单点 API registry、typed facade、client transport、server transport。
+  CONFIG_RPC_CLIENT 与 CONFIG_RPC_SERVER 分开控制；CONFIG_RPC_TRANSPORT_SOCKET/PIPE 由 profile 决定。
+
+Audio-Studio/drivers:
+  构建 DriverManager、driver interface registry、Linux host socket/pipe/os/filesystem/dynlib/audio/control/log/dump 等默认实现。
+  每个模块自己的 CMakeLists.txt 和 Kconfig 由顶层 drivers/CMakeLists.txt、drivers/Kconfig 递归接入。
+
 Audio-Studio/server:
-  构建 as_server、framework 静态库/动态库、driver implementation、platform backend。
+  构建 as_server、framework 静态库/动态库、platform backend，并按 profile 链接 rpc/drivers。
 
 Audio-Studio/audio_controller:
   构建 simulator audio_controller 或 A2 侧可移植 controller reference。
@@ -2646,15 +3060,15 @@ GUI/Kconfig
 tests/Kconfig
 server/Kconfig
 server/framework/Kconfig
-server/drivers/Kconfig
-server/drivers/<module>/Kconfig
+drivers/Kconfig
+drivers/<module>/Kconfig
 server/platform/Kconfig
 server/platform/a2/Kconfig
 server/tests/Kconfig
 cli/Kconfig
 ```
 
-模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `server/drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
+模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
 
 #### 4.3 build_all.sh 是推荐唯一入口
 
@@ -4395,8 +4809,8 @@ public:
 当前实现落地为：
 
 ```text
-server/drivers/include/driver_manager.hpp
-server/drivers/src/driver_manager.cpp
+drivers/include/driver_manager.hpp
+drivers/src/driver_manager.cpp
 ```
 
 职责边界：
@@ -4404,10 +4818,11 @@ server/drivers/src/driver_manager.cpp
 1. `DriverManager` 是 framework 使用 driver 的唯一装配入口。framework/service 层不 include `linux_host_*`、A2 物理驱动或其他 implementation header。
 2. 每个 driver 模块在自己的 public interface 头里定义 `I*Factory` 和 `*Registry`，例如 `SocketDriverRegistry`、`AudioDeviceRegistry`、`ControlDeviceRegistry`。Registry 是 singleton，拥有 factory，按 factory name 创建 interface 对象。
 3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、A2 物理驱动或 customer implementation header。
-4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`。`initialize()` 只从各模块 singleton Registry 收集已注册 factory metadata，再为 OS/socket/filesystem/pipe/dynlib 这类全局 driver 创建 singleton service。
-5. transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。
-6. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
-7. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
+4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`，同时保存 `enable_*` 类别开关。server 使用默认配置，按 Kconfig 选中的 driver 类别全部启用；CLI client 使用最小配置，只启用当前 RPC transport 需要的 socket 或 pipe driver。
+5. `initialize()` 先从各模块 singleton Registry 收集已注册 factory metadata；随后只为 `DriverManagerConfig.enable_* == true` 的类别创建或验证默认 service/factory。这样同一个 build profile 可以同时编 server 和 CLI，而不会因为 server 开启 `CONFIG_DRIVER_AUDIO` 就要求 CLI 初始化 audio driver。
+6. OS/socket/filesystem/pipe/dynlib 是全局 singleton service 类型，可由 `DriverManager` 持有；transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证启用时对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。per-device factory 必须返回带错误信息的 `DriverResult`/`AudioResult`，不能只返回 `nullptr`，以便 Linux host ALSA open/configure 失败时把底层错误完整上报到 framework、RPC 和 CLI。
+7. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
+8. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
 
 当前 Registry API 模式：
 
@@ -4449,19 +4864,19 @@ public:
 以 audio Linux host 实现为例：
 
 ```text
-server/drivers/audio/include/audio_device.hpp
+drivers/audio/include/audio_device.hpp
   - 定义 IAudioPlaybackDevice / IAudioCaptureDevice
   - 定义 IAudioPlaybackDeviceFactory / IAudioCaptureDeviceFactory
   - 定义 AudioDeviceRegistry::instance()
 
-server/drivers/audio/src/linux_host_audio_device.hpp
+drivers/audio/src/linux_host_audio_device.hpp
   - 只声明 LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice 实现类
 
-server/drivers/audio/src/linux_host_audio_device.cpp
+drivers/audio/src/linux_host_audio_device.cpp
   - 在匿名 namespace 中定义 LinuxHostAudioPlaybackDeviceFactory / LinuxHostAudioCaptureDeviceFactory
   - 用静态 registrar 注册到 AudioDeviceRegistry::instance()
 
-server/drivers/audio/CMakeLists.txt
+drivers/audio/CMakeLists.txt
   - 根据 CONFIG_DRIVER_AUDIO_LINUX_HOST 选择 src/linux_host_audio_device.cpp
   - 构建 audio_studio_driver_audio OBJECT target
 ```
@@ -4494,7 +4909,7 @@ const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
    CONFIG_DRIVER_AUDIO=y
    CONFIG_DRIVER_AUDIO_LINUX_HOST=y
 
-2. server/drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
+2. drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
 
 3. 最终 executable 直接链接 audio_studio_driver_audio OBJECT target。
    这样对象文件一定进入最终链接，静态 registrar 不会被 static archive 丢弃。
@@ -5705,11 +6120,13 @@ Control RPC:
 
 Stream RPC:
   控制入口仍通过 JSON-RPC。
-  大块数据可通过 JSON-RPC read 返回 binary stream frame，或通过 WebSocket/WSS binary frame 推送。
-  read chunk / subscribe stream / stream data / stream ack / stream end。
+  open/create session 返回 stream descriptor。
+  大块数据通过 descriptor.uri 对应的数据面 endpoint 传输，不塞进 JSON-RPC payload。
+  数据面 endpoint 可为 tcp://、pipe://、unix://、ws://、wss://。
+  stream data / stream ack / stream end / stream error。
 ```
 
-第一阶段优先实现 pull/read 模式；第二阶段可增加 subscribe push 模式。
+第一阶段优先实现 Audio playback write stream、record/probe/dump read stream 的 ASRP binary frame；第二阶段可增加长连接复用、subscribe push 和 browser WebSocket binary stream。
 
 #### 18.4 Stream frame
 
@@ -5751,7 +6168,7 @@ struct RpcFrameHeader {
 };
 ```
 
-外部控制面统一使用 JSON-RPC。上面的 frame 只用于 log/dump/audio/probe 大块数据流，不作为独立 Client SDK 协议层。
+外部控制面统一使用 JSON-RPC。上面的 frame 只用于 log/dump/audio/probe 大块数据流。工程内部 typed facade 会把 control RPC 与 stream frame 封装成接近本地 API 的调用方式。
 
 #### 18.5 RPC service id
 
@@ -5767,11 +6184,60 @@ enum class RpcServiceId : uint16_t {
 };
 ```
 
+#### 18.6 RPC API registry、typed facade 与测试生成
+
+RPC API contract 必须集中在 `rpc/api/audio_studio_rpc_api.cpp`。该文件是业务 RPC API 的唯一手写入口；server endpoint 注册、typed C++ facade、HTML/JS facade、CLI 默认 action、smoke test 和 API 文档都由该 registry 派生。
+
+新增 API 的工程验收标准：
+
+```text
+1. 新增一个 RPC API，只在 rpc/api/audio_studio_rpc_api.cpp 新增一个 API block。
+2. 如果 framework/service 缺少底层能力，可以补 framework/service；但 RPC contract 本身不得散落到 CLI、server main 或测试脚本。
+3. C++ 业务代码通过 typed facade 调用，不直接拼 method/params。
+4. HTML 业务代码通过 typed JS facade 调用，不直接拼 method/params。
+5. CLI 工具命令通过 registry 映射默认 method；通用 as_rpc 保留 --method/--params-json 调试入口。
+6. in-process/socket/pipe/CLI/HTML smoke test 从 registry 的 smoke_test 字段自动枚举。
+```
+
+typed facade 示例：
+
+```cpp
+AudioRpcClient audio(rpc_client);
+
+auto audio_playback = audio.createPlaybackSession({
+  .sample_rate = 48000,
+  .channels = 2,
+  .bytes_per_sample = 2,
+});
+
+audio_playback.start();
+audio_playback.writeFrames(pcm_bytes, {.timeout_ms = 1000});
+audio_playback.drain();
+audio_playback.stop();
+audio_playback.close();
+```
+
+HTML facade 示例：
+
+```js
+const audioPlayback = await audio.createPlaybackSession({
+  sampleRate: 48000,
+  channels: 2,
+  bytesPerSample: 2,
+});
+
+await audioPlayback.start();
+await audioPlayback.writeFrames(arrayBuffer, { timeoutMs: 1000 });
+await audioPlayback.drain();
+await audioPlayback.stop();
+await audioPlayback.close();
+```
+
 ---
 
 ### 12.20 System RPC API
 
-建议方法：
+目标方法如下。实际 method catalog 必须由 `rpc/api/audio_studio_rpc_api.cpp` registry 生成或校验，不能由文档单独维护：
 
 ```text
 system.ping
@@ -6000,9 +6466,9 @@ payload:
 
 ### 12.23 Audio RPC API
 
-Audio RPC 与 log/dump 保持 session 模型一致。
+Audio RPC 与 log/dump 保持 session 模型一致，但 typed facade 必须把 session 模型封装成 remote handle。业务侧变量命名建议使用 `audio_playback`，后续调用均通过 `audio_playback.xxx()` 完成，不要求业务侧反复传 `session_id`。
 
-建议方法：
+目标方法如下。实际 method catalog 必须由 `rpc/api/audio_studio_rpc_api.cpp` registry 生成或校验，不能由文档单独维护：
 
 ```text
 audio.listDevices
@@ -6010,6 +6476,7 @@ audio.createPlaybackSession
 audio.createCaptureSession
 audio.prepare
 audio.start
+audio.drain
 audio.stop
 audio.closeSession
 audio.writeFrames
@@ -6017,27 +6484,54 @@ audio.readFrames
 audio.getStats
 ```
 
+`audio.writeFrames` / `audio.readFrames` 只作为 debug/small-payload JSON method 保留；正式大块数据传输必须使用 `createPlaybackSession` / `createCaptureSession` 返回的 `stream.uri` 和 `asrp-v1` binary frame。
+
+`createPlaybackSession` / `createCaptureSession` 参数必须支持：
+
+```json
+{
+  "sample_rate": 48000,
+  "channels": 2,
+  "bytes_per_sample": 2,
+  "sample_format": "s16le",
+  "device": "default",
+  "driver_factory": "linux-host"
+}
+```
+
+Linux host 默认实现中，`device` 直接映射到 ALSA device name，例如 `default`、`null`、`plughw:2,0`。server 端由 `AudioService` 根据 `driver_factory` 从 `DriverManager::audioRegistry()` 创建 playback/capture device；CLI 不直接 include ALSA 或任何 `linux_host_*` 实现头。
+
+Audio framework 的并发模型：
+
+1. `AudioService` 只负责创建、查找、关闭 session，以及维护 session map。
+2. `AudioPlaybackSession` / `AudioCaptureSession` 是真正的一路 audio session，每个 session 拥有自己的 driver instance、stream descriptor、统计信息和状态锁。
+3. `AudioService` API 使用字符串 `session_id` 或 session object；`numeric_session_id` 是 RPC/ASRP wire id，只能由 `RpcRuntimeContext` 映射。
+4. Audio Studio 不引入额外的 device lease manager，也不在 framework 层判断一个 ALSA device 能否被多路 open。能不能多路打开由底层 driver/OS/backend 决定。
+5. 如果底层 open/configure 失败，driver factory 或 session operation 必须返回包含底层错误文本的 `Status`。错误上报路径为 `linux_host_audio_device` -> `AudioService::createPlaybackSession/createCaptureSession` -> `audio.create*Session` JSON-RPC error -> `AudioRpcClient`/`as_play` stderr。
+6. `as_play` 并发依赖“一个播放命令一个 RPC client connection，一个 playback session 一个 driver instance”。socket RPC server 必须并发处理不同 connection，pipe 模式只保证单连接语义。
+
 `as_play` 轻量流程：
 
 ```text
 1. 本地打开 WAV 文件
-2. audio.createPlaybackSession
-3. audio.start
+2. AudioRpcClient::createPlaybackSession -> AudioPlayback remote handle
+3. audio_playback.start()
 4. 循环读 WAV frame
-5. audio.writeFrames
-6. audio.stop
-7. audio.closeSession
+5. audio_playback.writeFrames(buffer) 经 stream.uri 发送 StreamData
+6. audio_playback.drain()
+7. audio_playback.stop()
+8. audio_playback.close()
 ```
 
 `as_record` 轻量流程：
 
 ```text
-1. audio.createCaptureSession
-2. audio.start
-3. 循环 audio.readFrames
+1. AudioRpcClient::createCaptureSession -> AudioCapture remote handle
+2. audio_capture.start()
+3. 循环 audio_capture.readFrames() 经 stream.uri 接收 StreamData
 4. 本地写 WAV/PCM
-5. audio.stop
-6. audio.closeSession
+5. audio_capture.stop()
+6. audio_capture.close()
 ```
 
 ---
@@ -6241,7 +6735,7 @@ closeSession
 getStats
 ```
 
-Control 的 session 不一定进入 Started 状态，但必须进入同一套 ownership/lease/cleanup 管理：
+Control 的 session 不一定进入 Started 状态，但必须进入同一套 ownership/session cleanup 管理：
 
 ```text
 control.openSession
@@ -6258,7 +6752,7 @@ control.openSession
 client disconnected
   -> stop sessions owned by client
   -> close sessions
-  -> release device
+  -> close per-session driver instance
 ```
 
 ---
@@ -8145,11 +8639,11 @@ preset/scene 默认不暴露为 KControl，除非后续显式定义自定义 con
 1. 正式发布基线文件可命名为 audio_studio_framework_design.md；评审迭代文件允许带日期/版本后缀。
 2. 顶层工程目录必须体现 GUI、cli、server、audio_controller、scripts。
 3. cli 下承载原 apps/as_* 内容。
-4. server 下承载 framework、drivers、platform、rpc，不包含正式 client_sdk 层。
+4. server 下承载 framework、platform 和 as_server main；rpc/drivers 是顶层共享目录，不放回 server。
 5. framework/audio/control/log/dump 不直接依赖 TransportManager。
 6. Controller 类 audio/control/log/dump 默认实现放 drivers/*/controller，内部可调用 TransportManager。
 7. 7870 互联模式 audio 使用 tinyalsa + FIFO，control 使用远程 tinymix。
 8. as_config 的 A2.json -> ALSA topology/private data 映射完整吸收。
-9. GUI/backend、GUI/frontend delegated action、CLI 都通过 JSON-RPC 直接访问 as_server，不引入正式 Client SDK 层。
+9. GUI/backend、GUI/frontend delegated action、CLI 都通过 JSON-RPC 访问 as_server；工程内部使用 typed facade/remote handle，不引入独立发布的正式 Client SDK 层。
 10. audio_controller 作为对端 C 实现独立维护，可用于 simulator 和 A2 直连模式。
 ```

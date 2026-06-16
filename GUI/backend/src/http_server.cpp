@@ -10,6 +10,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#ifdef AUDIO_STUDIO_GUI_BACKEND_RPC
+#include "json_rpc.hpp"
+#endif
+
 namespace audiostudio {
 
 std::string readFile(const std::string& path) {
@@ -186,6 +190,27 @@ static bool isFrontendIndexPath(const std::string& path) {
          path == "/frontend/" || path == "/frontend/index.html";
 }
 
+#ifdef AUDIO_STUDIO_GUI_BACKEND_RPC
+static std::string handleBackendRpc(const std::string& body) {
+  audio_studio::rpc::JsonRpcEndpoint endpoint;
+  endpoint.addMethod("server.health", [](const audio_studio::rpc::JsonValue&) {
+    audio_studio::rpc::JsonValue result = audio_studio::rpc::JsonValue::object();
+    result["ok"] = true;
+    result["tool_os"] = "linux";
+    result["platform"] = "gui_backend";
+    result["transport"] = "http";
+    return result;
+  });
+  endpoint.addMethod("gui.ping", [](const audio_studio::rpc::JsonValue&) {
+    audio_studio::rpc::JsonValue result = audio_studio::rpc::JsonValue::object();
+    result["ok"] = true;
+    result["service"] = "gui_backend";
+    return result;
+  });
+  return endpoint.handleRequest(body);
+}
+#endif
+
 HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeEngine> runtime,
                        std::shared_ptr<INodeController> node_controller,
                        std::shared_ptr<IParameterController> parameter_controller,
@@ -234,6 +259,11 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   };
 
   if (req.method == "OPTIONS") return {204, "text/plain", ""};
+#ifdef AUDIO_STUDIO_GUI_BACKEND_RPC
+  if (req.method == "POST" && req.path == "/rpc") {
+    return {200, "application/json; charset=utf-8", handleBackendRpc(req.body)};
+  }
+#endif
   if (req.method == "GET" && isFrontendIndexPath(req.path)) return serveFrontendFile("index.html", "text/html; charset=utf-8");
   if (req.method == "GET" && startsWith(req.path, "/assets/")) return serveFrontendFile(req.path.substr(1), "");
   if (req.method == "GET" && startsWith(req.path, gui_asset_prefix)) return serveFile(req.path.substr(1), "");

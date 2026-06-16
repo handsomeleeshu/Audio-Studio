@@ -11,6 +11,7 @@ frontend_tests=(
   tests/frontend/performance-profile.test.mjs
   tests/frontend/dead-code-policy.test.mjs
   tests/frontend/runtime-loop-policy.test.mjs
+  tests/frontend/rpc-client.test.mjs
   tests/frontend/cost-table-data-total-and-selection.test.mjs
   tests/frontend/cost-total-startup-safe-v103.test.mjs
   tests/frontend/cost-total-startup-safe.test.mjs

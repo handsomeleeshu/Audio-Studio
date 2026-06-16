@@ -47,6 +47,15 @@ int main() {
   assert(res.status == 200);
   assert(res.body.find("pipelineEditEvent") != std::string::npos);
 
+  audiostudio::HttpRequest rpc;
+  rpc.method = "POST";
+  rpc.path = "/rpc";
+  rpc.body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server.health\"}";
+  auto rpc_res = server.handle(rpc);
+  assert(rpc_res.status == 200);
+  assert(rpc_res.body.find("\"jsonrpc\":\"2.0\"") != std::string::npos);
+  assert(rpc_res.body.find("\"result\"") != std::string::npos);
+
   audiostudio::HttpRequest page;
   page.method = "GET";
   page.path = "/GUI/frontend/index.html";

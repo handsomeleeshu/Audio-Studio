@@ -37,6 +37,16 @@ struct DriverManagerConfig {
   std::string control_factory = "linux-host";
   std::string log_factory = "linux-host";
   std::string dump_factory = "linux-host";
+  bool enable_os = true;
+  bool enable_socket = true;
+  bool enable_filesystem = true;
+  bool enable_pipe = true;
+  bool enable_dynlib = true;
+  bool enable_transport = true;
+  bool enable_audio = true;
+  bool enable_control = true;
+  bool enable_log = true;
+  bool enable_dump = true;
 };
 
 class DriverManager {

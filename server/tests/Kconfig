@@ -8,6 +8,6 @@ config DRIVER_INTERFACE_TESTS
 config SERVER_FRAMEWORK_TESTS
   bool "Build server framework tests"
   default n
-  depends on BUILD_TESTS && FRAMEWORK_COMMON
+  depends on BUILD_TESTS && FRAMEWORK_COMMON && FRAMEWORK_AUDIO && RPC
 
 endmenu

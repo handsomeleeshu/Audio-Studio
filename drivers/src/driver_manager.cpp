@@ -209,87 +209,107 @@ framework::Status DriverManager::collectRegisteredFactories() {
 framework::Status DriverManager::createDefaultServices() {
   framework::Status status;
 #ifdef CONFIG_DRIVER_OS
-  status = requireFactory(osRegistry().hasFactory(config_.os_factory), "os", config_.os_factory);
-  if (!status.ok()) return status;
-  os_driver_ = osRegistry().create(config_.os_factory);
-  if (!os_driver_) return framework::Status::unavailable("failed to create OS driver: " + config_.os_factory);
-  status = activateDriver("os", config_.os_factory, "Configured OS driver");
-  if (!status.ok()) return status;
+  if (config_.enable_os) {
+    status = requireFactory(osRegistry().hasFactory(config_.os_factory), "os", config_.os_factory);
+    if (!status.ok()) return status;
+    os_driver_ = osRegistry().create(config_.os_factory);
+    if (!os_driver_) return framework::Status::unavailable("failed to create OS driver: " + config_.os_factory);
+    status = activateDriver("os", config_.os_factory, "Configured OS driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_SOCKET
-  status = requireFactory(socketRegistry().hasFactory(config_.socket_factory), "socket", config_.socket_factory);
-  if (!status.ok()) return status;
-  socket_driver_ = socketRegistry().create(config_.socket_factory);
-  if (!socket_driver_) return framework::Status::unavailable("failed to create socket driver: " + config_.socket_factory);
-  status = socket_driver_->initialize();
-  if (!status.ok()) return status;
-  status = activateDriver("socket", config_.socket_factory, "Configured socket driver");
-  if (!status.ok()) return status;
+  if (config_.enable_socket) {
+    status = requireFactory(socketRegistry().hasFactory(config_.socket_factory), "socket", config_.socket_factory);
+    if (!status.ok()) return status;
+    socket_driver_ = socketRegistry().create(config_.socket_factory);
+    if (!socket_driver_) return framework::Status::unavailable("failed to create socket driver: " + config_.socket_factory);
+    status = socket_driver_->initialize();
+    if (!status.ok()) return status;
+    status = activateDriver("socket", config_.socket_factory, "Configured socket driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_FILESYSTEM
-  status = requireFactory(filesystemRegistry().hasFactory(config_.filesystem_factory), "filesystem", config_.filesystem_factory);
-  if (!status.ok()) return status;
-  filesystem_driver_ = filesystemRegistry().create(config_.filesystem_factory);
-  if (!filesystem_driver_) return framework::Status::unavailable("failed to create filesystem driver: " + config_.filesystem_factory);
-  status = activateDriver("filesystem", config_.filesystem_factory, "Configured filesystem driver");
-  if (!status.ok()) return status;
+  if (config_.enable_filesystem) {
+    status = requireFactory(filesystemRegistry().hasFactory(config_.filesystem_factory), "filesystem", config_.filesystem_factory);
+    if (!status.ok()) return status;
+    filesystem_driver_ = filesystemRegistry().create(config_.filesystem_factory);
+    if (!filesystem_driver_) return framework::Status::unavailable("failed to create filesystem driver: " + config_.filesystem_factory);
+    status = activateDriver("filesystem", config_.filesystem_factory, "Configured filesystem driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_PIPE
-  status = requireFactory(pipeRegistry().hasFactory(config_.pipe_factory), "pipe", config_.pipe_factory);
-  if (!status.ok()) return status;
-  pipe_driver_ = pipeRegistry().create(config_.pipe_factory);
-  if (!pipe_driver_) return framework::Status::unavailable("failed to create pipe driver: " + config_.pipe_factory);
-  status = activateDriver("pipe", config_.pipe_factory, "Configured pipe driver");
-  if (!status.ok()) return status;
+  if (config_.enable_pipe) {
+    status = requireFactory(pipeRegistry().hasFactory(config_.pipe_factory), "pipe", config_.pipe_factory);
+    if (!status.ok()) return status;
+    pipe_driver_ = pipeRegistry().create(config_.pipe_factory);
+    if (!pipe_driver_) return framework::Status::unavailable("failed to create pipe driver: " + config_.pipe_factory);
+    status = activateDriver("pipe", config_.pipe_factory, "Configured pipe driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_DYNLIB
-  status = requireFactory(dynlibRegistry().hasFactory(config_.dynlib_factory), "dynlib", config_.dynlib_factory);
-  if (!status.ok()) return status;
-  dynlib_driver_ = dynlibRegistry().create(config_.dynlib_factory);
-  if (!dynlib_driver_) return framework::Status::unavailable("failed to create dynamic library driver: " + config_.dynlib_factory);
-  status = activateDriver("dynlib", config_.dynlib_factory, "Configured dynamic library driver");
-  if (!status.ok()) return status;
+  if (config_.enable_dynlib) {
+    status = requireFactory(dynlibRegistry().hasFactory(config_.dynlib_factory), "dynlib", config_.dynlib_factory);
+    if (!status.ok()) return status;
+    dynlib_driver_ = dynlibRegistry().create(config_.dynlib_factory);
+    if (!dynlib_driver_) return framework::Status::unavailable("failed to create dynamic library driver: " + config_.dynlib_factory);
+    status = activateDriver("dynlib", config_.dynlib_factory, "Configured dynamic library driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_TRANSPORT
-  status = requireFactory(transportRegistry().hasFactory(config_.transport_factory), "transport", config_.transport_factory);
-  if (!status.ok()) return status;
-  status = activateDriver("transport", config_.transport_factory, "Configured transport driver");
-  if (!status.ok()) return status;
+  if (config_.enable_transport) {
+    status = requireFactory(transportRegistry().hasFactory(config_.transport_factory), "transport", config_.transport_factory);
+    if (!status.ok()) return status;
+    status = activateDriver("transport", config_.transport_factory, "Configured transport driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_AUDIO
-  status = requireFactory(audioRegistry().hasPlaybackFactory(config_.audio_factory), "audio playback", config_.audio_factory);
-  if (!status.ok()) return status;
-  status = requireFactory(audioRegistry().hasCaptureFactory(config_.audio_factory), "audio capture", config_.audio_factory);
-  if (!status.ok()) return status;
-  status = activateDriver("audio", config_.audio_factory, "Configured audio device driver");
-  if (!status.ok()) return status;
+  if (config_.enable_audio) {
+    status = requireFactory(audioRegistry().hasPlaybackFactory(config_.audio_factory), "audio playback", config_.audio_factory);
+    if (!status.ok()) return status;
+    status = requireFactory(audioRegistry().hasCaptureFactory(config_.audio_factory), "audio capture", config_.audio_factory);
+    if (!status.ok()) return status;
+    status = activateDriver("audio", config_.audio_factory, "Configured audio device driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_CONTROL
-  status = requireFactory(controlRegistry().hasFactory(config_.control_factory), "control", config_.control_factory);
-  if (!status.ok()) return status;
-  status = activateDriver("control", config_.control_factory, "Configured control device driver");
-  if (!status.ok()) return status;
+  if (config_.enable_control) {
+    status = requireFactory(controlRegistry().hasFactory(config_.control_factory), "control", config_.control_factory);
+    if (!status.ok()) return status;
+    status = activateDriver("control", config_.control_factory, "Configured control device driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_LOG
-  status = requireFactory(logRegistry().hasFactory(config_.log_factory), "log", config_.log_factory);
-  if (!status.ok()) return status;
-  status = activateDriver("log", config_.log_factory, "Configured log device driver");
-  if (!status.ok()) return status;
+  if (config_.enable_log) {
+    status = requireFactory(logRegistry().hasFactory(config_.log_factory), "log", config_.log_factory);
+    if (!status.ok()) return status;
+    status = activateDriver("log", config_.log_factory, "Configured log device driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
 #ifdef CONFIG_DRIVER_DUMP
-  status = requireFactory(dumpRegistry().hasFactory(config_.dump_factory), "dump", config_.dump_factory);
-  if (!status.ok()) return status;
-  status = activateDriver("dump", config_.dump_factory, "Configured dump device driver");
-  if (!status.ok()) return status;
+  if (config_.enable_dump) {
+    status = requireFactory(dumpRegistry().hasFactory(config_.dump_factory), "dump", config_.dump_factory);
+    if (!status.ok()) return status;
+    status = activateDriver("dump", config_.dump_factory, "Configured dump device driver");
+    if (!status.ok()) return status;
+  }
 #endif
 
   return framework::Status::success();

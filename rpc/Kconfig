@@ -1,0 +1,37 @@
+menu "RPC"
+
+config RPC
+  bool "Build Audio Studio RPC support"
+  default n
+
+config RPC_CORE
+  bool "Build JSON-RPC core"
+  default y
+  depends on RPC
+
+config RPC_CLIENT
+  bool "Build RPC client transports"
+  default n
+  depends on RPC_CORE
+
+config RPC_SERVER
+  bool "Build RPC server transports"
+  default n
+  depends on RPC_CORE && SERVER && FRAMEWORK_COMMON
+
+config RPC_AUDIO_METHODS
+  bool "Build audio RPC method bindings"
+  default n
+  depends on RPC_CORE && FRAMEWORK_AUDIO
+
+config RPC_TRANSPORT_SOCKET
+  bool "Enable socket RPC transport"
+  default n
+  depends on RPC && DRIVER_SOCKET && DRIVERS_CORE
+
+config RPC_TRANSPORT_PIPE
+  bool "Enable pipe RPC transport"
+  default n
+  depends on RPC && DRIVER_PIPE && DRIVERS_CORE
+
+endmenu
