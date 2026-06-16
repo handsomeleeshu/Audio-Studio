@@ -4,7 +4,8 @@
 #include <memory>
 #include <string>
 
-#include "audio_studio/rpc/json_rpc.hpp"
+#include "json_rpc.hpp"
+#include "rpc_stream_transport.hpp"
 #include "socket_driver.hpp"
 
 namespace audio_studio::rpc {
@@ -19,6 +20,21 @@ class SocketJsonRpcTransport final : public IJsonRpcTransport {
 public:
   SocketJsonRpcTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint);
   std::string send(const std::string& request_json) override;
+
+private:
+  void connect();
+  void writeAll(const uint8_t* data, size_t size);
+  char readByte();
+
+  drivers::socket::ISocketDriver& driver_;
+  SocketRpcEndpoint endpoint_;
+  std::unique_ptr<drivers::socket::ISocket> socket_;
+};
+
+class SocketRpcStreamTransport final : public IRpcStreamTransport {
+public:
+  SocketRpcStreamTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint);
+  RpcBinaryFrame exchange(const RpcBinaryFrame& frame) override;
 
 private:
   void connect();

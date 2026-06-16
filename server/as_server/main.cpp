@@ -1,22 +1,34 @@
 #include <iostream>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "autoconfig.h"
 
 #if defined(CONFIG_RPC)
-#include "audio_studio/rpc/json_rpc.hpp"
-#include "audio_studio/rpc/rpc_server.hpp"
+#include "json_rpc.hpp"
+#include "rpc_api_registry.hpp"
+#include "rpc_runtime_context.hpp"
+#include "rpc_server.hpp"
 #if defined(CONFIG_DRIVERS_CORE)
 #include "driver_manager.hpp"
 #endif
 #if defined(CONFIG_RPC_AUDIO_METHODS)
 #include "audio_studio/framework/audio/audio_service.hpp"
-#include "audio_studio/rpc/audio_rpc.hpp"
+#include "audio_rpc.hpp"
 #endif
 #endif
 
 namespace {
+
+std::string valueAfter(int argc, char** argv, const std::string& flag, const std::string& fallback) {
+  for (int i = 1; i + 1 < argc; ++i) {
+    if (std::string(argv[i]) == flag) return argv[i + 1];
+  }
+  return fallback;
+}
 
 const char* toolOs() {
 #if defined(_WIN32)
@@ -37,12 +49,104 @@ const char* targetPlatform() {
 }
 
 #if defined(CONFIG_RPC)
-audio_studio::rpc::JsonRpcEndpoint makeEndpoint() {
-  audio_studio::rpc::JsonRpcEndpoint endpoint;
-  audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
 #if defined(CONFIG_RPC_AUDIO_METHODS)
-  static audio_studio::framework::audio::AudioService audio_service;
-  audio_studio::rpc::registerAudioRpcMethods(endpoint, audio_service);
+audio_studio::framework::audio::AudioService& audioService() {
+  static audio_studio::framework::audio::AudioService service;
+  return service;
+}
+#endif
+
+audio_studio::rpc::RpcBinaryFrame errorFrame(const audio_studio::rpc::RpcBinaryFrame& request, const std::string& message) {
+  audio_studio::rpc::JsonValue payload = audio_studio::rpc::JsonValue::object();
+  payload["ok"] = false;
+  payload["message"] = message;
+  const std::string json = payload.dump();
+
+  audio_studio::rpc::RpcBinaryFrame response;
+  response.header.message_type = audio_studio::rpc::RpcMessageType::kError;
+  response.header.service_id = request.header.service_id;
+  response.header.method_id = request.header.method_id;
+  response.header.payload_type = audio_studio::rpc::RpcPayloadType::kJson;
+  response.header.request_id = request.header.request_id;
+  response.header.session_id = request.header.session_id;
+  response.header.stream_id = request.header.stream_id;
+  response.payload.assign(json.begin(), json.end());
+  return response;
+}
+
+#if defined(CONFIG_RPC_AUDIO_METHODS)
+audio_studio::rpc::RpcBinaryFrame audioStreamResponse(audio_studio::framework::audio::AudioService& service,
+                                                      const audio_studio::rpc::RpcBinaryFrame& request) {
+  using namespace audio_studio;
+  if (request.header.service_id != static_cast<uint16_t>(rpc::RpcServiceId::kAudio)) {
+    return rpc::makeDefaultStreamAck(request);
+  }
+
+  const uint32_t timeout_ms = request.header.flags == 0 ? 5000 : request.header.flags;
+  if (request.header.method_id == rpc::kRpcAudioMethodWriteFrames) {
+    size_t accepted_bytes = 0;
+    auto status = service.writeFrames(request.header.session_id, request.payload, timeout_ms, accepted_bytes);
+    if (!status.ok()) return errorFrame(request, status.message());
+
+    rpc::JsonValue payload = rpc::JsonValue::object();
+    payload["accepted"] = true;
+    payload["accepted_bytes"] = static_cast<uint32_t>(accepted_bytes);
+    payload["queued_bytes"] = static_cast<uint32_t>(0);
+    payload["credit_bytes"] = static_cast<uint32_t>(1024 * 1024);
+    payload["request_id"] = request.header.request_id;
+    const std::string json = payload.dump();
+
+    rpc::RpcBinaryFrame ack;
+    ack.header.message_type = rpc::RpcMessageType::kStreamAck;
+    ack.header.service_id = request.header.service_id;
+    ack.header.method_id = request.header.method_id;
+    ack.header.payload_type = rpc::RpcPayloadType::kJson;
+    ack.header.request_id = request.header.request_id;
+    ack.header.session_id = request.header.session_id;
+    ack.header.stream_id = request.header.stream_id;
+    ack.payload.assign(json.begin(), json.end());
+    return ack;
+  }
+
+  if (request.header.method_id == rpc::kRpcAudioMethodReadFrames) {
+    size_t max_bytes = 65536;
+    if (!request.payload.empty()) {
+      try {
+        const std::string json(request.payload.begin(), request.payload.end());
+        const auto params = rpc::parseJson(json);
+        max_bytes = rpc::optionalUInt32Param(params, "max_bytes", 65536);
+      } catch (const std::exception& error) {
+        return errorFrame(request, error.what());
+      }
+    }
+
+    std::vector<uint8_t> data;
+    auto status = service.readFrames(request.header.session_id, max_bytes, timeout_ms, data);
+    if (!status.ok()) return errorFrame(request, status.message());
+
+    rpc::RpcBinaryFrame frame;
+    frame.header.message_type = rpc::RpcMessageType::kStreamData;
+    frame.header.service_id = request.header.service_id;
+    frame.header.method_id = request.header.method_id;
+    frame.header.payload_type = rpc::RpcPayloadType::kBinary;
+    frame.header.request_id = request.header.request_id;
+    frame.header.session_id = request.header.session_id;
+    frame.header.stream_id = request.header.stream_id;
+    frame.payload = std::move(data);
+    return frame;
+  }
+
+  return errorFrame(request, "unsupported audio stream method id: " + std::to_string(request.header.method_id));
+}
+#endif
+
+audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefaults stream_defaults = {}) {
+  audio_studio::rpc::JsonRpcEndpoint endpoint;
+#if defined(CONFIG_RPC_AUDIO_METHODS)
+  auto context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(audioService(), std::move(stream_defaults));
+  audio_studio::rpc::registerAudioStudioRpcMethods(endpoint, context);
+#else
+  audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
 #endif
   return endpoint;
 }
@@ -63,7 +167,7 @@ size_t maxRequestsFromArgs(int argc, char** argv, size_t fallback) {
 } // namespace
 
 int main(int argc, char** argv) {
-  const std::string arg = argc > 1 ? argv[1] : "--version";
+  const std::string arg = argc > 1 ? argv[1] : "--rpc";
   if (arg == "--version") {
     std::cout << "Audio Studio as_server initial " << toolOs() << "/" << targetPlatform() << "\n";
     return 0;
@@ -84,11 +188,6 @@ int main(int argc, char** argv) {
   }
 #if defined(CONFIG_RPC_SERVER) && defined(CONFIG_DRIVERS_CORE)
   if (arg == "--rpc") {
-    if (argc < 3) {
-      std::cerr << "usage: as_server --rpc socket <host> <port> [--max-requests N]\n"
-                << "       as_server --rpc pipe <request-fifo> <response-fifo> [--max-requests N]\n";
-      return 2;
-    }
     auto& drivers = audio_studio::drivers::DriverManager::instance();
     auto status = drivers.initialize();
     if (!status.ok()) {
@@ -96,34 +195,49 @@ int main(int argc, char** argv) {
       return 1;
     }
     try {
-      auto endpoint = makeEndpoint();
+      audio_studio::rpc::RpcStreamDefaults stream_defaults;
+      const std::string transport = argc > 2 && std::string(argv[2]).rfind("--", 0) != 0 ? argv[2] : "socket";
+#if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
+      audioService().configureDeviceRegistry(&drivers.audioRegistry());
+#endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
-      if (std::string(argv[2]) == "socket") {
-        if (argc < 5) {
-          std::cerr << "usage: as_server --rpc socket <host> <port> [--max-requests N]\n";
-          drivers.shutdown();
-          return 2;
-        }
-        audio_studio::rpc::RpcSocketServer server(drivers.socket(), endpoint);
-        server.serve(argv[3], static_cast<uint16_t>(std::stoul(argv[4])), {maxRequestsFromArgs(argc, argv, 0), 5000});
+      if (transport == "socket") {
+        const std::string positional_host = argc > 3 && std::string(argv[3]).rfind("--", 0) != 0 ? argv[3] : "127.0.0.1";
+        const std::string positional_port = argc > 4 && std::string(argv[4]).rfind("--", 0) != 0 ? argv[4] : "9900";
+        const std::string host = valueAfter(argc, argv, "--host", positional_host);
+        const uint16_t port = static_cast<uint16_t>(std::stoul(valueAfter(argc, argv, "--port", positional_port)));
+        stream_defaults.host = host;
+        stream_defaults.port = port;
+        stream_defaults.stream_uri_base = "tcp://" + host + ":" + std::to_string(port);
+        auto endpoint = makeEndpoint(std::move(stream_defaults));
+        audio_studio::rpc::RpcSocketServer server(drivers.socket(), endpoint, [](const audio_studio::rpc::RpcBinaryFrame& request) {
+          return audioStreamResponse(audioService(), request);
+        });
+        server.serve(host, port, {maxRequestsFromArgs(argc, argv, 0), 5000});
         drivers.shutdown();
         return 0;
       }
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_PIPE)
-      if (std::string(argv[2]) == "pipe") {
-        if (argc < 5) {
+      if (transport == "pipe") {
+        const std::string request_pipe = valueAfter(argc, argv, "--request-pipe", argc > 3 ? argv[3] : "");
+        const std::string response_pipe = valueAfter(argc, argv, "--response-pipe", argc > 4 ? argv[4] : "");
+        if (request_pipe.empty() || response_pipe.empty()) {
           std::cerr << "usage: as_server --rpc pipe <request-fifo> <response-fifo> [--max-requests N]\n";
           drivers.shutdown();
           return 2;
         }
-        audio_studio::rpc::RpcPipeServer server(drivers.pipe(), endpoint);
-        server.serve(argv[3], argv[4], {maxRequestsFromArgs(argc, argv, 0), 5000});
+        stream_defaults.stream_uri_base = "pipe://" + request_pipe + ":" + response_pipe;
+        auto endpoint = makeEndpoint(std::move(stream_defaults));
+        audio_studio::rpc::RpcPipeServer server(drivers.pipe(), endpoint, [](const audio_studio::rpc::RpcBinaryFrame& request) {
+          return audioStreamResponse(audioService(), request);
+        });
+        server.serve(request_pipe, response_pipe, {maxRequestsFromArgs(argc, argv, 0), 5000});
         drivers.shutdown();
         return 0;
       }
 #endif
-      std::cerr << "unsupported RPC transport: " << argv[2] << "\n";
+      std::cerr << "unsupported RPC transport: " << transport << "\n";
       drivers.shutdown();
       return 2;
     } catch (const std::exception& error) {

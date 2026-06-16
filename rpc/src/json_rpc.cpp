@@ -1,4 +1,4 @@
-#include "audio_studio/rpc/json_rpc.hpp"
+#include "json_rpc.hpp"
 
 #include <exception>
 #include <sstream>

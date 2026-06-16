@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "audio_studio/rpc/json_value.hpp"
+#include "json_value.hpp"
 
 namespace audio_studio::rpc {
 

@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import time
+import wave
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -40,6 +41,24 @@ def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(('127.0.0.1', 0))
         return str(sock.getsockname()[1])
+
+
+def write_test_wav(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = bytes(9600)
+    with wave.open(str(path), 'wb') as wav:
+        wav.setnchannels(2)
+        wav.setsampwidth(2)
+        wav.setframerate(48000)
+        wav.writeframes(payload)
+
+
+def assert_wav(path, expected_frames):
+    with wave.open(str(path), 'rb') as wav:
+        assert wav.getnchannels() == 2
+        assert wav.getsampwidth() == 2
+        assert wav.getframerate() == 48000
+        assert wav.getnframes() == expected_frames
 
 
 def wait_for_paths(paths, process, timeout=5.0):
@@ -244,14 +263,6 @@ def main():
     ])
     require_contains(rpc_health, '"jsonrpc":"2.0"')
     require_contains(rpc_health, '"tool_os":"linux"')
-    rpc_audio = check_output([
-        str(DRIVER_BUILD_DIR / 'as_server'),
-        '--rpc-once',
-        '{"jsonrpc":"2.0","id":"a","method":"audio.createPlaybackSession","params":{"session_id":"s1","sample_rate":48000,"channels":2,"bytes_per_sample":2}}',
-    ])
-    require_contains(rpc_audio, '"session_id":"s1"')
-    require_contains(rpc_audio, '"direction":"playback"')
-
     if GUI_BACKEND_BUILD_DIR.exists():
         shutil.rmtree(GUI_BACKEND_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'gui_backend', '-r', 'linux', 'a2'])
@@ -276,8 +287,13 @@ def main():
     assert (RPC_SOCKET_BUILD_DIR / 'as_control').exists()
     run(['ctest', '--test-dir', str(RPC_SOCKET_BUILD_DIR), '--output-on-failure'])
     socket_port = find_free_port()
+    rpc_play_wav = ROOT / 'out' / 'rpc-play-smoke.wav'
+    rpc_socket_record_wav = ROOT / 'out' / 'rpc-socket-record-smoke.wav'
+    write_test_wav(rpc_play_wav)
+    if rpc_socket_record_wav.exists():
+        rpc_socket_record_wav.unlink()
     socket_server = subprocess.Popen(
-        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', 'socket', '127.0.0.1', socket_port, '--max-requests', '1'],
+        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '14'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -286,13 +302,34 @@ def main():
     try:
         socket_cli = retry_check_output([
             str(RPC_SOCKET_BUILD_DIR / 'as_control'),
-            '--rpc', 'socket',
             '--host', '127.0.0.1',
             '--port', socket_port,
             '--action', 'get-health',
         ])
         require_contains(socket_cli, '"ok":true')
         require_contains(socket_cli, '"platform":"a2"')
+        socket_play = retry_check_output([
+            str(RPC_SOCKET_BUILD_DIR / 'as_play'),
+            '--host', '127.0.0.1',
+            '--port', socket_port,
+            '--device', 'null',
+            '--file', str(rpc_play_wav),
+        ])
+        require_contains(socket_play, '"ok":true')
+        require_contains(socket_play, f':{socket_port}/streams/')
+        require_contains(socket_play, '"played_bytes":9600')
+        socket_record = retry_check_output([
+            str(RPC_SOCKET_BUILD_DIR / 'as_record'),
+            '--host', '127.0.0.1',
+            '--port', socket_port,
+            '--device', 'null',
+            '--output', str(rpc_socket_record_wav),
+            '--duration-ms', '50',
+            '--chunk-bytes', '4096',
+        ])
+        require_contains(socket_record, '"ok":true')
+        require_contains(socket_record, '"recorded_bytes":9600')
+        assert_wav(rpc_socket_record_wav, 2400)
         assert socket_server.wait(timeout=5) == 0
     finally:
         if socket_server.poll() is None:
@@ -311,11 +348,12 @@ def main():
     run(['ctest', '--test-dir', str(RPC_PIPE_BUILD_DIR), '--output-on-failure'])
     request_pipe = ROOT / 'out' / 'rpc-test.req'
     response_pipe = ROOT / 'out' / 'rpc-test.rsp'
-    for path in [request_pipe, response_pipe]:
+    rpc_pipe_record_wav = ROOT / 'out' / 'rpc-pipe-record-smoke.wav'
+    for path in [request_pipe, response_pipe, rpc_pipe_record_wav]:
         if path.exists():
             path.unlink()
     pipe_server = subprocess.Popen(
-        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '1'],
+        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '14'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -332,6 +370,29 @@ def main():
         ])
         require_contains(pipe_cli, '"ok":true')
         require_contains(pipe_cli, '"platform":"a2"')
+        pipe_play = retry_check_output([
+            str(RPC_PIPE_BUILD_DIR / 'as_play'),
+            '--rpc', 'pipe',
+            '--request-pipe', str(request_pipe),
+            '--response-pipe', str(response_pipe),
+            '--device', 'null',
+            '--file', str(rpc_play_wav),
+        ])
+        require_contains(pipe_play, '"ok":true')
+        require_contains(pipe_play, '"played_bytes":9600')
+        pipe_record = retry_check_output([
+            str(RPC_PIPE_BUILD_DIR / 'as_record'),
+            '--rpc', 'pipe',
+            '--request-pipe', str(request_pipe),
+            '--response-pipe', str(response_pipe),
+            '--device', 'null',
+            '--output', str(rpc_pipe_record_wav),
+            '--duration-ms', '50',
+            '--chunk-bytes', '4096',
+        ])
+        require_contains(pipe_record, '"ok":true')
+        require_contains(pipe_record, '"recorded_bytes":9600')
+        assert_wav(rpc_pipe_record_wav, 2400)
         assert pipe_server.wait(timeout=5) == 0
     finally:
         if pipe_server.poll() is None:

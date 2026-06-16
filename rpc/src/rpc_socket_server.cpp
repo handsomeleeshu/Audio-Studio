@@ -1,8 +1,10 @@
-#include "audio_studio/rpc/rpc_server.hpp"
+#include "rpc_server.hpp"
 
 #include <memory>
+#include <utility>
+#include <vector>
 
-#include "audio_studio/rpc/rpc_framing.hpp"
+#include "rpc_framing.hpp"
 #include "socket_driver.hpp"
 
 namespace audio_studio::rpc {
@@ -31,7 +33,12 @@ char readByte(drivers::socket::ISocket& socket, uint32_t timeout_ms) {
 } // namespace
 
 RpcSocketServer::RpcSocketServer(drivers::socket::ISocketDriver& driver, JsonRpcEndpoint& endpoint)
-  : driver_(driver), endpoint_(endpoint) {}
+  : RpcSocketServer(driver, endpoint, makeDefaultStreamAck) {}
+
+RpcSocketServer::RpcSocketServer(drivers::socket::ISocketDriver& driver,
+                                 JsonRpcEndpoint& endpoint,
+                                 RpcStreamHandler stream_handler)
+  : driver_(driver), endpoint_(endpoint), stream_handler_(std::move(stream_handler)) {}
 
 void RpcSocketServer::serve(const std::string& host, uint16_t port, RpcServerLimits limits) {
   auto server = driver_.createSocket(drivers::socket::SocketType::Tcp);
@@ -50,12 +57,29 @@ void RpcSocketServer::serve(const std::string& host, uint16_t port, RpcServerLim
     if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
     if (!client) continue;
 
-    const std::string request = readContentLengthFrame([&] { return readByte(*client, limits.timeout_ms); });
-    const std::string response = endpoint_.handleRequest(request);
-    if (!response.empty()) {
-      writeContentLengthFrame([&](const uint8_t* data, size_t size) {
+    std::string prefix;
+    prefix.reserve(4);
+    for (size_t i = 0; i < 4; ++i) prefix.push_back(readByte(*client, limits.timeout_ms));
+
+    if (prefix == "ASRP") {
+      const std::vector<uint8_t> binary_prefix(prefix.begin(), prefix.end());
+      const RpcBinaryFrame request = readBinaryFrameWithPrefix(binary_prefix, [&] {
+        return readByte(*client, limits.timeout_ms);
+      });
+      const RpcBinaryFrame response = stream_handler_ ? stream_handler_(request) : makeDefaultStreamAck(request);
+      writeBinaryFrame([&](const uint8_t* data, size_t size) {
         writeAll(*client, data, size, limits.timeout_ms);
       }, response);
+    } else {
+      const std::string request = readContentLengthFrameWithPrefix(prefix, [&] {
+        return readByte(*client, limits.timeout_ms);
+      });
+      const std::string response = endpoint_.handleRequest(request);
+      if (!response.empty()) {
+        writeContentLengthFrame([&](const uint8_t* data, size_t size) {
+          writeAll(*client, data, size, limits.timeout_ms);
+        }, response);
+      }
     }
     client->shutdown();
     client->close();

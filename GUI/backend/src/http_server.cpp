@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #ifdef AUDIO_STUDIO_GUI_BACKEND_RPC
-#include "audio_studio/rpc/json_rpc.hpp"
+#include "json_rpc.hpp"
 #endif
 
 namespace audiostudio {

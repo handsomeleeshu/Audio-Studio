@@ -1,5 +1,7 @@
 #include "linux_host_audio_device.hpp"
 
+#include <algorithm>
+
 namespace audio_studio::drivers::audio {
 
 namespace {
@@ -249,6 +251,11 @@ AudioResult LinuxHostAudioCaptureDevice::start() {
   if (!prepared_) return AudioResult::unavailable("audio capture device is not prepared");
   const int rc = snd_pcm_prepare(pcm_);
   if (rc < 0) return alsaError("snd_pcm_prepare capture", rc);
+  const int start_rc = snd_pcm_start(pcm_);
+  if (start_rc < 0) {
+    auto status = recover(start_rc);
+    if (!status.ok()) return status;
+  }
   running_ = true;
   return AudioResult::success();
 }
@@ -261,17 +268,29 @@ AudioResult LinuxHostAudioCaptureDevice::readFrame(AudioFrame& frame, uint32_t t
   if (rc == 0) return AudioResult::unavailable("audio capture wait timed out");
   if (rc < 0) return recover(rc);
 
-  frame.assign(frame_bytes_, 0);
-  rc = snd_pcm_readi(pcm_, frame.data(), 1);
+  size_t requested_frames = frame.size() >= frame_bytes_ ? frame.size() / frame_bytes_ : 256;
+  if (requested_frames == 0) requested_frames = 1;
+  snd_pcm_sframes_t available = snd_pcm_avail_update(pcm_);
+  if (available < 0) {
+    auto status = recover(static_cast<int>(available));
+    if (!status.ok()) return status;
+    available = snd_pcm_avail_update(pcm_);
+  }
+  if (available == 0) return AudioResult::unavailable("audio capture has no frames available after wait");
+
+  const auto frames_to_read = static_cast<snd_pcm_uframes_t>(
+    std::min<size_t>(requested_frames, available > 0 ? static_cast<size_t>(available) : requested_frames));
+  frame.assign(static_cast<size_t>(frames_to_read) * frame_bytes_, 0);
+  rc = snd_pcm_readi(pcm_, frame.data(), frames_to_read);
   if (rc < 0) {
     auto status = recover(rc);
     if (!status.ok()) return status;
-    rc = snd_pcm_readi(pcm_, frame.data(), 1);
+    rc = snd_pcm_readi(pcm_, frame.data(), static_cast<snd_pcm_uframes_t>(requested_frames));
     if (rc < 0) return alsaError("snd_pcm_readi", rc);
   }
   if (rc == 0) return AudioResult::unavailable("audio capture read returned no frames");
   frame.resize(static_cast<size_t>(rc) * frame_bytes_);
-  ++frames_read_;
+  frames_read_ += static_cast<size_t>(rc);
   return AudioResult::success();
 }
 

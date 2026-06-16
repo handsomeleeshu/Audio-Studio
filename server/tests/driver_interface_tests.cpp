@@ -258,7 +258,7 @@ int main() {
     assert(capture);
     assert(capture->prepare({48000, 1, 2}).ok());
     assert(capture->start().ok());
-    audio_studio::drivers::audio::AudioFrame frame;
+    audio_studio::drivers::audio::AudioFrame frame(2);
     assert(capture->readFrame(frame, 100).ok());
     assert(frame.size() == 2);
   }

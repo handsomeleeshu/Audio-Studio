@@ -5,6 +5,7 @@ if(CONFIG_RPC_CORE)
     src/json_value.cpp
     src/json_rpc.cpp
     src/rpc_framing.cpp
+    src/rpc_api_registry.cpp
   )
   target_include_directories(audio_studio_rpc_core PUBLIC include)
   target_compile_features(audio_studio_rpc_core PUBLIC cxx_std_17)
@@ -12,11 +13,14 @@ endif()
 
 if(CONFIG_RPC_AUDIO_METHODS)
   add_library(audio_studio_rpc_audio
+    api/audio_studio_rpc_api.cpp
     src/audio_rpc.cpp
+    src/rpc_runtime_context.cpp
   )
   target_include_directories(audio_studio_rpc_audio PUBLIC include)
   target_link_libraries(audio_studio_rpc_audio PUBLIC
     audio_studio_rpc_core
+    audio_studio_config
     audio_studio_framework_audio
   )
   target_compile_features(audio_studio_rpc_audio PUBLIC cxx_std_17)
@@ -35,6 +39,7 @@ if(CONFIG_RPC_CLIENT)
   endif()
 
   add_library(audio_studio_rpc_client
+    src/audio_rpc_client.cpp
     ${AUDIO_STUDIO_RPC_CLIENT_SOURCES}
   )
   target_include_directories(audio_studio_rpc_client PUBLIC
@@ -48,6 +53,9 @@ if(CONFIG_RPC_CLIENT)
     audio_studio_framework_common
     audio_studio_drivers_core
   )
+  if(CONFIG_RPC_AUDIO_METHODS)
+    target_link_libraries(audio_studio_rpc_client PUBLIC audio_studio_rpc_audio)
+  endif()
   if(CONFIG_RPC_TRANSPORT_SOCKET)
     target_link_libraries(audio_studio_rpc_client PUBLIC audio_studio_driver_socket)
   endif()

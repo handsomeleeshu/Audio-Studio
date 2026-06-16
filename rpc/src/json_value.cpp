@@ -1,4 +1,4 @@
-#include "audio_studio/rpc/json_value.hpp"
+#include "json_value.hpp"
 
 #include <cctype>
 #include <cmath>
