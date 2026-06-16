@@ -1,7 +1,6 @@
 #pragma once
 
-#include <map>
-#include <set>
+#include <fstream>
 
 #include "filesystem_driver.hpp"
 
@@ -11,8 +10,6 @@ class LinuxHostFileSystemDriver;
 
 class LinuxHostFile final : public IFile {
 public:
-  explicit LinuxHostFile(LinuxHostFileSystemDriver& driver);
-
   DriverResult open(const std::string& path, const FileOpenOptions& options) override;
   DriverResult read(void* buffer, size_t capacity, size_t& read_bytes) override;
   DriverResult write(const void* data, size_t size, size_t& written_bytes) override;
@@ -24,11 +21,10 @@ public:
   uint64_t size() const override;
 
 private:
-  LinuxHostFileSystemDriver& driver_;
   std::string path_;
   FileOpenOptions options_;
   uint64_t offset_ = 0;
-  bool open_ = false;
+  std::fstream stream_;
 };
 
 class LinuxHostFileSystemDriver final : public IFileSystemDriver {
@@ -47,10 +43,7 @@ public:
 private:
   friend class LinuxHostFile;
 
-  static bool isDirectChild(const std::string& parent, const std::string& child);
-
-  std::map<std::string, std::string> files_;
-  std::set<std::string> directories_;
+  static DriverResult filesystemError(const std::string& operation, const std::string& path);
 };
 
 } // namespace audio_studio::drivers::filesystem

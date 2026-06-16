@@ -187,10 +187,19 @@ if(CONFIG_BUILD_TESTS AND CONFIG_SERVER_FRAMEWORK_TESTS)
 endif()
 
 if(CONFIG_BUILD_TESTS AND CONFIG_DRIVER_INTERFACE_TESTS)
+  add_library(audio_studio_driver_test_plugin SHARED
+    tests/driver_test_plugin.cpp
+  )
+  target_compile_features(audio_studio_driver_test_plugin PRIVATE cxx_std_17)
+
   add_executable(audio_studio_driver_interface_tests
     tests/driver_interface_tests.cpp
   )
   target_link_libraries(audio_studio_driver_interface_tests PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
+  target_compile_definitions(audio_studio_driver_interface_tests PRIVATE
+    AUDIO_STUDIO_TEST_PLUGIN_PATH=\"$<TARGET_FILE:audio_studio_driver_test_plugin>\"
+  )
+  add_dependencies(audio_studio_driver_interface_tests audio_studio_driver_test_plugin)
   target_compile_features(audio_studio_driver_interface_tests PRIVATE cxx_std_17)
   add_test(NAME driver_interface_tests COMMAND audio_studio_driver_interface_tests)
 endif()

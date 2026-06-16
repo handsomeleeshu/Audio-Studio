@@ -4432,11 +4432,101 @@ Audio 因为 playback/capture 是两个独立 device interface，所以使用双
 ```cpp
 class AudioDeviceRegistry {
 public:
+    static AudioDeviceRegistry& instance();
     AudioResult registerPlaybackFactory(std::unique_ptr<IAudioPlaybackDeviceFactory> factory);
     AudioResult registerCaptureFactory(std::unique_ptr<IAudioCaptureDeviceFactory> factory);
     std::unique_ptr<IAudioPlaybackDevice> createPlayback(const std::string& name, const AudioOpenParams& params) const;
     std::unique_ptr<IAudioCaptureDevice> createCapture(const std::string& name, const AudioOpenParams& params) const;
 };
+```
+
+#### 7.5 Driver 注册流程
+
+当前 driver 注册流程是“模块自注册 + DriverManager 消费 singleton Registry”，不是由 `DriverManager` include 每个 implementation 头文件后集中注册。
+
+以 audio Linux host 实现为例：
+
+```text
+server/drivers/audio/include/audio_device.hpp
+  - 定义 IAudioPlaybackDevice / IAudioCaptureDevice
+  - 定义 IAudioPlaybackDeviceFactory / IAudioCaptureDeviceFactory
+  - 定义 AudioDeviceRegistry::instance()
+
+server/drivers/audio/src/linux_host_audio_device.hpp
+  - 只声明 LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice 实现类
+
+server/drivers/audio/src/linux_host_audio_device.cpp
+  - 在匿名 namespace 中定义 LinuxHostAudioPlaybackDeviceFactory / LinuxHostAudioCaptureDeviceFactory
+  - 用静态 registrar 注册到 AudioDeviceRegistry::instance()
+
+server/drivers/audio/CMakeLists.txt
+  - 根据 CONFIG_DRIVER_AUDIO_LINUX_HOST 选择 src/linux_host_audio_device.cpp
+  - 构建 audio_studio_driver_audio OBJECT target
+```
+
+典型静态注册写法：
+
+```cpp
+namespace {
+
+class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
+public:
+    std::string name() const override { return "linux-host"; }
+    std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override;
+};
+
+const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
+    auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(
+        std::make_unique<LinuxHostAudioPlaybackDeviceFactory>());
+    (void)status;
+    return true;
+}();
+
+} // namespace
+```
+
+构建和初始化时序：
+
+```text
+1. Kconfig 选择 implementation：
+   CONFIG_DRIVER_AUDIO=y
+   CONFIG_DRIVER_AUDIO_LINUX_HOST=y
+
+2. server/drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
+
+3. 最终 executable 直接链接 audio_studio_driver_audio OBJECT target。
+   这样对象文件一定进入最终链接，静态 registrar 不会被 static archive 丢弃。
+
+4. 程序启动后，implementation .cpp 中的静态 registrar 执行，
+   factory 注册到 AudioDeviceRegistry::instance()。
+
+5. DriverManager::initialize() 不 include 或 new 任何 LinuxHost* class，
+   只从 AudioDeviceRegistry::instance() 收集 factory metadata，
+   并检查 DriverManagerConfig 中指定的默认 factory 是否存在。
+
+6. framework 需要具体 per-device 实例时，通过 registry 创建：
+   manager.audioRegistry().createPlayback("linux-host", params)
+```
+
+新增 platform/custom driver implementation 时遵循同一机制：
+
+```text
+1. 新实现只 include 对应 public interface 头文件，例如 audio_device.hpp。
+2. 在自己的 .cpp 中实现 device/driver class 和 factory class。
+3. 在同一个 .cpp 中用静态 registrar 注册到对应 Registry::instance()。
+4. 新增 Kconfig implementation 开关，例如 CONFIG_DRIVER_AUDIO_A2。
+5. 在模块根 CMakeLists.txt 中根据该 CONFIG 选择 platform/customer 源文件。
+6. 如默认 factory 名不是 linux-host，通过 DriverManagerConfig 指定，例如 audio_factory = "a2"。
+7. DriverManager 不需要修改，也不需要 include 新实现头。
+```
+
+命名约束：
+
+```text
+factory name 必须稳定，例如 linux-host、a2、customer-x。
+同一 Registry 内 factory name 不能重复。
+implementation header 放在实现目录，不能进入 public include。
+public include 只能暴露 interface、factory interface、Registry。
 ```
 
 测试要求：

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 #include "socket_driver.hpp"
 
 namespace audio_studio::drivers::socket {
@@ -9,6 +7,7 @@ namespace audio_studio::drivers::socket {
 class LinuxHostSocket final : public ISocket {
 public:
   explicit LinuxHostSocket(SocketType type);
+  ~LinuxHostSocket() override;
 
   DriverResult open(const SocketConfig& config) override;
   DriverResult bind(const SocketEndpoint& endpoint) override;
@@ -26,13 +25,15 @@ public:
   size_t bytesReceived() const;
 
 private:
+  explicit LinuxHostSocket(int fd, SocketType type, bool connected);
+
+  DriverResult waitFor(short events, uint32_t timeout_ms) const;
+
   SocketType type_ = SocketType::Tcp;
-  SocketEndpoint endpoint_;
-  bool open_ = false;
+  int fd_ = -1;
   bool connected_ = false;
   size_t bytes_sent_ = 0;
   size_t bytes_received_ = 0;
-  std::vector<uint8_t> loopback_;
 };
 
 class LinuxHostSocketDriver final : public ISocketDriver {

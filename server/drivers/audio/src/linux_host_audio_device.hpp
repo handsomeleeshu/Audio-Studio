@@ -2,12 +2,16 @@
 
 #include <string>
 
+#include <alsa/asoundlib.h>
+
 #include "audio_device.hpp"
 
 namespace audio_studio::drivers::audio {
 
 class LinuxHostAudioPlaybackDevice final : public IAudioPlaybackDevice {
 public:
+  ~LinuxHostAudioPlaybackDevice() override;
+
   AudioResult open(const AudioOpenParams& params) override;
   AudioResult prepare(const AudioStreamParams& params) override;
   AudioResult start() override;
@@ -19,16 +23,22 @@ public:
   AudioDeviceCaps getCaps() const override;
 
 private:
+  AudioResult configurePcm();
+  AudioResult recover(int error);
+
   std::string device_name_;
   AudioStreamParams params_;
-  bool open_ = false;
+  snd_pcm_t* pcm_ = nullptr;
   bool prepared_ = false;
   bool running_ = false;
   size_t frames_written_ = 0;
+  size_t frame_bytes_ = 0;
 };
 
 class LinuxHostAudioCaptureDevice final : public IAudioCaptureDevice {
 public:
+  ~LinuxHostAudioCaptureDevice() override;
+
   AudioResult open(const AudioOpenParams& params) override;
   AudioResult prepare(const AudioStreamParams& params) override;
   AudioResult start() override;
@@ -38,16 +48,17 @@ public:
   AudioStreamStats getStats() const override;
   AudioDeviceCaps getCaps() const override;
 
-  AudioResult injectCaptureFrame(AudioFrame frame);
-
 private:
+  AudioResult configurePcm();
+  AudioResult recover(int error);
+
   std::string device_name_;
   AudioStreamParams params_;
-  bool open_ = false;
+  snd_pcm_t* pcm_ = nullptr;
   bool prepared_ = false;
   bool running_ = false;
   size_t frames_read_ = 0;
-  std::vector<AudioFrame> capture_frames_;
+  size_t frame_bytes_ = 0;
 };
 
 } // namespace audio_studio::drivers::audio

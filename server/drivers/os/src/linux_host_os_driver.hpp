@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include "os_driver.hpp"
 
 namespace audio_studio::drivers::os {
@@ -29,8 +27,6 @@ public:
   std::string homeDirectory() const override;
 
 private:
-  uint64_t monotonic_ms_ = 0;
-  std::map<std::string, std::string> env_;
 };
 
 } // namespace audio_studio::drivers::os

@@ -8,5 +8,5 @@ add_library(audio_studio_driver_dynlib OBJECT
   ${AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES}
 )
 target_include_directories(audio_studio_driver_dynlib PUBLIC include)
-target_link_libraries(audio_studio_driver_dynlib PUBLIC audio_studio_framework_common)
+target_link_libraries(audio_studio_driver_dynlib PUBLIC audio_studio_framework_common ${CMAKE_DL_LIBS})
 target_compile_features(audio_studio_driver_dynlib PUBLIC cxx_std_17)
