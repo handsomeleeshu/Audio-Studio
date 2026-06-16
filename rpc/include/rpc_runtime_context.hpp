@@ -34,15 +34,17 @@ public:
   std::string nextSessionId(const std::string& prefix);
   uint32_t numericSessionId(const std::string& session_id);
   uint32_t numericStreamId(const std::string& session_id);
+  bool sessionIdForNumeric(uint32_t numeric_session_id, std::string& session_id) const;
   void releaseSession(const std::string& session_id);
 
 private:
   framework::audio::AudioService& audio_service_;
   RpcStreamDefaults stream_defaults_;
   std::atomic<uint32_t> next_id_ {1};
-  std::mutex ids_mutex_;
+  mutable std::mutex ids_mutex_;
   std::map<std::string, uint32_t> session_ids_;
   std::map<std::string, uint32_t> stream_ids_;
+  std::map<uint32_t, std::string> numeric_sessions_;
 };
 
 } // namespace audio_studio::rpc

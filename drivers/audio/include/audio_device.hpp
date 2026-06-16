@@ -71,14 +71,14 @@ class IAudioPlaybackDeviceFactory {
 public:
   virtual ~IAudioPlaybackDeviceFactory() = default;
   virtual std::string name() const = 0;
-  virtual std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const = 0;
+  virtual AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioPlaybackDevice>& out) const = 0;
 };
 
 class IAudioCaptureDeviceFactory {
 public:
   virtual ~IAudioCaptureDeviceFactory() = default;
   virtual std::string name() const = 0;
-  virtual std::unique_ptr<IAudioCaptureDevice> create(const AudioOpenParams& params) const = 0;
+  virtual AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioCaptureDevice>& out) const = 0;
 };
 
 class AudioDeviceRegistry {
@@ -118,16 +118,22 @@ public:
     return capture_factories_.find(name) != capture_factories_.end();
   }
 
-  std::unique_ptr<IAudioPlaybackDevice> createPlayback(const std::string& name, const AudioOpenParams& params) const {
+  AudioResult createPlayback(const std::string& name,
+                             const AudioOpenParams& params,
+                             std::unique_ptr<IAudioPlaybackDevice>& out) const {
+    out.reset();
     const auto it = playback_factories_.find(name);
-    if (it == playback_factories_.end()) return nullptr;
-    return it->second->create(params);
+    if (it == playback_factories_.end()) return AudioResult::unavailable("audio playback factory not registered: " + name);
+    return it->second->create(params, out);
   }
 
-  std::unique_ptr<IAudioCaptureDevice> createCapture(const std::string& name, const AudioOpenParams& params) const {
+  AudioResult createCapture(const std::string& name,
+                            const AudioOpenParams& params,
+                            std::unique_ptr<IAudioCaptureDevice>& out) const {
+    out.reset();
     const auto it = capture_factories_.find(name);
-    if (it == capture_factories_.end()) return nullptr;
-    return it->second->create(params);
+    if (it == capture_factories_.end()) return AudioResult::unavailable("audio capture factory not registered: " + name);
+    return it->second->create(params, out);
   }
 
   std::vector<std::string> playbackFactoryNames() const {

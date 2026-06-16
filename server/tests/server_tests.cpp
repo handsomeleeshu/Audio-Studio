@@ -1,5 +1,6 @@
 #include <cassert>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -69,16 +70,21 @@ audio_studio::rpc::RpcBinaryFrame streamError(const audio_studio::rpc::RpcBinary
   return response;
 }
 
-audio_studio::rpc::RpcBinaryFrame audioServiceStreamHandler(audio_studio::framework::audio::AudioService& service,
+audio_studio::rpc::RpcBinaryFrame audioServiceStreamHandler(audio_studio::rpc::RpcRuntimeContext& context,
                                                            const audio_studio::rpc::RpcBinaryFrame& request) {
   using namespace audio_studio;
   if (request.header.service_id != static_cast<uint16_t>(rpc::RpcServiceId::kAudio)) {
     return rpc::makeDefaultStreamAck(request);
   }
 
+  std::string session_id;
+  if (!context.sessionIdForNumeric(request.header.session_id, session_id)) {
+    return streamError(request, "audio stream session not found for numeric session: " + std::to_string(request.header.session_id));
+  }
+
   if (request.header.method_id == rpc::kRpcAudioMethodWriteFrames) {
     size_t accepted = 0;
-    auto status = service.writeFrames(request.header.session_id, request.payload, request.header.flags, accepted);
+    auto status = context.audio().writeFrames(session_id, request.payload, request.header.flags, accepted);
     if (!status.ok()) return streamError(request, status.message());
 
     rpc::JsonValue payload = rpc::JsonValue::object();
@@ -108,7 +114,7 @@ audio_studio::rpc::RpcBinaryFrame audioServiceStreamHandler(audio_studio::framew
     }
 
     std::vector<uint8_t> data;
-    auto status = service.readFrames(request.header.session_id, max_bytes, request.header.flags, data);
+    auto status = context.audio().readFrames(session_id, max_bytes, request.header.flags, data);
     if (!status.ok()) return streamError(request, status.message());
 
     rpc::RpcBinaryFrame response;
@@ -223,6 +229,38 @@ int main() {
   assert(audio_client.call("audio.listSessions").at("sessions").asArray().empty());
 
   {
+    audio_studio::framework::audio::AudioService multi_audio_service;
+    audio_studio::framework::audio::AudioStream first;
+    first.id = "multi-playback-1";
+    first.direction = audio_studio::framework::audio::StreamDirection::kPlayback;
+    audio_studio::framework::audio::AudioStream second = first;
+    second.id = "multi-playback-2";
+    std::shared_ptr<audio_studio::framework::audio::AudioPlaybackSession> first_session;
+    std::shared_ptr<audio_studio::framework::audio::AudioPlaybackSession> second_session;
+    assert(multi_audio_service.createPlaybackSession(first, first_session).ok());
+    assert(multi_audio_service.createPlaybackSession(second, second_session).ok());
+    assert(first_session);
+    assert(second_session);
+    assert(first_session->start().ok());
+    assert(second_session->start().ok());
+
+    size_t first_accepted = 0;
+    size_t second_accepted = 0;
+    std::thread first_writer([&] {
+      assert(first_session->writeFrames(std::vector<uint8_t>(4096, 0x11), 100, first_accepted).ok());
+    });
+    std::thread second_writer([&] {
+      assert(second_session->writeFrames(std::vector<uint8_t>(8192, 0x22), 100, second_accepted).ok());
+    });
+    first_writer.join();
+    second_writer.join();
+    assert(first_accepted == 4096);
+    assert(second_accepted == 8192);
+    assert(first_session->close().ok());
+    assert(second_session->close().ok());
+  }
+
+  {
     audio_studio::rpc::RpcBinaryFrame frame;
     frame.header.message_type = audio_studio::rpc::RpcMessageType::kStreamData;
     frame.header.service_id = static_cast<uint16_t>(audio_studio::rpc::RpcServiceId::kAudio);
@@ -244,17 +282,59 @@ int main() {
   assert(drivers.initialize().ok());
 
   {
+    JsonRpcEndpoint concurrent_endpoint;
+    assert(concurrent_endpoint.addMethod("test.sleep", [](const JsonValue&) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      JsonValue result = JsonValue::object();
+      result["ok"] = true;
+      return result;
+    }));
+
+    const uint16_t port = findFreePort(drivers.socket());
+    std::exception_ptr server_error;
+    std::thread server_thread([&] {
+      try {
+        audio_studio::rpc::RpcSocketServer server(drivers.socket(), concurrent_endpoint);
+        server.serve("127.0.0.1", port, {2, 5000});
+      } catch (...) {
+        server_error = std::current_exception();
+      }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const auto begin = std::chrono::steady_clock::now();
+    std::thread first_client([&] {
+      audio_studio::rpc::SocketJsonRpcTransport socket_transport(drivers.socket(), {"127.0.0.1", port, 5000});
+      JsonRpcClient socket_client(socket_transport);
+      assert(socket_client.call("test.sleep").at("ok").asBool());
+    });
+    std::thread second_client([&] {
+      audio_studio::rpc::SocketJsonRpcTransport socket_transport(drivers.socket(), {"127.0.0.1", port, 5000});
+      JsonRpcClient socket_client(socket_transport);
+      assert(socket_client.call("test.sleep").at("ok").asBool());
+    });
+    first_client.join();
+    second_client.join();
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin);
+    assert(elapsed.count() < 900);
+
+    server_thread.join();
+    throwIfThreadFailed(server_error);
+  }
+
+  {
     audio_studio::framework::audio::AudioService transport_audio_service;
     JsonRpcEndpoint transport_endpoint;
     audio_studio::rpc::registerServerHealthRpcMethod(transport_endpoint);
-    audio_studio::rpc::registerAudioRpcMethods(transport_endpoint, transport_audio_service);
+    auto transport_context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(transport_audio_service);
+    audio_studio::rpc::registerAudioStudioRpcMethods(transport_endpoint, transport_context);
 
     const uint16_t port = findFreePort(drivers.socket());
     std::exception_ptr server_error;
     std::thread server_thread([&] {
       try {
         audio_studio::rpc::RpcSocketServer server(drivers.socket(), transport_endpoint, [&](const audio_studio::rpc::RpcBinaryFrame& request) {
-          return audioServiceStreamHandler(transport_audio_service, request);
+          return audioServiceStreamHandler(*transport_context, request);
         });
         server.serve("127.0.0.1", port, {7, 5000});
       } catch (...) {
@@ -290,7 +370,8 @@ int main() {
     audio_studio::framework::audio::AudioService transport_audio_service;
     JsonRpcEndpoint transport_endpoint;
     audio_studio::rpc::registerServerHealthRpcMethod(transport_endpoint);
-    audio_studio::rpc::registerAudioRpcMethods(transport_endpoint, transport_audio_service);
+    auto transport_context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(transport_audio_service);
+    audio_studio::rpc::registerAudioStudioRpcMethods(transport_endpoint, transport_context);
 
     const std::string base = "/tmp/audio-studio-rpc-test-" + std::to_string(static_cast<long long>(getpid()));
     const std::string request_pipe = base + ".req";
@@ -299,7 +380,7 @@ int main() {
     std::thread server_thread([&] {
       try {
         audio_studio::rpc::RpcPipeServer server(drivers.pipe(), transport_endpoint, [&](const audio_studio::rpc::RpcBinaryFrame& request) {
-          return audioServiceStreamHandler(transport_audio_service, request);
+          return audioServiceStreamHandler(*transport_context, request);
         });
         server.serve(request_pipe, response_pipe, {7, 5000});
       } catch (...) {

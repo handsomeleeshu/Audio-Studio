@@ -34,6 +34,7 @@ uint32_t RpcRuntimeContext::numericSessionId(const std::string& session_id) {
   if (it != session_ids_.end()) return it->second;
   const uint32_t id = next_id_.fetch_add(1);
   session_ids_.emplace(session_id, id);
+  numeric_sessions_.emplace(id, session_id);
   return id;
 }
 
@@ -48,8 +49,18 @@ uint32_t RpcRuntimeContext::numericStreamId(const std::string& session_id) {
 
 void RpcRuntimeContext::releaseSession(const std::string& session_id) {
   std::lock_guard<std::mutex> lock(ids_mutex_);
+  const auto id = session_ids_.find(session_id);
+  if (id != session_ids_.end()) numeric_sessions_.erase(id->second);
   session_ids_.erase(session_id);
   stream_ids_.erase(session_id);
+}
+
+bool RpcRuntimeContext::sessionIdForNumeric(uint32_t numeric_session_id, std::string& session_id) const {
+  std::lock_guard<std::mutex> lock(ids_mutex_);
+  const auto it = numeric_sessions_.find(numeric_session_id);
+  if (it == numeric_sessions_.end()) return false;
+  session_id = it->second;
+  return true;
 }
 
 } // namespace audio_studio::rpc

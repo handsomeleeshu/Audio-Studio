@@ -408,7 +408,7 @@ rpc/src/rpc_pipe_server.cpp
 rpc/src/rpc_server.cpp
 ```
 
-该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。
+该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。socket server 必须按 accepted connection 并发处理请求，避免两个 `as_play`/`as_record` 客户端互相阻塞；pipe transport 保持单 FIFO/单连接语义，用于受限或脚本化场景。
 
 RPC public header 直接放在 `rpc/include/` 下，不使用 `rpc/include/audio_studio/rpc/` 这种深层路径。工程内 include 统一使用短路径：
 
@@ -2182,10 +2182,27 @@ classDiagram
   class AudioService {
     +createPlaybackSession(config)
     +createCaptureSession(config)
-    +start(session)
-    +stop(session)
-    +writeFrames(session, data)
-    +readFrames(session)
+    +playbackSession(id)
+    +captureSession(id)
+    +closeSession(id)
+    +listSessions()
+  }
+
+  class AudioPlaybackSession {
+    +prepare()
+    +start()
+    +writeFrames(data)
+    +drain()
+    +stop()
+    +close()
+  }
+
+  class AudioCaptureSession {
+    +prepare()
+    +start()
+    +readFrames(max_bytes)
+    +stop()
+    +close()
   }
 
   class ControlService {
@@ -2217,12 +2234,16 @@ classDiagram
   class ILogDevice
   class IDumpDevice
 
-  AudioService --> IAudioPlaybackDevice
-  AudioService --> IAudioCaptureDevice
+  AudioService --> AudioPlaybackSession
+  AudioService --> AudioCaptureSession
+  AudioPlaybackSession --> IAudioPlaybackDevice
+  AudioCaptureSession --> IAudioCaptureDevice
   ControlService --> IControlDevice
   LogService --> ILogDevice
   DumpService --> IDumpDevice
 ```
+
+`AudioService` 是 audio framework 的 session factory 和 registry，不直接在所有读写路径上持有全局大锁。每个 `AudioPlaybackSession` / `AudioCaptureSession` 持有一个 driver instance 和自己的状态锁；不同 session 使用不同 device 时可以并发执行。RPC wire 上的 `numeric_session_id` 只属于 `RpcRuntimeContext` 与 stream frame，不能泄漏进 framework service API。
 
 ### 6.3 Controller 类默认实现
 
@@ -4799,7 +4820,7 @@ drivers/src/driver_manager.cpp
 3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、A2 物理驱动或 customer implementation header。
 4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`，同时保存 `enable_*` 类别开关。server 使用默认配置，按 Kconfig 选中的 driver 类别全部启用；CLI client 使用最小配置，只启用当前 RPC transport 需要的 socket 或 pipe driver。
 5. `initialize()` 先从各模块 singleton Registry 收集已注册 factory metadata；随后只为 `DriverManagerConfig.enable_* == true` 的类别创建或验证默认 service/factory。这样同一个 build profile 可以同时编 server 和 CLI，而不会因为 server 开启 `CONFIG_DRIVER_AUDIO` 就要求 CLI 初始化 audio driver。
-6. OS/socket/filesystem/pipe/dynlib 是全局 singleton service 类型，可由 `DriverManager` 持有；transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证启用时对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。
+6. OS/socket/filesystem/pipe/dynlib 是全局 singleton service 类型，可由 `DriverManager` 持有；transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证启用时对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。per-device factory 必须返回带错误信息的 `DriverResult`/`AudioResult`，不能只返回 `nullptr`，以便 Linux host ALSA open/configure 失败时把底层错误完整上报到 framework、RPC 和 CLI。
 7. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
 8. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
 
@@ -6480,6 +6501,15 @@ audio.getStats
 
 Linux host 默认实现中，`device` 直接映射到 ALSA device name，例如 `default`、`null`、`plughw:2,0`。server 端由 `AudioService` 根据 `driver_factory` 从 `DriverManager::audioRegistry()` 创建 playback/capture device；CLI 不直接 include ALSA 或任何 `linux_host_*` 实现头。
 
+Audio framework 的并发模型：
+
+1. `AudioService` 只负责创建、查找、关闭 session，以及维护 session map。
+2. `AudioPlaybackSession` / `AudioCaptureSession` 是真正的一路 audio session，每个 session 拥有自己的 driver instance、stream descriptor、统计信息和状态锁。
+3. `AudioService` API 使用字符串 `session_id` 或 session object；`numeric_session_id` 是 RPC/ASRP wire id，只能由 `RpcRuntimeContext` 映射。
+4. Audio Studio 不引入额外的 device lease manager，也不在 framework 层判断一个 ALSA device 能否被多路 open。能不能多路打开由底层 driver/OS/backend 决定。
+5. 如果底层 open/configure 失败，driver factory 或 session operation 必须返回包含底层错误文本的 `Status`。错误上报路径为 `linux_host_audio_device` -> `AudioService::createPlaybackSession/createCaptureSession` -> `audio.create*Session` JSON-RPC error -> `AudioRpcClient`/`as_play` stderr。
+6. `as_play` 并发依赖“一个播放命令一个 RPC client connection，一个 playback session 一个 driver instance”。socket RPC server 必须并发处理不同 connection，pipe 模式只保证单连接语义。
+
 `as_play` 轻量流程：
 
 ```text
@@ -6705,7 +6735,7 @@ closeSession
 getStats
 ```
 
-Control 的 session 不一定进入 Started 状态，但必须进入同一套 ownership/lease/cleanup 管理：
+Control 的 session 不一定进入 Started 状态，但必须进入同一套 ownership/session cleanup 管理：
 
 ```text
 control.openSession
@@ -6722,7 +6752,7 @@ control.openSession
 client disconnected
   -> stop sessions owned by client
   -> close sessions
-  -> release device
+  -> close per-session driver instance
 ```
 
 ---

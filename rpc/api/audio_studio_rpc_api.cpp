@@ -1,6 +1,7 @@
 #include "rpc_api_registry.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -72,7 +73,7 @@ JsonValue formatJson(const framework::audio::AudioStream& stream) {
 JsonValue streamToJson(const framework::audio::AudioStream& stream, RpcRuntimeContext& context) {
   JsonValue value = JsonValue::object();
   value["session_id"] = stream.id;
-  value["numeric_session_id"] = stream.numeric_session_id != 0 ? stream.numeric_session_id : context.numericSessionId(stream.id);
+  value["numeric_session_id"] = context.numericSessionId(stream.id);
   value["direction"] = stream.direction == framework::audio::StreamDirection::kPlayback ? "playback" : "capture";
   value["driver_factory"] = stream.driver_factory;
   value["device_name"] = stream.device_name;
@@ -87,7 +88,7 @@ JsonValue streamToJson(const framework::audio::AudioStream& stream, RpcRuntimeCo
 
 JsonValue streamDescriptorJson(const framework::audio::AudioStream& stream, RpcRuntimeContext& context) {
   const auto& defaults = context.streamDefaults();
-  const uint32_t numeric_stream_id = stream.numeric_stream_id != 0 ? stream.numeric_stream_id : context.numericStreamId(stream.id);
+  const uint32_t numeric_stream_id = context.numericStreamId(stream.id);
   const std::string stream_id = "stream_" + stream.id;
   const std::string base_uri = defaults.stream_uri_base.empty()
                                  ? defaults.socket_scheme + "://" + defaults.host + ":" + std::to_string(defaults.port)
@@ -116,8 +117,6 @@ framework::audio::AudioStream audioStreamFromParams(RpcRuntimeContext& context,
 
   framework::audio::AudioStream stream;
   stream.id = optionalStringParam(object, "session_id", context.nextSessionId(prefix));
-  stream.numeric_session_id = context.numericSessionId(stream.id);
-  stream.numeric_stream_id = context.numericStreamId(stream.id);
   stream.direction = direction;
   stream.driver_factory = optionalStringParam(object, "driver_factory", "linux-host");
   stream.device_name = optionalStringParam(object, "device_name", optionalStringParam(object, "device", "default"));
@@ -132,7 +131,13 @@ JsonValue createAudioSession(RpcRuntimeContext& context,
                              framework::audio::StreamDirection direction) {
   auto stream = audioStreamFromParams(context, params, direction);
   const std::string id = stream.id;
-  (void)statusResult(context.audio().create(std::move(stream)));
+  if (direction == framework::audio::StreamDirection::kPlayback) {
+    std::shared_ptr<framework::audio::AudioPlaybackSession> session;
+    (void)statusResult(context.audio().createPlaybackSession(std::move(stream), session));
+  } else {
+    std::shared_ptr<framework::audio::AudioCaptureSession> session;
+    (void)statusResult(context.audio().createCaptureSession(std::move(stream), session));
+  }
 
   framework::audio::AudioStream created;
   (void)statusResult(context.audio().get(id, created));

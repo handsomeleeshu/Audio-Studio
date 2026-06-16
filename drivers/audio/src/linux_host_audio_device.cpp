@@ -9,20 +9,26 @@ namespace {
 class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
 public:
   std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override {
+  AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioPlaybackDevice>& out) const override {
+    out.reset();
     auto device = std::make_unique<LinuxHostAudioPlaybackDevice>();
-    if (!device->open(params).ok()) return nullptr;
-    return device;
+    auto status = device->open(params);
+    if (!status.ok()) return status;
+    out = std::move(device);
+    return AudioResult::success();
   }
 };
 
 class LinuxHostAudioCaptureDeviceFactory final : public IAudioCaptureDeviceFactory {
 public:
   std::string name() const override { return "linux-host"; }
-  std::unique_ptr<IAudioCaptureDevice> create(const AudioOpenParams& params) const override {
+  AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioCaptureDevice>& out) const override {
+    out.reset();
     auto device = std::make_unique<LinuxHostAudioCaptureDevice>();
-    if (!device->open(params).ok()) return nullptr;
-    return device;
+    auto status = device->open(params);
+    if (!status.ok()) return status;
+    out = std::move(device);
+    return AudioResult::success();
   }
 };
 
@@ -110,25 +116,25 @@ LinuxHostAudioPlaybackDevice::~LinuxHostAudioPlaybackDevice() {
 
 AudioResult LinuxHostAudioPlaybackDevice::open(const AudioOpenParams& params) {
   if (params.device_name.empty()) return AudioResult::invalidArgument("audio playback device name is empty");
+  close();
   device_name_ = params.device_name;
   prepared_ = false;
   running_ = false;
-  return AudioResult::success();
-}
-
-AudioResult LinuxHostAudioPlaybackDevice::prepare(const AudioStreamParams& params) {
-  if (device_name_.empty()) return AudioResult::unavailable("audio playback device is not open");
-  auto status = validateParams(params);
-  if (!status.ok()) return status;
-  if (pcm_ != nullptr) close();
-
-  params_ = params;
   int rc = snd_pcm_open(&pcm_, device_name_.c_str(), SND_PCM_STREAM_PLAYBACK, 0);
   if (rc < 0) {
     pcm_ = nullptr;
     return alsaError("snd_pcm_open playback " + device_name_, rc);
   }
+  return AudioResult::success();
+}
 
+AudioResult LinuxHostAudioPlaybackDevice::prepare(const AudioStreamParams& params) {
+  if (device_name_.empty()) return AudioResult::unavailable("audio playback device is not open");
+  if (pcm_ == nullptr) return AudioResult::unavailable("audio playback PCM handle is not open: " + device_name_);
+  auto status = validateParams(params);
+  if (!status.ok()) return status;
+
+  params_ = params;
   status = configurePcm();
   if (!status.ok()) {
     close();
@@ -219,25 +225,25 @@ LinuxHostAudioCaptureDevice::~LinuxHostAudioCaptureDevice() {
 
 AudioResult LinuxHostAudioCaptureDevice::open(const AudioOpenParams& params) {
   if (params.device_name.empty()) return AudioResult::invalidArgument("audio capture device name is empty");
+  close();
   device_name_ = params.device_name;
   prepared_ = false;
   running_ = false;
-  return AudioResult::success();
-}
-
-AudioResult LinuxHostAudioCaptureDevice::prepare(const AudioStreamParams& params) {
-  if (device_name_.empty()) return AudioResult::unavailable("audio capture device is not open");
-  auto status = validateParams(params);
-  if (!status.ok()) return status;
-  if (pcm_ != nullptr) close();
-
-  params_ = params;
   int rc = snd_pcm_open(&pcm_, device_name_.c_str(), SND_PCM_STREAM_CAPTURE, 0);
   if (rc < 0) {
     pcm_ = nullptr;
     return alsaError("snd_pcm_open capture " + device_name_, rc);
   }
+  return AudioResult::success();
+}
 
+AudioResult LinuxHostAudioCaptureDevice::prepare(const AudioStreamParams& params) {
+  if (device_name_.empty()) return AudioResult::unavailable("audio capture device is not open");
+  if (pcm_ == nullptr) return AudioResult::unavailable("audio capture PCM handle is not open: " + device_name_);
+  auto status = validateParams(params);
+  if (!status.ok()) return status;
+
+  params_ = params;
   status = configurePcm();
   if (!status.ok()) {
     close();

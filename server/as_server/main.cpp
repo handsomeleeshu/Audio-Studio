@@ -54,6 +54,11 @@ audio_studio::framework::audio::AudioService& audioService() {
   static audio_studio::framework::audio::AudioService service;
   return service;
 }
+
+struct RpcEndpointBundle {
+  audio_studio::rpc::JsonRpcEndpoint endpoint;
+  std::shared_ptr<audio_studio::rpc::RpcRuntimeContext> context;
+};
 #endif
 
 audio_studio::rpc::RpcBinaryFrame errorFrame(const audio_studio::rpc::RpcBinaryFrame& request, const std::string& message) {
@@ -75,17 +80,22 @@ audio_studio::rpc::RpcBinaryFrame errorFrame(const audio_studio::rpc::RpcBinaryF
 }
 
 #if defined(CONFIG_RPC_AUDIO_METHODS)
-audio_studio::rpc::RpcBinaryFrame audioStreamResponse(audio_studio::framework::audio::AudioService& service,
+audio_studio::rpc::RpcBinaryFrame audioStreamResponse(audio_studio::rpc::RpcRuntimeContext& context,
                                                       const audio_studio::rpc::RpcBinaryFrame& request) {
   using namespace audio_studio;
   if (request.header.service_id != static_cast<uint16_t>(rpc::RpcServiceId::kAudio)) {
     return rpc::makeDefaultStreamAck(request);
   }
 
+  std::string session_id;
+  if (!context.sessionIdForNumeric(request.header.session_id, session_id)) {
+    return errorFrame(request, "audio stream session not found for numeric session: " + std::to_string(request.header.session_id));
+  }
+
   const uint32_t timeout_ms = request.header.flags == 0 ? 5000 : request.header.flags;
   if (request.header.method_id == rpc::kRpcAudioMethodWriteFrames) {
     size_t accepted_bytes = 0;
-    auto status = service.writeFrames(request.header.session_id, request.payload, timeout_ms, accepted_bytes);
+    auto status = context.audio().writeFrames(session_id, request.payload, timeout_ms, accepted_bytes);
     if (!status.ok()) return errorFrame(request, status.message());
 
     rpc::JsonValue payload = rpc::JsonValue::object();
@@ -121,7 +131,7 @@ audio_studio::rpc::RpcBinaryFrame audioStreamResponse(audio_studio::framework::a
     }
 
     std::vector<uint8_t> data;
-    auto status = service.readFrames(request.header.session_id, max_bytes, timeout_ms, data);
+    auto status = context.audio().readFrames(session_id, max_bytes, timeout_ms, data);
     if (!status.ok()) return errorFrame(request, status.message());
 
     rpc::RpcBinaryFrame frame;
@@ -151,9 +161,23 @@ audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefa
   return endpoint;
 }
 
+#if defined(CONFIG_RPC_AUDIO_METHODS)
+RpcEndpointBundle makeEndpointBundle(audio_studio::rpc::RpcStreamDefaults stream_defaults = {}) {
+  RpcEndpointBundle bundle;
+  bundle.context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(audioService(), std::move(stream_defaults));
+  audio_studio::rpc::registerAudioStudioRpcMethods(bundle.endpoint, bundle.context);
+  return bundle;
+}
+#endif
+
 std::string handleRpcOnce(const std::string& request_json) {
+#if defined(CONFIG_RPC_AUDIO_METHODS)
+  auto bundle = makeEndpointBundle();
+  return bundle.endpoint.handleRequest(request_json);
+#else
   auto endpoint = makeEndpoint();
   return endpoint.handleRequest(request_json);
+#endif
 }
 
 size_t maxRequestsFromArgs(int argc, char** argv, size_t fallback) {
@@ -209,9 +233,9 @@ int main(int argc, char** argv) {
         stream_defaults.host = host;
         stream_defaults.port = port;
         stream_defaults.stream_uri_base = "tcp://" + host + ":" + std::to_string(port);
-        auto endpoint = makeEndpoint(std::move(stream_defaults));
-        audio_studio::rpc::RpcSocketServer server(drivers.socket(), endpoint, [](const audio_studio::rpc::RpcBinaryFrame& request) {
-          return audioStreamResponse(audioService(), request);
+        auto bundle = makeEndpointBundle(std::move(stream_defaults));
+        audio_studio::rpc::RpcSocketServer server(drivers.socket(), bundle.endpoint, [context = bundle.context](const audio_studio::rpc::RpcBinaryFrame& request) {
+          return audioStreamResponse(*context, request);
         });
         server.serve(host, port, {maxRequestsFromArgs(argc, argv, 0), 5000});
         drivers.shutdown();
@@ -228,9 +252,9 @@ int main(int argc, char** argv) {
           return 2;
         }
         stream_defaults.stream_uri_base = "pipe://" + request_pipe + ":" + response_pipe;
-        auto endpoint = makeEndpoint(std::move(stream_defaults));
-        audio_studio::rpc::RpcPipeServer server(drivers.pipe(), endpoint, [](const audio_studio::rpc::RpcBinaryFrame& request) {
-          return audioStreamResponse(audioService(), request);
+        auto bundle = makeEndpointBundle(std::move(stream_defaults));
+        audio_studio::rpc::RpcPipeServer server(drivers.pipe(), bundle.endpoint, [context = bundle.context](const audio_studio::rpc::RpcBinaryFrame& request) {
+          return audioStreamResponse(*context, request);
         });
         server.serve(request_pipe, response_pipe, {maxRequestsFromArgs(argc, argv, 0), 5000});
         drivers.shutdown();

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -245,7 +246,8 @@ int main() {
   }
 
   {
-    auto playback = manager.audioRegistry().createPlayback("linux-host", {"null"});
+    std::unique_ptr<audio_studio::drivers::audio::IAudioPlaybackDevice> playback;
+    assert(manager.audioRegistry().createPlayback("linux-host", {"null"}, playback).ok());
     assert(playback);
     assert(playback->prepare({48000, 2, 2}).ok());
     assert(playback->start().ok());
@@ -254,7 +256,8 @@ int main() {
     assert(playback->drain().ok());
     assert(playback->stop().ok());
 
-    auto capture = manager.audioRegistry().createCapture("linux-host", {"null"});
+    std::unique_ptr<audio_studio::drivers::audio::IAudioCaptureDevice> capture;
+    assert(manager.audioRegistry().createCapture("linux-host", {"null"}, capture).ok());
     assert(capture);
     assert(capture->prepare({48000, 1, 2}).ok());
     assert(capture->start().ok());

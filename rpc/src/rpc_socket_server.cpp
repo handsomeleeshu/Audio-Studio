@@ -1,6 +1,10 @@
 #include "rpc_server.hpp"
 
+#include <exception>
+#include <limits>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -51,41 +55,76 @@ void RpcSocketServer::serve(const std::string& host, uint16_t port, RpcServerLim
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
 
   size_t handled = 0;
+  std::mutex error_mutex;
+  std::exception_ptr first_error;
+  std::vector<std::thread> workers;
+  const auto joinWorkers = [&workers] {
+    for (auto& worker : workers) {
+      if (worker.joinable()) worker.join();
+    }
+  };
+
   while (limits.max_requests == 0 || handled < limits.max_requests) {
     std::unique_ptr<drivers::socket::ISocket> client;
-    status = server->accept(client, limits.timeout_ms);
-    if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+    const uint32_t accept_timeout_ms = limits.max_requests == 0 ? std::numeric_limits<uint32_t>::max() : limits.timeout_ms;
+    status = server->accept(client, accept_timeout_ms);
+    if (!status.ok()) {
+      server->close();
+      joinWorkers();
+      throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+    }
     if (!client) continue;
 
-    std::string prefix;
-    prefix.reserve(4);
-    for (size_t i = 0; i < 4; ++i) prefix.push_back(readByte(*client, limits.timeout_ms));
+    std::thread worker([this, limits, client = std::move(client), &error_mutex, &first_error]() mutable {
+      try {
+        std::string prefix;
+        prefix.reserve(4);
+        for (size_t i = 0; i < 4; ++i) prefix.push_back(readByte(*client, limits.timeout_ms));
 
-    if (prefix == "ASRP") {
-      const std::vector<uint8_t> binary_prefix(prefix.begin(), prefix.end());
-      const RpcBinaryFrame request = readBinaryFrameWithPrefix(binary_prefix, [&] {
-        return readByte(*client, limits.timeout_ms);
-      });
-      const RpcBinaryFrame response = stream_handler_ ? stream_handler_(request) : makeDefaultStreamAck(request);
-      writeBinaryFrame([&](const uint8_t* data, size_t size) {
-        writeAll(*client, data, size, limits.timeout_ms);
-      }, response);
-    } else {
-      const std::string request = readContentLengthFrameWithPrefix(prefix, [&] {
-        return readByte(*client, limits.timeout_ms);
-      });
-      const std::string response = endpoint_.handleRequest(request);
-      if (!response.empty()) {
-        writeContentLengthFrame([&](const uint8_t* data, size_t size) {
-          writeAll(*client, data, size, limits.timeout_ms);
-        }, response);
+        if (prefix == "ASRP") {
+          const std::vector<uint8_t> binary_prefix(prefix.begin(), prefix.end());
+          const RpcBinaryFrame request = readBinaryFrameWithPrefix(binary_prefix, [&] {
+            return readByte(*client, limits.timeout_ms);
+          });
+          const RpcBinaryFrame response = stream_handler_ ? stream_handler_(request) : makeDefaultStreamAck(request);
+          writeBinaryFrame([&](const uint8_t* data, size_t size) {
+            writeAll(*client, data, size, limits.timeout_ms);
+          }, response);
+        } else {
+          const std::string request = readContentLengthFrameWithPrefix(prefix, [&] {
+            return readByte(*client, limits.timeout_ms);
+          });
+          const std::string response = endpoint_.handleRequest(request);
+          if (!response.empty()) {
+            writeContentLengthFrame([&](const uint8_t* data, size_t size) {
+              writeAll(*client, data, size, limits.timeout_ms);
+            }, response);
+          }
+        }
+        client->shutdown();
+        client->close();
+      } catch (...) {
+        try {
+          client->shutdown();
+          client->close();
+        } catch (...) {
+        }
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (!first_error) first_error = std::current_exception();
       }
+    });
+
+    if (limits.max_requests == 0) {
+      worker.detach();
+    } else {
+      workers.emplace_back(std::move(worker));
     }
-    client->shutdown();
-    client->close();
     ++handled;
   }
+
+  joinWorkers();
   server->close();
+  if (first_error) std::rethrow_exception(first_error);
 }
 
 } // namespace audio_studio::rpc

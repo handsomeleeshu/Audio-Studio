@@ -293,7 +293,7 @@ def main():
     if rpc_socket_record_wav.exists():
         rpc_socket_record_wav.unlink()
     socket_server = subprocess.Popen(
-        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '14'],
+        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '15'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -330,6 +330,24 @@ def main():
         require_contains(socket_record, '"ok":true')
         require_contains(socket_record, '"recorded_bytes":9600')
         assert_wav(rpc_socket_record_wav, 2400)
+        missing_device = 'audio_studio_missing_playback_device'
+        failed_play = subprocess.run(
+            [
+                str(RPC_SOCKET_BUILD_DIR / 'as_play'),
+                '--host', '127.0.0.1',
+                '--port', socket_port,
+                '--device', missing_device,
+                '--file', str(rpc_play_wav),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert failed_play.returncode != 0
+        failed_output = failed_play.stdout + failed_play.stderr
+        require_contains(failed_output, 'failed to create playback audio driver')
+        require_contains(failed_output, f'snd_pcm_open playback {missing_device} failed')
         assert socket_server.wait(timeout=5) == 0
     finally:
         if socket_server.poll() is None:
