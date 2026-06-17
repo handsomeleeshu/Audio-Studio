@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_DUMP_SOURCES)
 if(CONFIG_DRIVER_DUMP_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_DUMP_SOURCES src/linux_host_dump_device.cpp)
 endif()
+if(CONFIG_DRIVER_DUMP_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_DUMP_SOURCES src/macos_dump_device.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_dump "${AUDIO_STUDIO_DRIVER_DUMP_SOURCES}")
 
 add_library(audio_studio_driver_dump OBJECT

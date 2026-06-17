@@ -10,4 +10,9 @@ config DRIVER_DYNLIB_LINUX_HOST
   default n
   depends on DRIVER_DYNLIB
 
+config DRIVER_DYNLIB_MACOS
+  bool "Build macOS dynamic library driver implementation"
+  default n
+  depends on DRIVER_DYNLIB
+
 endmenu

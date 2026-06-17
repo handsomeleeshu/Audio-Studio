@@ -20,4 +20,9 @@ config DRIVER_AUDIO_WASAPI
   default n
   depends on DRIVER_AUDIO
 
+config DRIVER_AUDIO_MACOS
+  bool "Build macOS audio driver implementation"
+  default n
+  depends on DRIVER_AUDIO
+
 endmenu

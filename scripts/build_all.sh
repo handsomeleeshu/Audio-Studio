@@ -4,8 +4,8 @@ set -euo pipefail
 DEFAULT_OS=linux
 DEFAULT_PROFILE=as_server_minimal
 DEFAULT_PLATFORMS=(a2)
-SUPPORTED_OSES=(linux windows)
-SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests gui_backend rpc_socket rpc_pipe)
+SUPPORTED_OSES=(linux macos windows)
+SUPPORTED_PROFILES=(as_server_minimal driver_interface_tests driver_interface_tests_macos gui_backend rpc_socket rpc_pipe)
 SUPPORTED_PLATFORMS=(a2 simulator)
 
 BUILD_TYPE=Debug
@@ -98,6 +98,11 @@ os_config() {
       REQUIRED_TOOLS=(c++)
       EXECUTABLE_SUFFIX=
       ;;
+    macos)
+      TOOLCHAIN_FILE="${ROOT}/scripts/cmake/toolchain/macos-clang.cmake"
+      REQUIRED_TOOLS=(clang++)
+      EXECUTABLE_SUFFIX=
+      ;;
     windows)
       TOOLCHAIN_FILE="${ROOT}/scripts/cmake/toolchain/windows-mingw.cmake"
       REQUIRED_TOOLS=(x86_64-w64-mingw32-g++-posix)
@@ -118,6 +123,12 @@ profile_config() {
       PROFILE_EXECUTABLES=(
         "as_server${EXECUTABLE_SUFFIX}"
         "audio_studio_server_tests${EXECUTABLE_SUFFIX}"
+        "audio_studio_driver_interface_tests${EXECUTABLE_SUFFIX}"
+      )
+      ;;
+    driver_interface_tests_macos)
+      PROFILE_EXECUTABLES=(
+        "as_server${EXECUTABLE_SUFFIX}"
         "audio_studio_driver_interface_tests${EXECUTABLE_SUFFIX}"
       )
       ;;

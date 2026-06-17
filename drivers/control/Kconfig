@@ -10,4 +10,9 @@ config DRIVER_CONTROL_LINUX_HOST
   default n
   depends on DRIVER_CONTROL
 
+config DRIVER_CONTROL_MACOS
+  bool "Build macOS control driver implementation"
+  default n
+  depends on DRIVER_CONTROL
+
 endmenu

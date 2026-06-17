@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES)
 if(CONFIG_DRIVER_DYNLIB_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES src/linux_host_dynlib_driver.cpp)
 endif()
+if(CONFIG_DRIVER_DYNLIB_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES src/macos_dynlib_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_dynlib "${AUDIO_STUDIO_DRIVER_DYNLIB_SOURCES}")
 
 add_library(audio_studio_driver_dynlib OBJECT

@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES)
 if(CONFIG_DRIVER_TRANSPORT_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES src/linux_host_transport_driver.cpp)
 endif()
+if(CONFIG_DRIVER_TRANSPORT_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES src/macos_transport_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_transport "${AUDIO_STUDIO_DRIVER_TRANSPORT_SOURCES}")
 
 add_library(audio_studio_driver_transport OBJECT

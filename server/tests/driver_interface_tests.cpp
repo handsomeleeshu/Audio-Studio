@@ -23,21 +23,48 @@ bool runHostAudioBackendTests() {
   return value != nullptr && std::string(value) == "1";
 }
 
+#if defined(__APPLE__)
+  constexpr const char* kOsDriverName = "macos";
+  constexpr const char* kSocketDriverName = "macos";
+  constexpr const char* kFilesystemDriverName = "macos";
+  constexpr const char* kPipeDriverName = "macos";
+  constexpr const char* kDynlibDriverName = "macos";
+  constexpr const char* kTransportDriverName = "macos";
+  constexpr const char* kControlDriverName = "macos";
+  constexpr const char* kLogDriverName = "macos";
+  constexpr const char* kDumpDriverName = "macos";
+  constexpr const char* kAudioDriverName = "macos";
+  constexpr const char* kDynlibExt = ".dylib";
+  constexpr const char* kPlatformName = "Darwin";
+#else
+  constexpr const char* kOsDriverName = "linux-host";
+  constexpr const char* kSocketDriverName = "linux-host";
+  constexpr const char* kFilesystemDriverName = "linux-host";
+  constexpr const char* kPipeDriverName = "linux-host";
+  constexpr const char* kDynlibDriverName = "linux-host";
+  constexpr const char* kTransportDriverName = "linux-host";
+  constexpr const char* kControlDriverName = "linux-host";
+  constexpr const char* kLogDriverName = "linux-host";
+  constexpr const char* kDumpDriverName = "linux-host";
+  constexpr const char* kAudioDriverName = "alsa";
+  constexpr const char* kDynlibExt = ".so";
+  constexpr const char* kPlatformName = "Linux";
+#endif
+
 } // namespace
 
 int main() {
   audio_studio::drivers::DriverManager manager;
   assert(manager.initialize().ok());
   assert(manager.initialized());
-  assert(manager.hasDriver("os", "linux-host"));
-  assert(manager.hasDriver("socket", "linux-host"));
-  assert(manager.hasDriver("audio", "alsa"));
-  assert(manager.hasDriver("audio", "pulse"));
+  assert(manager.hasDriver("os", kOsDriverName));
+  assert(manager.hasDriver("socket", kSocketDriverName));
+  assert(manager.hasDriver("audio", kAudioDriverName));
   assert(manager.listByCategory("dump").size() == 1);
 
   {
     audio_studio::drivers::DriverInfo info;
-    assert(manager.getDriver("socket", "linux-host", info).ok());
+    assert(manager.getDriver("socket", kSocketDriverName, info).ok());
     assert(info.active);
   }
 
@@ -102,7 +129,7 @@ int main() {
     auto& system = os.system();
     audio_studio::drivers::os::OsSystemInfo system_info;
     assert(system.getSystemInfo(system_info).ok());
-    assert(system_info.platform.find("Linux") != std::string::npos);
+    assert(system_info.platform.find(kPlatformName) != std::string::npos);
     assert(system_info.pid == static_cast<uint64_t>(::getpid()));
     assert(!system.temporaryDirectory().empty());
     assert(!system.homeDirectory().empty());
@@ -231,7 +258,7 @@ int main() {
   {
     auto& dynlib_driver = manager.dynlib();
     auto lib = dynlib_driver.createLibrary();
-    assert(dynlib_driver.platformLibraryExtension() == ".so");
+    assert(dynlib_driver.platformLibraryExtension() == kDynlibExt);
     assert(dynlib_driver.isValidLibraryFile(AUDIO_STUDIO_TEST_PLUGIN_PATH));
     assert(lib->open(AUDIO_STUDIO_TEST_PLUGIN_PATH, {}).ok());
     void* symbol = nullptr;
@@ -244,7 +271,7 @@ int main() {
   }
 
   {
-    auto transport = manager.transportRegistry().create("linux-host", {"memory"});
+    auto transport = manager.transportRegistry().create(kTransportDriverName, {"memory"});
     assert(transport);
     const uint8_t tx[] = {4, 5, 6, 7};
     assert(transport->write(tx, sizeof(tx), 100).ok());
@@ -259,7 +286,7 @@ int main() {
   if (runHostAudioBackendTests()) {
     {
       std::unique_ptr<audio_studio::drivers::audio::IAudioPlaybackDevice> playback;
-      assert(manager.audioRegistry().createPlayback("alsa", {"plug:null"}, playback).ok());
+      assert(manager.audioRegistry().createPlayback(kAudioDriverName, {"default"}, playback).ok());
       assert(playback);
       assert(playback->prepare({48000, 2, 2}).ok());
       assert(playback->start().ok());
@@ -269,7 +296,7 @@ int main() {
       assert(playback->stop().ok());
 
       std::unique_ptr<audio_studio::drivers::audio::IAudioCaptureDevice> capture;
-      assert(manager.audioRegistry().createCapture("alsa", {"plug:null"}, capture).ok());
+      assert(manager.audioRegistry().createCapture(kAudioDriverName, {"default"}, capture).ok());
       assert(capture);
       assert(capture->prepare({48000, 1, 2}).ok());
       assert(capture->start().ok());
@@ -278,6 +305,8 @@ int main() {
       assert(frame.size() == 2);
     }
 
+#if !defined(__APPLE__)
+    // ALSA and Pulse are Linux-only backends
     {
       std::unique_ptr<audio_studio::drivers::audio::IAudioPlaybackDevice> playback;
       assert(manager.audioRegistry().createPlayback("pulse", {"default"}, playback).ok());
@@ -299,10 +328,11 @@ int main() {
       assert(frame.size() == 480);
       assert(capture->stop().ok());
     }
+#endif
   }
 
   {
-    auto control = manager.controlRegistry().create("linux-host", {"a2", "host-control"});
+    auto control = manager.controlRegistry().create(kControlDriverName, {"a2", "host-control"});
     assert(control);
     audio_studio::drivers::control::ControlValue value;
     value.type = audio_studio::drivers::control::ControlValueType::String;
@@ -320,7 +350,7 @@ int main() {
   }
 
   {
-    auto log = manager.logRegistry().create("linux-host", {"firmware"});
+    auto log = manager.logRegistry().create(kLogDriverName, {"firmware"});
     assert(log);
     assert(log->start().ok());
     audio_studio::drivers::log::LogRawChunk chunk;
@@ -332,7 +362,7 @@ int main() {
   }
 
   {
-    auto dump = manager.dumpRegistry().create("linux-host", {"probe"});
+    auto dump = manager.dumpRegistry().create(kDumpDriverName, {"probe"});
     assert(dump);
     assert(dump->configure({"dump-session"}).ok());
     assert(dump->addPoint({7, "AEC.out"}).ok());

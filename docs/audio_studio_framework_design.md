@@ -1874,28 +1874,40 @@ drivers/src/driver_manager.cpp
 drivers/os/include/os_driver.hpp
 drivers/os/src/linux_host_os_driver.hpp
 drivers/os/src/linux_host_os_driver.cpp
+drivers/os/src/macos_os_driver.hpp
+drivers/os/src/macos_os_driver.cpp
 
 drivers/socket/include/socket_driver.hpp
 drivers/socket/src/linux_host_socket_driver.hpp
 drivers/socket/src/linux_host_socket_driver.cpp
 drivers/socket/src/windows_host_socket_driver.hpp
 drivers/socket/src/windows_host_socket_driver.cpp
+drivers/socket/src/macos_socket_driver.hpp
+drivers/socket/src/macos_socket_driver.cpp
 
 drivers/filesystem/include/filesystem_driver.hpp
 drivers/filesystem/src/linux_host_filesystem_driver.hpp
 drivers/filesystem/src/linux_host_filesystem_driver.cpp
+drivers/filesystem/src/macos_filesystem_driver.hpp
+drivers/filesystem/src/macos_filesystem_driver.cpp
 
 drivers/pipe/include/pipe_driver.hpp
 drivers/pipe/src/linux_host_pipe_driver.hpp
 drivers/pipe/src/linux_host_pipe_driver.cpp
+drivers/pipe/src/macos_pipe_driver.hpp
+drivers/pipe/src/macos_pipe_driver.cpp
 
 drivers/dynlib/include/dynlib_driver.hpp
 drivers/dynlib/src/linux_host_dynlib_driver.hpp
 drivers/dynlib/src/linux_host_dynlib_driver.cpp
+drivers/dynlib/src/macos_dynlib_driver.hpp
+drivers/dynlib/src/macos_dynlib_driver.cpp
 
 drivers/transport/include/transport_driver.hpp
 drivers/transport/src/linux_host_transport_driver.hpp
 drivers/transport/src/linux_host_transport_driver.cpp
+drivers/transport/src/macos_transport_driver.hpp
+drivers/transport/src/macos_transport_driver.cpp
 
 drivers/audio/include/audio_device.hpp
 drivers/audio/src/alsa_audio_device.hpp
@@ -1904,24 +1916,32 @@ drivers/audio/src/pulse_audio_device.hpp
 drivers/audio/src/pulse_audio_device.cpp
 drivers/audio/src/wasapi_audio_device.hpp
 drivers/audio/src/wasapi_audio_device.cpp
+drivers/audio/src/macos_core_audio_device.hpp
+drivers/audio/src/macos_core_audio_device.cpp
 
 drivers/control/include/control_device.hpp
 drivers/control/src/linux_host_control_device.hpp
 drivers/control/src/linux_host_control_device.cpp
+drivers/control/src/macos_control_device.hpp
+drivers/control/src/macos_control_device.cpp
 
 drivers/log/include/log_device.hpp
 drivers/log/src/linux_host_log_device.hpp
 drivers/log/src/linux_host_log_device.cpp
+drivers/log/src/macos_log_device.hpp
+drivers/log/src/macos_log_device.cpp
 
 drivers/dump/include/dump_device.hpp
 drivers/dump/src/linux_host_dump_device.hpp
 drivers/dump/src/linux_host_dump_device.cpp
+drivers/dump/src/macos_dump_device.hpp
+drivers/dump/src/macos_dump_device.cpp
 
 drivers/dummy/include/dummy_driver.hpp
 drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_WINDOWS_HOST=y`、`CONFIG_DRIVER_AUDIO_ALSA=y`、`CONFIG_DRIVER_AUDIO_PULSE=y`、`CONFIG_DRIVER_AUDIO_WASAPI=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开 Linux host 基础 driver、ALSA 与 PulseAudio 音频实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_OS_MACOS=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_WINDOWS_HOST=y`、`CONFIG_DRIVER_SOCKET_MACOS=y`、`CONFIG_DRIVER_AUDIO_ALSA=y`、`CONFIG_DRIVER_AUDIO_PULSE=y`、`CONFIG_DRIVER_AUDIO_WASAPI=y`、`CONFIG_DRIVER_AUDIO_MACOS=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开 Linux host 基础 driver、ALSA 与 PulseAudio 音频实现；`configs/profile/driver_interface_tests_macos_defconfig` 在 macOS 上打开所有 macOS driver 与 CoreAudio 实现。两者均通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump 的全部驱动层功能。
 
 ### 4.13 server/platform
 
@@ -3115,10 +3135,11 @@ cli/Kconfig
 ```text
 linux/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake    -> out/linux/a2/as_server_minimal/Debug/as_server
 windows/a2 -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/windows-mingw.cmake -> out/windows/a2/as_server_minimal/Debug/as_server.exe
+macos/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/macos-clang.cmake -> out/macos/a2/as_server_minimal/Debug/as_server
 linux/a2 gui_backend -> configs/profile/gui_backend_defconfig + configs/platform/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake -> out/linux/a2/gui_backend/Release/audio_studio_server
 ```
 
-macOS 构建支持暂保留 toolchain 结构入口，但不纳入当前阶段的验证范围，后续在 macOS 开发环境下再验证。
+macOS 构建支持使用 native Clang 工具链，通过 `scripts/cmake/toolchain/macos-clang.cmake` 配置。CI 在 `macos-latest` runner 上验证 macOS driver tests。
 
 #### 4.4 Linux 构建环境与多目标产物
 
@@ -3126,7 +3147,7 @@ macOS 构建支持暂保留 toolchain 结构入口，但不纳入当前阶段的
 
 ```text
 构建环境优先只要求 Linux。
-当前阶段验证 Linux host 与 Windows/MinGW 映射；macOS 暂缓。
+当前阶段验证 Linux host、Windows/MinGW 映射以及 macOS native Clang 构建。
 ```
 
 示例 toolchain：
