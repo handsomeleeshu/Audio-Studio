@@ -8,6 +8,9 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(PYTHON3 "${Python3_EXECUTABLE}")
 
+# Find Git for submodule auto-initialization
+find_package(Git QUIET)
+
 project(audio_studio
   VERSION 1.0.0
   DESCRIPTION "Audio Studio"
@@ -51,8 +54,33 @@ add_subdirectory(plugins/builtin_module_configs)
 
 # Build alsatplg from SOF alsa-utils submodule
 # This provides topology compilation support on all platforms
+# Auto-initialize submodule if not present
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
+  message(STATUS "alsa-utils submodule not found, attempting to initialize...")
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive third_party/alsa-utils
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      RESULT_VARIABLE GIT_SUBMODULE_RESULT
+      OUTPUT_QUIET ERROR_QUIET
+    )
+    if(GIT_SUBMODULE_RESULT EQUAL 0)
+      message(STATUS "alsa-utils submodule initialized successfully")
+    else()
+      message(WARNING "Failed to initialize alsa-utils submodule (git exit code: ${GIT_SUBMODULE_RESULT})")
+      message(WARNING "alsatplg will not be built. Run manually: git submodule update --init --recursive")
+    endif()
+  else()
+    message(WARNING "Git not found, cannot auto-initialize alsa-utils submodule")
+    message(WARNING "alsatplg will not be built. Run manually: git submodule update --init --recursive")
+  endif()
+endif()
+
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
   add_subdirectory(third_party/alsa-utils)
+else()
+  message(STATUS "alsatplg will not be built (submodule not available)")
 endif()
 
 if(CONFIG_RPC_CORE OR CONFIG_FRAMEWORK_CONFIG)
