@@ -100,7 +100,7 @@ os_config() {
       ;;
     macos)
       TOOLCHAIN_FILE="${ROOT}/scripts/cmake/toolchain/macos-clang.cmake"
-      REQUIRED_TOOLS=(c++)
+      REQUIRED_TOOLS=(clang++)
       EXECUTABLE_SUFFIX=
       ;;
     windows)

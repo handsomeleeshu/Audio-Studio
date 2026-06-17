@@ -25,3 +25,22 @@ jobs:
         run: chmod +x scripts/build_all.sh scripts/run_tests.sh
       - name: Run tests
         run: ./scripts/run_tests.sh
+
+  macos-driver-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+      - name: Install system dependencies
+        run: brew install cmake ninja
+      - name: Make scripts executable
+        run: chmod +x scripts/build_all.sh
+      - name: Build macOS driver interface tests
+        run: ./scripts/build_all.sh --profile driver_interface_tests_macos macos a2
+      - name: Run macOS driver interface tests
+        run: ctest --test-dir out/macos/a2/driver_interface_tests_macos/Debug --output-on-failure
