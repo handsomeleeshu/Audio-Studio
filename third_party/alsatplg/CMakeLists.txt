@@ -32,14 +32,15 @@ file(WRITE "${ALSATPLG_INCLUDE_DIR}/aconfig.h" "${ACONFIG_CONTENT}")
 message(STATUS "Generated ${ALSATPLG_INCLUDE_DIR}/aconfig.h")
 
 # Generate minimal version.h (normally created by autotools configure)
+# This provides alsa-utils version, not alsa-lib version
 set(VERSION_CONTENT "#ifndef __TOPOLOGY_VERSION_H
 #define __TOPOLOGY_VERSION_H
 
-#define SND_LIB_VERSION_STR \"1.2.16\"
-#define SND_LIB_MAJOR 1
-#define SND_LIB_MINOR 2
-#define SND_LIB_SUBMINOR 16
-#define SND_LIB_EXTREM 1000 /* from upper bits */
+/* alsa-utils version (not alsa-lib version) */
+#define SND_UTIL_VERSION_MAJOR 1
+#define SND_UTIL_VERSION_MINOR 2
+#define SND_UTIL_VERSION_SUBMINOR 16
+#define SND_UTIL_VERSION_STR \"1.2.16\"
 
 #endif /* __TOPOLOGY_VERSION_H */
 ")
