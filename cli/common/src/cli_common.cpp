@@ -1,4 +1,4 @@
-#include "audio_studio/cli/cli_common.hpp"
+#include "cli_common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +10,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+
+#include <CLI/CLI.hpp>
 
 #include "autoconfig.h"
 #include "dummy_driver.hpp"
@@ -29,6 +31,114 @@
 
 namespace audio_studio::cli {
 namespace {
+
+struct CliOptions {
+  bool self_test = false;
+  std::string target;
+  std::string action;
+  std::string probe;
+  std::string mode;
+  std::string rpc = "socket";
+  std::string host = "127.0.0.1";
+  uint16_t port = 9900;
+  std::string request_pipe;
+  std::string response_pipe;
+  std::string method;
+  std::string session;
+  uint32_t sample_rate = 48000;
+  uint16_t channels = 2;
+  uint16_t bytes_per_sample = 2;
+  std::string sample_format = "s16le";
+  std::string device = "default";
+  std::string driver_factory = "linux-host";
+  std::string file;
+  std::string output;
+  uint32_t duration_ms = 1000;
+  double seconds = 0.0;
+  uint32_t chunk_bytes = 0;
+  std::vector<std::string> paths;
+};
+
+void addIfSet(std::vector<std::string>& values, const std::string& flag, const std::string& value) {
+  if (value.empty()) return;
+  values.push_back(flag);
+  values.push_back(value);
+}
+
+void addValue(std::vector<std::string>& values, const std::string& flag, const std::string& value) {
+  values.push_back(flag);
+  values.push_back(value);
+}
+
+Args argsFromOptions(const CliOptions& options) {
+  std::vector<std::string> values;
+  if (options.self_test) values.push_back("--self-test");
+  addIfSet(values, "--target", options.target);
+  addIfSet(values, "--action", options.action);
+  addIfSet(values, "--probe", options.probe);
+  addIfSet(values, "--mode", options.mode);
+  addValue(values, "--rpc", options.rpc);
+  addValue(values, "--host", options.host);
+  addValue(values, "--port", std::to_string(options.port));
+  addIfSet(values, "--request-pipe", options.request_pipe);
+  addIfSet(values, "--response-pipe", options.response_pipe);
+  addIfSet(values, "--method", options.method);
+  addIfSet(values, "--session", options.session);
+  addValue(values, "--sample-rate", std::to_string(options.sample_rate));
+  addValue(values, "--channels", std::to_string(options.channels));
+  addValue(values, "--bytes-per-sample", std::to_string(options.bytes_per_sample));
+  addValue(values, "--sample-format", options.sample_format);
+  addValue(values, "--device", options.device);
+  addValue(values, "--driver-factory", options.driver_factory);
+  addIfSet(values, "--file", options.file);
+  addIfSet(values, "--output", options.output);
+  addValue(values, "--duration-ms", std::to_string(options.duration_ms));
+  if (options.seconds > 0.0) addValue(values, "--seconds", std::to_string(options.seconds));
+  if (options.chunk_bytes > 0) addValue(values, "--chunk-bytes", std::to_string(options.chunk_bytes));
+  values.insert(values.end(), options.paths.begin(), options.paths.end());
+  return Args(std::move(values));
+}
+
+int parseCliOptions(const std::string& tool, const std::string& default_action, int argc, char** argv, CliOptions& options) {
+  options.action = default_action;
+  CLI::App app{"Audio Studio command line tool", tool};
+  app.option_defaults()->always_capture_default();
+  app.add_flag("--self-test", options.self_test, "Run the host-side self test path");
+  app.add_option("--target", options.target, "Host-alone target. Use dummy for local smoke tests");
+  app.add_option("--action", options.action, "Logical action for registry-bound tools");
+  app.add_option("--probe", options.probe, "Dump/probe action alias");
+  app.add_option("--mode", options.mode, "Log mode/action alias");
+  app.add_option("--rpc", options.rpc, "RPC transport")->check(CLI::IsMember({"socket", "pipe"}));
+  app.add_option("--host", options.host, "RPC socket host");
+  app.add_option("--port", options.port, "RPC socket port");
+  app.add_option("--request-pipe", options.request_pipe, "RPC request FIFO path");
+  app.add_option("--response-pipe", options.response_pipe, "RPC response FIFO path");
+  app.add_option("--method", options.method, "Override JSON-RPC method for simple control tools");
+  app.add_option("--session", options.session, "Explicit session id");
+  app.add_option("--sample-rate", options.sample_rate, "Audio sample rate");
+  app.add_option("--channels", options.channels, "Audio channel count");
+  app.add_option("--bytes-per-sample", options.bytes_per_sample, "Audio bytes per sample");
+  app.add_option("--sample-format", options.sample_format, "Audio sample format");
+  app.add_option("--device", options.device, "Audio device name");
+  app.add_option("--driver-factory", options.driver_factory, "Driver factory name");
+  app.add_option("--file", options.file, "Playback input file");
+  app.add_option("--output", options.output, "Record output file");
+  app.add_option("--duration-ms", options.duration_ms, "Record duration in milliseconds");
+  app.add_option("--seconds", options.seconds, "Record duration in seconds");
+  app.add_option("--chunk-bytes", options.chunk_bytes, "Audio stream chunk size in bytes");
+  app.add_option("path", options.paths, "Optional playback input or record output path");
+  app.allow_extras(false);
+
+  try {
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError& error) {
+    return app.exit(error);
+  }
+
+  if (!options.probe.empty() && options.action == default_action) options.action = options.probe;
+  if (!options.mode.empty() && options.action == default_action) options.action = options.mode;
+  return -1;
+}
 
 #if defined(CONFIG_RPC_CLIENT)
 constexpr uint32_t kDefaultChunkBytes = 65536;
@@ -88,6 +198,8 @@ bool takesValue(const std::string& flag) {
     "--method",
     "--target",
     "--action",
+    "--probe",
+    "--mode",
   };
   return std::find(flags.begin(), flags.end(), flag) != flags.end();
 }
@@ -520,7 +632,7 @@ int runDummyTool(const std::string& tool, const std::string& action, const Args&
 }
 
 int runCliTool(const std::string& tool, const std::string& action, const Args& args) {
-  if (args.valueAfter("--target") == "dummy") return runDummyTool(tool, action, args);
+  if (args.has("--self-test") || args.valueAfter("--target") == "dummy") return runDummyTool(tool, action, args);
 
 #if !defined(CONFIG_RPC_CLIENT)
   (void)tool;
@@ -598,6 +710,13 @@ int runCliTool(const std::string& tool, const std::string& action, const Args& a
     return 1;
   }
 #endif
+}
+
+int runCliTool(const std::string& tool, const std::string& default_action, int argc, char** argv) {
+  CliOptions options;
+  const int parse_result = parseCliOptions(tool, default_action, argc, argv, options);
+  if (parse_result >= 0) return parse_result;
+  return runCliTool(tool, options.action, argsFromOptions(options));
 }
 
 } // namespace audio_studio::cli

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio_studio/platform/core/platform_registry.hpp"
+#include "platform_registry.hpp"
 
 namespace audio_studio::platform::a2 {
 

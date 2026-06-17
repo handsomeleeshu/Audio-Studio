@@ -1,4 +1,4 @@
-#include "audio_studio/framework/session/session_registry.hpp"
+#include "session_registry.hpp"
 
 #include <utility>
 

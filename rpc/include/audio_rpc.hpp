@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio_studio/framework/audio/audio_service.hpp"
+#include "audio_service.hpp"
 #include "json_rpc.hpp"
 #include "rpc_api_registry.hpp"
 #include "rpc_runtime_context.hpp"

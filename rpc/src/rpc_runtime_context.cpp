@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "audio_studio/framework/audio/audio_service.hpp"
+#include "audio_service.hpp"
 
 namespace audio_studio::rpc {
 

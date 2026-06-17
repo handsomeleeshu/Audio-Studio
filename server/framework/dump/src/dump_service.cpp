@@ -1,4 +1,4 @@
-#include "audio_studio/framework/dump/dump_service.hpp"
+#include "dump_service.hpp"
 
 #include <utility>
 

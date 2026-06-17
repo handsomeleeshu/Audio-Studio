@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "autoconfig.h"
-#include "audio_studio/framework/audio/audio_service.hpp"
+#include "audio_service.hpp"
 #include "rpc_runtime_context.hpp"
 
 namespace audio_studio::rpc {

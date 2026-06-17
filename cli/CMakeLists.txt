@@ -4,7 +4,7 @@ add_library(audio_studio_cli_common
   common/src/cli_common.cpp
 )
 target_include_directories(audio_studio_cli_common PUBLIC common/include)
-target_link_libraries(audio_studio_cli_common PUBLIC audio_studio_config audio_studio_dummy_driver)
+target_link_libraries(audio_studio_cli_common PUBLIC audio_studio_config audio_studio_cli11 audio_studio_dummy_driver)
 if(CONFIG_RPC_CLIENT)
   target_link_libraries(audio_studio_cli_common PUBLIC audio_studio_rpc_client)
   if(CONFIG_RPC_TRANSPORT_SOCKET)

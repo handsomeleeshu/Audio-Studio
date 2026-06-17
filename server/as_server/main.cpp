@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include <CLI/CLI.hpp>
+
 #include "autoconfig.h"
 
 #if defined(CONFIG_RPC)
@@ -16,18 +18,51 @@
 #include "driver_manager.hpp"
 #endif
 #if defined(CONFIG_RPC_AUDIO_METHODS)
-#include "audio_studio/framework/audio/audio_service.hpp"
+#include "audio_service.hpp"
 #include "audio_rpc.hpp"
 #endif
 #endif
 
 namespace {
 
-std::string valueAfter(int argc, char** argv, const std::string& flag, const std::string& fallback) {
-  for (int i = 1; i + 1 < argc; ++i) {
-    if (std::string(argv[i]) == flag) return argv[i + 1];
+struct ServerOptions {
+  bool version = false;
+  bool health = false;
+  bool rpc = false;
+  std::string rpc_once;
+  std::string host = "127.0.0.1";
+  uint16_t port = 9900;
+  std::string request_pipe;
+  std::string response_pipe;
+  size_t max_requests = 0;
+  std::vector<std::string> rpc_args;
+};
+
+int parseServerOptions(int argc, char** argv, ServerOptions& options) {
+  CLI::App app{"Audio Studio server", "as_server"};
+  app.option_defaults()->always_capture_default();
+  app.add_flag("--version", options.version, "Print version and build target");
+  app.add_flag("--health", options.health, "Print local health JSON");
+  app.add_flag("--rpc", options.rpc, "Run JSON-RPC server. Default when no command is selected");
+  app.add_option("--rpc-once", options.rpc_once, "Handle one JSON-RPC request and exit");
+  app.add_option("--host", options.host, "RPC socket bind host");
+  app.add_option("--port", options.port, "RPC socket bind port");
+  app.add_option("--request-pipe", options.request_pipe, "RPC request FIFO path");
+  app.add_option("--response-pipe", options.response_pipe, "RPC response FIFO path");
+  app.add_option("--max-requests", options.max_requests, "Stop after N requests. Zero means forever");
+  app.add_option("rpc-args", options.rpc_args, "Optional transport and positional transport args");
+  app.allow_extras(false);
+
+  try {
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError& error) {
+    return app.exit(error);
   }
-  return fallback;
+  return -1;
+}
+
+std::string positionalOr(const std::vector<std::string>& values, size_t index, const std::string& fallback) {
+  return index < values.size() ? values[index] : fallback;
 }
 
 const char* toolOs() {
@@ -180,38 +215,31 @@ std::string handleRpcOnce(const std::string& request_json) {
 #endif
 }
 
-size_t maxRequestsFromArgs(int argc, char** argv, size_t fallback) {
-  for (int i = 1; i + 1 < argc; ++i) {
-    if (std::string(argv[i]) == "--max-requests") return static_cast<size_t>(std::stoull(argv[i + 1]));
-  }
-  return fallback;
-}
 #endif
 
 } // namespace
 
 int main(int argc, char** argv) {
-  const std::string arg = argc > 1 ? argv[1] : "--rpc";
-  if (arg == "--version") {
+  ServerOptions options;
+  const int parse_result = parseServerOptions(argc, argv, options);
+  if (parse_result >= 0) return parse_result;
+
+  if (options.version) {
     std::cout << "Audio Studio as_server initial " << toolOs() << "/" << targetPlatform() << "\n";
     return 0;
   }
-  if (arg == "--health") {
+  if (options.health) {
     std::cout << "{\"ok\":true,\"tool_os\":\"" << toolOs() << "\",\"platform\":\"" << targetPlatform()
               << "\"}\n";
     return 0;
   }
 #if defined(CONFIG_RPC)
-  if (arg == "--rpc-once") {
-    if (argc < 3) {
-      std::cerr << "usage: as_server --rpc-once '<json-rpc-request>'\n";
-      return 2;
-    }
-    std::cout << handleRpcOnce(argv[2]) << "\n";
+  if (!options.rpc_once.empty()) {
+    std::cout << handleRpcOnce(options.rpc_once) << "\n";
     return 0;
   }
 #if defined(CONFIG_RPC_SERVER) && defined(CONFIG_DRIVERS_CORE)
-  if (arg == "--rpc") {
+  if (options.rpc || (!options.version && !options.health && options.rpc_once.empty())) {
     auto& drivers = audio_studio::drivers::DriverManager::instance();
     auto status = drivers.initialize();
     if (!status.ok()) {
@@ -220,16 +248,16 @@ int main(int argc, char** argv) {
     }
     try {
       audio_studio::rpc::RpcStreamDefaults stream_defaults;
-      const std::string transport = argc > 2 && std::string(argv[2]).rfind("--", 0) != 0 ? argv[2] : "socket";
+      const std::string transport = positionalOr(options.rpc_args, 0, "socket");
 #if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
       audioService().configureDeviceRegistry(&drivers.audioRegistry());
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {
-        const std::string positional_host = argc > 3 && std::string(argv[3]).rfind("--", 0) != 0 ? argv[3] : "127.0.0.1";
-        const std::string positional_port = argc > 4 && std::string(argv[4]).rfind("--", 0) != 0 ? argv[4] : "9900";
-        const std::string host = valueAfter(argc, argv, "--host", positional_host);
-        const uint16_t port = static_cast<uint16_t>(std::stoul(valueAfter(argc, argv, "--port", positional_port)));
+        const std::string host = options.host == "127.0.0.1" ? positionalOr(options.rpc_args, 1, options.host) : options.host;
+        const uint16_t port = options.port == 9900
+                                ? static_cast<uint16_t>(std::stoul(positionalOr(options.rpc_args, 2, std::to_string(options.port))))
+                                : options.port;
         stream_defaults.host = host;
         stream_defaults.port = port;
         stream_defaults.stream_uri_base = "tcp://" + host + ":" + std::to_string(port);
@@ -237,15 +265,15 @@ int main(int argc, char** argv) {
         audio_studio::rpc::RpcSocketServer server(drivers.socket(), bundle.endpoint, [context = bundle.context](const audio_studio::rpc::RpcBinaryFrame& request) {
           return audioStreamResponse(*context, request);
         });
-        server.serve(host, port, {maxRequestsFromArgs(argc, argv, 0), 5000});
+        server.serve(host, port, {options.max_requests, 5000});
         drivers.shutdown();
         return 0;
       }
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_PIPE)
       if (transport == "pipe") {
-        const std::string request_pipe = valueAfter(argc, argv, "--request-pipe", argc > 3 ? argv[3] : "");
-        const std::string response_pipe = valueAfter(argc, argv, "--response-pipe", argc > 4 ? argv[4] : "");
+        const std::string request_pipe = options.request_pipe.empty() ? positionalOr(options.rpc_args, 1, "") : options.request_pipe;
+        const std::string response_pipe = options.response_pipe.empty() ? positionalOr(options.rpc_args, 2, "") : options.response_pipe;
         if (request_pipe.empty() || response_pipe.empty()) {
           std::cerr << "usage: as_server --rpc pipe <request-fifo> <response-fifo> [--max-requests N]\n";
           drivers.shutdown();
@@ -256,7 +284,7 @@ int main(int argc, char** argv) {
         audio_studio::rpc::RpcPipeServer server(drivers.pipe(), bundle.endpoint, [context = bundle.context](const audio_studio::rpc::RpcBinaryFrame& request) {
           return audioStreamResponse(*context, request);
         });
-        server.serve(request_pipe, response_pipe, {maxRequestsFromArgs(argc, argv, 0), 5000});
+        server.serve(request_pipe, response_pipe, {options.max_requests, 5000});
         drivers.shutdown();
         return 0;
       }
@@ -272,7 +300,7 @@ int main(int argc, char** argv) {
   }
 #endif
 #else
-  if (arg == "--rpc-once") {
+  if (!options.rpc_once.empty()) {
     std::cerr << "as_server was built without CONFIG_RPC\n";
     return 2;
   }

@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "audio_device.hpp"
-#include "audio_studio/framework/status.hpp"
+#include "status.hpp"
 #include "control_device.hpp"
 #include "dump_device.hpp"
 #include "dynlib_driver.hpp"

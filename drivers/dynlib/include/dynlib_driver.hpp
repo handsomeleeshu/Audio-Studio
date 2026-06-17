@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "audio_studio/framework/status.hpp"
+#include "status.hpp"
 
 namespace audio_studio::drivers::dynlib {
 
