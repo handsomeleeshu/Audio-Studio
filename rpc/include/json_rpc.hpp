@@ -80,5 +80,6 @@ JsonValue requireObjectParams(const JsonValue& params, const std::string& method
 std::string requireStringParam(const JsonValue& params, const std::string& name);
 uint32_t optionalUInt32Param(const JsonValue& params, const std::string& name, uint32_t fallback);
 uint16_t optionalUInt16Param(const JsonValue& params, const std::string& name, uint16_t fallback);
+bool optionalBoolParam(const JsonValue& params, const std::string& name, bool fallback);
 
 } // namespace audio_studio::rpc

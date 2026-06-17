@@ -58,16 +58,18 @@ char PipeJsonRpcTransport::readByte() {
 PipeRpcStreamTransport::PipeRpcStreamTransport(drivers::pipe::IPipeDriver& driver, PipeRpcEndpoint endpoint)
   : driver_(driver), endpoint_(std::move(endpoint)) {}
 
+PipeRpcStreamTransport::~PipeRpcStreamTransport() {
+  close();
+}
+
 RpcBinaryFrame PipeRpcStreamTransport::exchange(const RpcBinaryFrame& frame) {
   open();
   writeBinaryFrame([this](const uint8_t* data, size_t size) { writeAll(data, size); }, frame);
-  RpcBinaryFrame response = readBinaryFrame([this] { return readByte(); });
-  request_->close();
-  response_->close();
-  return response;
+  return readBinaryFrame([this] { return readByte(); });
 }
 
 void PipeRpcStreamTransport::open() {
+  if (request_ && response_ && request_->isOpen() && response_->isOpen()) return;
   if (endpoint_.request_path.empty() || endpoint_.response_path.empty()) {
     throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "pipe RPC stream requires request and response pipe paths");
   }
@@ -80,6 +82,15 @@ void PipeRpcStreamTransport::open() {
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
   status = response_->open({{endpoint_.response_path}, drivers::pipe::PipeType::Fifo});
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+}
+
+void PipeRpcStreamTransport::close() {
+  if (request_) request_->close();
+  if (response_) response_->close();
+}
+
+bool PipeRpcStreamTransport::isOpen() const {
+  return request_ && response_ && request_->isOpen() && response_->isOpen();
 }
 
 void PipeRpcStreamTransport::writeAll(const uint8_t* data, size_t size) {

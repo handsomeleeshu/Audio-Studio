@@ -25,6 +25,7 @@ struct AudioStream {
   int sample_rate = 48000;
   int channels = 2;
   int bytes_per_sample = 2;
+  bool blocking_write = true;
   bool prepared = false;
   bool running = false;
 };

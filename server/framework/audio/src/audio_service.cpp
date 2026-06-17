@@ -280,7 +280,7 @@ framework::Status AudioService::createPlaybackSession(AudioStream stream, std::s
 
   std::unique_ptr<drivers::audio::IAudioPlaybackDevice> device;
   if (registry_ != nullptr) {
-    const drivers::audio::AudioOpenParams open_params {stream.device_name};
+    const drivers::audio::AudioOpenParams open_params {stream.device_name, stream.blocking_write};
     status = registry_->createPlayback(stream.driver_factory, open_params, device);
     if (!status.ok()) {
       return framework::Status::unavailable("failed to create playback audio driver: " + stream.driver_factory +
@@ -317,7 +317,7 @@ framework::Status AudioService::createCaptureSession(AudioStream stream, std::sh
 
   std::unique_ptr<drivers::audio::IAudioCaptureDevice> device;
   if (registry_ != nullptr) {
-    const drivers::audio::AudioOpenParams open_params {stream.device_name};
+    const drivers::audio::AudioOpenParams open_params {stream.device_name, stream.blocking_write};
     status = registry_->createCapture(stream.driver_factory, open_params, device);
     if (!status.ok()) {
       return framework::Status::unavailable("failed to create capture audio driver: " + stream.driver_factory +

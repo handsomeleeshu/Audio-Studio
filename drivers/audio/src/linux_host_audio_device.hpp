@@ -31,6 +31,7 @@ private:
   snd_pcm_t* pcm_ = nullptr;
   bool prepared_ = false;
   bool running_ = false;
+  bool blocking_write_ = true;
   size_t frames_written_ = 0;
   size_t frame_bytes_ = 0;
 };

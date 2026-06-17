@@ -202,19 +202,19 @@ int main() {
   JsonRpcClient audio_client(audio_transport);
   audio_studio::rpc::AudioRpcClient typed_audio(audio_client);
 
-  auto playback = typed_audio.createPlaybackSession(makePlaybackConfig("playback-1"));
+  auto playback_config = makePlaybackConfig("playback-1");
+  playback_config.blocking_write = false;
+  auto playback = typed_audio.createPlaybackSession(playback_config);
   assert(playback.sessionId() == "playback-1");
   assert(playback.stream().framing == "asrp-v1");
   assert(playback.stream().direction == "write");
+  assert(!playback.stream().blocking);
   assert(playback.stream().uri.find("/streams/stream_playback-1") != std::string::npos);
 
   JsonValue started = playback.start();
   assert(started.at("session").at("prepared").asBool());
   assert(started.at("session").at("running").asBool());
 
-  auto written = playback.writeFrames(4096);
-  assert(written.accepted);
-  assert(written.bytes == 4096);
   JsonValue drained = playback.drain();
   assert(drained.at("session").at("session_id").asString() == "playback-1");
 
@@ -336,7 +336,7 @@ int main() {
         audio_studio::rpc::RpcSocketServer server(drivers.socket(), transport_endpoint, [&](const audio_studio::rpc::RpcBinaryFrame& request) {
           return audioServiceStreamHandler(*transport_context, request);
         });
-        server.serve("127.0.0.1", port, {7, 5000});
+        server.serve("127.0.0.1", port, {8, 5000});
       } catch (...) {
         server_error = std::current_exception();
       }
@@ -355,6 +355,12 @@ int main() {
     auto socket_written = socket_playback.writeFrames(payload);
     assert(socket_written.accepted);
     assert(socket_written.bytes == payload.size());
+    assert(socket_stream.isOpen());
+    const std::vector<uint8_t> second_payload(128, 0x33);
+    auto socket_written_again = socket_playback.writeFrames(second_payload);
+    assert(socket_written_again.accepted);
+    assert(socket_written_again.bytes == second_payload.size());
+    assert(socket_stream.isOpen());
     auto socket_capture = socket_audio.createCaptureSession(makeCaptureConfig("socket-capture"));
     socket_capture.start();
     auto socket_read = socket_capture.readFrames(4096);
@@ -382,7 +388,7 @@ int main() {
         audio_studio::rpc::RpcPipeServer server(drivers.pipe(), transport_endpoint, [&](const audio_studio::rpc::RpcBinaryFrame& request) {
           return audioServiceStreamHandler(*transport_context, request);
         });
-        server.serve(request_pipe, response_pipe, {7, 5000});
+        server.serve(request_pipe, response_pipe, {8, 5000});
       } catch (...) {
         server_error = std::current_exception();
       }
@@ -401,6 +407,12 @@ int main() {
     auto pipe_written = pipe_playback.writeFrames(payload);
     assert(pipe_written.accepted);
     assert(pipe_written.bytes == payload.size());
+    assert(pipe_stream.isOpen());
+    const std::vector<uint8_t> second_payload(64, 0x3c);
+    auto pipe_written_again = pipe_playback.writeFrames(second_payload);
+    assert(pipe_written_again.accepted);
+    assert(pipe_written_again.bytes == second_payload.size());
+    assert(pipe_stream.isOpen());
     auto pipe_capture = pipe_audio.createCaptureSession(makeCaptureConfig("pipe-capture"));
     pipe_capture.start();
     auto pipe_read = pipe_capture.readFrames(2048);

@@ -81,6 +81,7 @@ JsonValue streamToJson(const framework::audio::AudioStream& stream, RpcRuntimeCo
   value["channels"] = static_cast<uint32_t>(stream.channels);
   value["bytes_per_sample"] = static_cast<uint32_t>(stream.bytes_per_sample);
   value["sample_format"] = sampleFormatFromBytes(static_cast<uint16_t>(stream.bytes_per_sample));
+  value["blocking_write"] = stream.blocking_write;
   value["prepared"] = stream.prepared;
   value["running"] = stream.running;
   return value;
@@ -104,7 +105,7 @@ JsonValue streamDescriptorJson(const framework::audio::AudioStream& stream, RpcR
   descriptor["payload"] = "audio/pcm";
   descriptor["max_chunk_bytes"] = defaults.max_chunk_bytes;
   descriptor["default_timeout_ms"] = defaults.timeout_ms;
-  descriptor["blocking"] = true;
+  descriptor["blocking"] = stream.blocking_write;
   descriptor["token_usage"] = "first_frame";
   return descriptor;
 }
@@ -123,6 +124,7 @@ framework::audio::AudioStream audioStreamFromParams(RpcRuntimeContext& context,
   stream.sample_rate = static_cast<int>(optionalUInt32Param(object, "sample_rate", 48000));
   stream.channels = static_cast<int>(optionalUInt16Param(object, "channels", 2));
   stream.bytes_per_sample = static_cast<int>(optionalUInt16Param(object, "bytes_per_sample", 2));
+  stream.blocking_write = optionalBoolParam(object, "blocking_write", true);
   return stream;
 }
 
@@ -230,41 +232,6 @@ JsonValue listSessions(RpcRuntimeContext& context, const JsonValue&) {
   return result;
 }
 
-JsonValue writeFramesDebug(RpcRuntimeContext& context, const JsonValue& params) {
-  const std::string id = sessionId(params);
-  framework::audio::AudioStream stream;
-  (void)statusResult(context.audio().get(id, stream));
-  if (!stream.running) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "audio session is not running: " + id);
-
-  const uint32_t bytes = optionalUInt32Param(params, "bytes", 0);
-  if (bytes > 65536) {
-    throw JsonRpcError(JsonRpcErrorCode::kInvalidParams,
-                       "audio.writeFrames JSON debug path is limited to 65536 bytes; use stream.uri for audio data");
-  }
-
-  JsonValue result = JsonValue::object();
-  result["session_id"] = id;
-  result["accepted"] = true;
-  result["bytes"] = bytes;
-  result["debug_json_path"] = true;
-  result["stream_required_for_data"] = true;
-  return result;
-}
-
-JsonValue readFramesDebug(RpcRuntimeContext& context, const JsonValue& params) {
-  const std::string id = sessionId(params);
-  framework::audio::AudioStream stream;
-  (void)statusResult(context.audio().get(id, stream));
-
-  JsonValue result = JsonValue::object();
-  result["session_id"] = id;
-  result["bytes"] = 0;
-  result["eof"] = false;
-  result["debug_json_path"] = true;
-  result["stream_required_for_data"] = true;
-  return result;
-}
-
 JsonValue getStats(RpcRuntimeContext& context, const JsonValue& params) {
   const std::string id = sessionId(params);
   framework::audio::AudioStream stream;
@@ -300,6 +267,7 @@ JsonValue audioParamsExample() {
   params["channels"] = 2;
   params["bytes_per_sample"] = 2;
   params["device"] = "default";
+  params["blocking_write"] = true;
   return params;
 }
 
@@ -365,18 +333,6 @@ RpcApiRegistry& audioStudioRpcApiRegistry() {
     api.addMethod({"audio.listSessions", "List audio sessions", "audio", "1.0",
                    JsonValue::object(), JsonValue::object(),
                    {{}, ""}, {true, JsonValue::object()}, listSessions});
-
-    JsonValue write_params = sessionParamsExample();
-    write_params["bytes"] = 4096;
-    api.addMethod({"audio.writeFrames", "Debug JSON write path; real data uses stream.uri", "audio", "1.0",
-                   write_params, JsonValue::object(),
-                   {{}, ""}, {false, JsonValue::object()}, writeFramesDebug});
-
-    JsonValue read_params = sessionParamsExample();
-    read_params["max_bytes"] = 4096;
-    api.addMethod({"audio.readFrames", "Debug JSON read path; real data uses stream.uri", "audio", "1.0",
-                   read_params, JsonValue::object(),
-                   {{}, ""}, {false, JsonValue::object()}, readFramesDebug});
 
     api.addMethod({"audio.getStats", "Get audio session stats", "audio", "1.0",
                    sessionParamsExample(), JsonValue::object(),
