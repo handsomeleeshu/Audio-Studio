@@ -1,3 +1,4 @@
 [submodule "third_party/alsa-utils"]
 	path = third_party/alsa-utils
 	url = https://github.com/thesofproject/alsa-utils.git
+	branch = master
