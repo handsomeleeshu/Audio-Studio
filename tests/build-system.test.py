@@ -13,6 +13,8 @@ BUILD_ALL = ROOT / 'scripts' / 'build_all.sh'
 LINUX_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_server_minimal' / 'Debug'
 DRIVER_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'driver_interface_tests' / 'Debug'
 GUI_BACKEND_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'gui_backend' / 'Release'
+AS_CONFIG_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_config' / 'Debug'
+MODULE_CONFIG_EXAMPLE_BUILD_DIR = ROOT / 'out' / 'module-config-sdk-example'
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
@@ -64,6 +66,69 @@ def write_test_wav(path):
         wav.setsampwidth(2)
         wav.setframerate(48000)
         wav.writeframes(payload)
+
+
+def write_module_config_plugin_project(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '''{
+  "module_types": [
+    {
+      "type_id": "test.third_party",
+      "category": "test/plugin",
+      "module_class": "MODULE",
+      "parameters": [
+        {
+          "param_id": "knob",
+          "param_name": "Knob",
+          "value_type": "uint8",
+          "default": 7,
+          "apply": {
+            "settable_states": ["PIPE_LOADED", "RUNNING"],
+            "mode": "next_frame"
+          }
+        }
+      ]
+    }
+  ],
+  "module_instances": [
+    {"inst_id": "TP0", "name": "Third Party", "module_type": "test.third_party"}
+  ],
+  "pipelines": [
+    {
+      "pipe_id": "PLUGIN_PIPE",
+      "name": "Plugin Pipe",
+      "domain": "playback",
+      "frame": {"rate": 48000},
+      "ports": [],
+      "nodes": [
+        {"node_id": "IN", "kind": "port", "port_ref": "P_IN"},
+        {"node_id": "TP", "kind": "module", "inst_ref": "TP0"},
+        {"node_id": "OUT", "kind": "port", "port_ref": "P_OUT"}
+      ],
+      "edges": [
+        {"from": "IN:out", "to": "TP:in"},
+        {"from": "TP:out", "to": "OUT:in"}
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "preset_id": "plugin.default",
+      "load_mode": "bulk",
+      "node_values": [
+        {
+          "pipeline_id": "PLUGIN_PIPE",
+          "node_id": "TP",
+          "values": {"knob": 9}
+        }
+      ]
+    }
+  ]
+}
+''',
+        encoding='utf-8',
+    )
 
 
 def assert_wav(path, expected_frames):
@@ -174,6 +239,7 @@ def exercise_kconfig_targets():
         'alldefconfig',
         'overrideconfig',
         'as_server_minimal_defconfig',
+        'as_config_defconfig',
         'driver_interface_tests_defconfig',
         'gui_backend_defconfig',
         'rpc_socket_defconfig',
@@ -282,6 +348,125 @@ def main():
     ])
     require_contains(rpc_health, '"jsonrpc":"2.0"')
     require_contains(rpc_health, '"tool_os":"linux"')
+
+    if AS_CONFIG_BUILD_DIR.exists():
+        shutil.rmtree(AS_CONFIG_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'as_config', 'linux', 'a2'])
+    as_config_config = read_text(AS_CONFIG_BUILD_DIR / 'generated' / '.config')
+    require_contains(as_config_config, 'CONFIG_FRAMEWORK_CONFIG=y')
+    require_contains(as_config_config, 'CONFIG_DRIVER_FILESYSTEM_LINUX_HOST=y')
+    require_contains(as_config_config, 'CONFIG_DRIVER_DYNLIB_LINUX_HOST=y')
+    assert (AS_CONFIG_BUILD_DIR / 'as_config').exists()
+    as_config_out = ROOT / 'out' / 'as-config-build-test'
+    if as_config_out.exists():
+        shutil.rmtree(as_config_out)
+    as_config_result = check_output([
+        str(AS_CONFIG_BUILD_DIR / 'as_config'),
+        '--input', str(ROOT / 'config' / 'A2.json'),
+        '--out-dir', str(as_config_out),
+        '--project-name', 'a2_test',
+    ])
+    require_contains(as_config_result, '"runtime_control_count":29')
+    require_contains(as_config_result, '"preset_count":3')
+    for path in [
+        as_config_out / 'a2_test.conf',
+        as_config_out / 'a2_test.tplg',
+        as_config_out / 'a2_test_private.bin',
+        as_config_out / 'include' / 'as_config_ids.h',
+        as_config_out / 'include' / 'as_tplg_private.h',
+        as_config_out / 'include' / 'as_preset_ids.h',
+        as_config_out / 'a2_test_controls.csv',
+        as_config_out / 'a2_test_compile_report.json',
+        as_config_out / 'a2_test_decode.conf',
+    ]:
+        assert path.exists() and path.stat().st_size > 0, f'missing as_config output: {path}'
+    for path in [
+        as_config_out / 'a2_test_alsatplg.log',
+        as_config_out / 'a2_test_decode.log',
+    ]:
+        assert path.exists(), f'missing as_config log: {path}'
+    assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_alsatplg.log')
+    assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_decode.log')
+    ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
+    require_contains(ids_header, 'AS_MODULE_TYPE_RATE_ASRC')
+    assert 'AS_MODULE_TYPE_SERVICE_ASRC' not in ids_header
+    require_contains(ids_header, '#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu')
+    require_contains(ids_header, '#define AS_CONTROL_PLAY_MAIN_VOL_VOL_DB 0xCD13BD21u')
+    private_payload = (as_config_out / 'a2_test_private.bin').read_bytes()
+    assert b'as-generic-runtime-json-v1' in private_payload
+    assert b'as-generic-install-json-v1' in private_payload
+    assert b'as-generic-preset-json-v1' in private_payload
+    assert b'"pipelines"' in private_payload
+    assert b'"dai_id":"CODEC_OUT_DAI0"' in private_payload
+    assert b'"tdm_slots":8' in private_payload
+    assert b'"codec_format"' not in private_payload
+    assert b'"config_format"' in private_payload
+    a2_json_text = read_text(ROOT / 'config' / 'A2.json')
+    assert 'param_encoding' not in a2_json_text
+    require_contains(a2_json_text, '"type_id": "rate.asrc"')
+
+    builtin_module_config_plugin = AS_CONFIG_BUILD_DIR / 'plugins' / 'builtin_module_configs' / 'libaudio_studio_builtin_module_configs.so'
+    assert builtin_module_config_plugin.exists(), f'missing builtin module config plugin: {builtin_module_config_plugin}'
+    builtin_config_out = ROOT / 'out' / 'as-config-builtin-module-config-test'
+    if builtin_config_out.exists():
+        shutil.rmtree(builtin_config_out)
+    check_output([
+        str(AS_CONFIG_BUILD_DIR / 'as_config'),
+        '--input', str(ROOT / 'config' / 'A2.json'),
+        '--out-dir', str(builtin_config_out),
+        '--project-name', 'a2_builtin_module_config_test',
+        '--plugin', str(builtin_module_config_plugin),
+    ])
+    builtin_private_payload = (builtin_config_out / 'a2_builtin_module_config_test_private.bin').read_bytes()
+    assert b'as-builtin-gain-volume-runtime-json-v1' in builtin_private_payload
+
+    if MODULE_CONFIG_EXAMPLE_BUILD_DIR.exists():
+        shutil.rmtree(MODULE_CONFIG_EXAMPLE_BUILD_DIR)
+    run([
+        'cmake',
+        '-S', str(ROOT / 'plugins' / 'module_config_sdk' / 'examples' / 'third_party_module'),
+        '-B', str(MODULE_CONFIG_EXAMPLE_BUILD_DIR),
+    ])
+    run(['cmake', '--build', str(MODULE_CONFIG_EXAMPLE_BUILD_DIR)])
+    third_party_module_config_plugin = MODULE_CONFIG_EXAMPLE_BUILD_DIR / 'libas_third_party_module_config.so'
+    assert third_party_module_config_plugin.exists(), f'missing third-party module config plugin: {third_party_module_config_plugin}'
+    plugin_project = ROOT / 'out' / 'module-config-plugin-project.json'
+    write_module_config_plugin_project(plugin_project)
+    plugin_config_out = ROOT / 'out' / 'as-config-module-config-plugin-test'
+    if plugin_config_out.exists():
+        shutil.rmtree(plugin_config_out)
+    plugin_compile = check_output([
+        str(AS_CONFIG_BUILD_DIR / 'as_config'),
+        '--input', str(plugin_project),
+        '--out-dir', str(plugin_config_out),
+        '--project-name', 'module_config_plugin_test',
+        '--no-tplg',
+        '--plugin', str(third_party_module_config_plugin),
+    ])
+    require_contains(plugin_compile, '"runtime_control_count":1')
+    require_contains(plugin_compile, '"preset_count":1')
+    plugin_private_payload = (plugin_config_out / 'module_config_plugin_test_private.bin').read_bytes()
+    assert b'example-third-party-runtime-v1' in plugin_private_payload
+    assert b'example-third-party-preset-v1' in plugin_private_payload
+
+    rpc_config_out = ROOT / 'out' / 'as-config-rpc-test'
+    if rpc_config_out.exists():
+        shutil.rmtree(rpc_config_out)
+    rpc_compile = check_output([
+        str(AS_CONFIG_BUILD_DIR / 'as_server'),
+        '--rpc-once',
+        '{"jsonrpc":"2.0","id":2,"method":"config.compile","params":{'
+        f'"input_path":"{ROOT / "config" / "A2.json"}",'
+        f'"output_dir":"{rpc_config_out}",'
+        '"project_name":"a2_rpc_test","build_tplg":true}}',
+    ])
+    require_contains(rpc_compile, '"jsonrpc":"2.0"')
+    require_contains(rpc_compile, '"runtime_control_count":29')
+    assert (rpc_config_out / 'a2_rpc_test.tplg').exists()
+    assert (rpc_config_out / 'a2_rpc_test_decode.conf').exists()
+    assert 'ALSA lib' not in read_text(rpc_config_out / 'a2_rpc_test_alsatplg.log')
+    assert 'ALSA lib' not in read_text(rpc_config_out / 'a2_rpc_test_decode.log')
+
     if GUI_BACKEND_BUILD_DIR.exists():
         shutil.rmtree(GUI_BACKEND_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'gui_backend', '-r', 'linux', 'a2'])

@@ -3,8 +3,10 @@
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <condition_variable>
 #include <limits>
 #include <mutex>
@@ -313,6 +315,22 @@ OsResult MacOsOsDriver::getEnv(const std::string& key, std::string& out) const {
 
 uint64_t MacOsOsDriver::processId() const {
   return static_cast<uint64_t>(::getpid());
+}
+
+OsResult MacOsOsDriver::runCommand(const std::string& command, int& exit_code) {
+  exit_code = -1;
+  if (command.empty()) return OsResult::invalidArgument("command is empty");
+  const int status = std::system(command.c_str());
+  if (status == -1) return OsResult::internal("failed to run command: " + command);
+  if (WIFEXITED(status)) {
+    exit_code = WEXITSTATUS(status);
+    return OsResult::success();
+  }
+  if (WIFSIGNALED(status)) {
+    exit_code = 128 + WTERMSIG(status);
+    return OsResult::success();
+  }
+  return OsResult::internal("command ended in an unknown state: " + command);
 }
 
 OsResult MacOsOsDriver::getSystemInfo(OsSystemInfo& out) const {

@@ -64,6 +64,24 @@ if(CONFIG_FRAMEWORK_AUDIO)
   target_compile_features(audio_studio_framework_audio PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_FRAMEWORK_CONFIG)
+  add_library(audio_studio_framework_config
+    framework/config/src/config_service.cpp
+  )
+  target_include_directories(audio_studio_framework_config PUBLIC
+    framework/config/include
+    "${PROJECT_SOURCE_DIR}/drivers/filesystem/include"
+    "${PROJECT_SOURCE_DIR}/drivers/os/include"
+    "${PROJECT_SOURCE_DIR}/drivers/dynlib/include"
+  )
+  target_link_libraries(audio_studio_framework_config PUBLIC
+    audio_studio_framework_common
+    audio_studio_json
+    AudioStudio::ModuleConfigSdk
+  )
+  target_compile_features(audio_studio_framework_config PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_FRAMEWORK_LOG)
   add_library(audio_studio_framework_log
     framework/log/src/log_service.cpp
@@ -160,6 +178,9 @@ endif()
 if(CONFIG_FRAMEWORK_AUDIO)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_audio)
 endif()
+if(CONFIG_FRAMEWORK_CONFIG)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_config)
+endif()
 if(CONFIG_FRAMEWORK_LOG)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_log)
 endif()
@@ -194,6 +215,20 @@ if(CONFIG_BUILD_TESTS AND CONFIG_SERVER_FRAMEWORK_TESTS)
     tests/server_tests.cpp
   )
   target_link_libraries(audio_studio_server_tests PRIVATE ${AUDIO_STUDIO_SERVER_LIBS})
+  target_compile_definitions(audio_studio_server_tests PRIVATE
+    AUDIO_STUDIO_TEST_ROOT="${PROJECT_SOURCE_DIR}"
+  )
+  if(CONFIG_FRAMEWORK_CONFIG)
+    add_library(audio_studio_config_test_plugin SHARED
+      tests/config_test_plugin.cpp
+    )
+    target_link_libraries(audio_studio_config_test_plugin PRIVATE AudioStudio::ModuleConfigSdk)
+    target_compile_features(audio_studio_config_test_plugin PRIVATE cxx_std_17)
+    target_compile_definitions(audio_studio_server_tests PRIVATE
+      AUDIO_STUDIO_CONFIG_TEST_PLUGIN_PATH="$<TARGET_FILE:audio_studio_config_test_plugin>"
+    )
+    add_dependencies(audio_studio_server_tests audio_studio_config_test_plugin)
+  endif()
   target_compile_features(audio_studio_server_tests PRIVATE cxx_std_17)
   add_test(NAME server_framework_tests COMMAND audio_studio_server_tests)
 endif()

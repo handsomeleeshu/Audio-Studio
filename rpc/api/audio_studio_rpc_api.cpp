@@ -7,6 +7,9 @@
 
 #include "autoconfig.h"
 #include "audio_service.hpp"
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+#include "config_service.hpp"
+#endif
 #include "rpc_runtime_context.hpp"
 
 namespace audio_studio::rpc {
@@ -269,6 +272,90 @@ JsonValue listDevices(RpcRuntimeContext&, const JsonValue&) {
   return result;
 }
 
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+JsonValue stringArrayParam(const JsonValue& params, const std::string& name) {
+  JsonValue out = JsonValue::array();
+  if (!params.isObject() || !params.has(name) || params.at(name).isNull()) return out;
+  if (!params.at(name).isArray()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "param must be array: " + name);
+  for (const auto& item : params.at(name).asArray()) {
+    if (!item.isString()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "array param values must be strings: " + name);
+    out.pushBack(item.asString());
+  }
+  return out;
+}
+
+JsonValue compileOutputJson(const framework::config::ConfigCompileOutput& output) {
+  JsonValue result = JsonValue::object();
+  result["ok"] = output.ok;
+  result["conf_path"] = output.conf_path;
+  result["tplg_path"] = output.tplg_path;
+  result["private_bin_path"] = output.private_bin_path;
+  result["ids_header_path"] = output.ids_header_path;
+  result["private_header_path"] = output.private_header_path;
+  result["preset_header_path"] = output.preset_header_path;
+  result["controls_csv_path"] = output.controls_csv_path;
+  result["report_path"] = output.report_path;
+  result["alsatplg_log_path"] = output.alsatplg_log_path;
+  result["tplg_decode_conf_path"] = output.tplg_decode_conf_path;
+  result["tplg_decode_log_path"] = output.tplg_decode_log_path;
+  result["module_type_count"] = static_cast<uint32_t>(output.module_type_count);
+  result["module_instance_count"] = static_cast<uint32_t>(output.module_instance_count);
+  result["pipeline_count"] = static_cast<uint32_t>(output.pipeline_count);
+  result["runtime_control_count"] = static_cast<uint32_t>(output.runtime_control_count);
+  result["install_param_count"] = static_cast<uint32_t>(output.install_param_count);
+  result["preset_count"] = static_cast<uint32_t>(output.preset_count);
+  result["plugin_count"] = static_cast<uint32_t>(output.plugin_count);
+  JsonValue warnings = JsonValue::array();
+  for (const auto& warning : output.warnings) warnings.pushBack(warning);
+  result["warnings"] = std::move(warnings);
+  return result;
+}
+
+framework::config::ConfigCompileRequest compileRequestFromParams(const JsonValue& params) {
+  const auto object = requireObjectParams(params, "config.compile");
+  framework::config::ConfigCompileRequest request;
+  request.input_path = requireStringParam(object, "input_path");
+  request.output_dir = requireStringParam(object, "output_dir");
+  request.project_name = optionalStringParam(object, "project_name", "a2");
+  request.alsatplg = optionalStringParam(object, "alsatplg", "alsatplg");
+  request.build_tplg = optionalBoolParam(object, "build_tplg", true);
+  request.strict = optionalBoolParam(object, "strict", true);
+  const auto plugins = stringArrayParam(object, "plugin_paths");
+  for (const auto& item : plugins.asArray()) request.plugin_paths.push_back(item.asString());
+  return request;
+}
+
+JsonValue compileConfig(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasConfigService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "config service is not configured");
+  const auto request = compileRequestFromParams(params);
+  framework::config::ConfigCompileOutput output;
+  const auto status = context.config().compile(request, output);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  return compileOutputJson(output);
+}
+
+JsonValue listModuleConfigs(RpcRuntimeContext& context, const JsonValue&) {
+  if (!context.hasConfigService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "config service is not configured");
+  JsonValue handlers = JsonValue::array();
+  for (const auto& id : context.config().moduleConfigs().handlerIds()) handlers.pushBack(id);
+  JsonValue result = JsonValue::object();
+  result["module_config_handlers"] = std::move(handlers);
+  return result;
+}
+
+JsonValue compileParamsExample() {
+  JsonValue params = JsonValue::object();
+  params["input_path"] = "config/A2.json";
+  params["output_dir"] = "out/as_config/a2";
+  params["project_name"] = "a2";
+  params["alsatplg"] = "alsatplg";
+  params["build_tplg"] = true;
+  params["strict"] = true;
+  params["plugin_paths"] = JsonValue::array();
+  return params;
+}
+#endif
+
 JsonValue audioParamsExample() {
   JsonValue params = JsonValue::object();
   params["sample_rate"] = 48000;
@@ -310,6 +397,16 @@ RpcApiRegistry& audioStudioRpcApiRegistry() {
     api.addMethod({"audio.listDevices", "List available audio devices", "audio", "1.0",
                    JsonValue::object(), JsonValue::object(),
                    {{}, ""}, {true, JsonValue::object()}, listDevices});
+
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+    api.addMethod({"config.compile", "Compile project JSON to ALSA topology conf and generated artifacts", "config", "1.0",
+                   compileParamsExample(), JsonValue::object(),
+                   {{"as_config"}, "compile"}, {false, compileParamsExample()}, compileConfig});
+
+    api.addMethod({"config.listModuleConfigs", "List registered as_config module config handlers", "config", "1.0",
+                   JsonValue::object(), JsonValue::object(),
+                   {{"as_config"}, "list-module-configs"}, {true, JsonValue::object()}, listModuleConfigs});
+#endif
 
     api.addMethod({"audio.createPlaybackSession", "Create an audio playback session", "audio", "1.0",
                    audioParamsExample(), JsonValue::object(),

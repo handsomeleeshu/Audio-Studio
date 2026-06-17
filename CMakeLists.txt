@@ -46,6 +46,17 @@ target_include_directories(audio_studio_config INTERFACE "${GENERATED_DIRECTORY}
 add_library(audio_studio_cli11 INTERFACE)
 target_include_directories(audio_studio_cli11 INTERFACE "${PROJECT_SOURCE_DIR}/third_party/CLI11/include")
 
+add_subdirectory(plugins/module_config_sdk)
+add_subdirectory(plugins/builtin_module_configs)
+
+if(CONFIG_RPC_CORE OR CONFIG_FRAMEWORK_CONFIG)
+  add_library(audio_studio_json
+    rpc/src/json_value.cpp
+  )
+  target_include_directories(audio_studio_json PUBLIC rpc/include)
+  target_compile_features(audio_studio_json PUBLIC cxx_std_17)
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 enable_testing()

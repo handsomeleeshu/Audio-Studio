@@ -85,6 +85,7 @@ public:
   virtual OsResult setEnv(std::string key, std::string value) = 0;
   virtual OsResult getEnv(const std::string& key, std::string& out) const = 0;
   virtual uint64_t processId() const = 0;
+  virtual OsResult runCommand(const std::string& command, int& exit_code) = 0;
 };
 
 class IOsSystem {

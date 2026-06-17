@@ -1,6 +1,7 @@
 #include "linux_host_os_driver.hpp"
 
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdlib>
@@ -278,6 +279,22 @@ OsResult LinuxHostOsDriver::getEnv(const std::string& key, std::string& out) con
 
 uint64_t LinuxHostOsDriver::processId() const {
   return static_cast<uint64_t>(::getpid());
+}
+
+OsResult LinuxHostOsDriver::runCommand(const std::string& command, int& exit_code) {
+  exit_code = -1;
+  if (command.empty()) return OsResult::invalidArgument("command is empty");
+  const int status = std::system(command.c_str());
+  if (status == -1) return OsResult::internal("failed to run command: " + command);
+  if (WIFEXITED(status)) {
+    exit_code = WEXITSTATUS(status);
+    return OsResult::success();
+  }
+  if (WIFSIGNALED(status)) {
+    exit_code = 128 + WTERMSIG(status);
+    return OsResult::success();
+  }
+  return OsResult::internal("command ended in an unknown state: " + command);
 }
 
 OsResult LinuxHostOsDriver::getSystemInfo(OsSystemInfo& out) const {

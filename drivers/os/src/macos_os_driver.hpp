@@ -22,6 +22,7 @@ public:
   OsResult setEnv(std::string key, std::string value) override;
   OsResult getEnv(const std::string& key, std::string& out) const override;
   uint64_t processId() const override;
+  OsResult runCommand(const std::string& command, int& exit_code) override;
   OsResult getSystemInfo(OsSystemInfo& out) const override;
   std::string temporaryDirectory() const override;
   std::string homeDirectory() const override;
