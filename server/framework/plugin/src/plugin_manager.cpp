@@ -1,4 +1,4 @@
-#include "audio_studio/framework/plugin/plugin_manager.hpp"
+#include "plugin_manager.hpp"
 
 #include <algorithm>
 #include <utility>

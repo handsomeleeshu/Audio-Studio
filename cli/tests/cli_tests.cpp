@@ -1,7 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "audio_studio/cli/cli_common.hpp"
+#include "cli_common.hpp"
 
 int main() {
   using audio_studio::cli::Args;

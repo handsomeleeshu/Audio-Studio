@@ -186,7 +186,7 @@ if(CONFIG_RPC_CLIENT)
 endif()
 
 add_executable(as_server as_server/main.cpp)
-target_link_libraries(as_server PRIVATE audio_studio_config ${AUDIO_STUDIO_SERVER_LIBS})
+target_link_libraries(as_server PRIVATE audio_studio_config audio_studio_cli11 ${AUDIO_STUDIO_SERVER_LIBS})
 target_compile_features(as_server PRIVATE cxx_std_17)
 
 if(CONFIG_BUILD_TESTS AND CONFIG_SERVER_FRAMEWORK_TESTS)

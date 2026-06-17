@@ -434,6 +434,8 @@ as_control --rpc pipe --request-pipe <request-fifo> --response-pipe <response-fi
 
 `--rpc socket`、`--host 127.0.0.1`、`--port 9900` 均可省略。CLI 与 `as_server` 的正式通信任何时候都走 RPC；`--target dummy` 只保留为显式 host-alone 测试模式。
 
+`as_server` 与所有 `as_*` CLI 工具统一使用 CLI11 解析命令行。工具入口只允许声明工具名和默认 action，然后调用 common 层解析/执行函数；不能在各工具 main 或 server main 中继续手写散落的 `argv` 扫描逻辑。
+
 构建 profile 选择 transport：
 
 ```text
@@ -1497,7 +1499,7 @@ Audio-Studio/cli/
 当前已实现首批 host-alone CLI 骨架，下一阶段增加通用 `as_rpc` 调试入口：
 
 ```text
-cli/common/include/audio_studio/cli/cli_common.hpp
+cli/common/include/cli_common.hpp
 cli/common/src/cli_common.cpp
 cli/tools/as_rpc.cpp
 cli/tools/as_control.cpp
@@ -1508,6 +1510,8 @@ cli/tools/as_dump.cpp
 ```
 
 该阶段 CLI 保留 `--target dummy` host-alone 模式，同时支持默认 socket RPC 与 `--rpc pipe` 调用 as_server。`as_control --action get-health` 走 JSON-RPC；`as_play` 已通过 `AudioRpcClient` 创建 `AudioPlayback` remote handle，并以 `audio_playback.start/writeFrames/drain/stop/close` 语义执行播放流程；`as_record` 已通过 `AudioCapture` remote handle 执行 `start/readFrames/stop/close` 并写 WAV。`as_config` 暂不实现。
+
+CLI public header 直接放在模块 `include/` 根目录，例如 `cli/common/include/cli_common.hpp`。server/framework 与 server/platform public header 同样直接放在对应模块 `include/` 根目录，例如 `server/framework/audio/include/audio_service.hpp`、`server/framework/common/include/status.hpp`。工程内 include 统一使用短路径，避免 `include/audio_studio/...` 多层嵌套。
 
 CLI 不应包含：
 
@@ -1549,8 +1553,8 @@ Audio-Studio/server/framework/common/
 当前已实现首批 host-alone common 模块：
 
 ```text
-server/framework/common/include/audio_studio/framework/status.hpp
-server/framework/common/include/audio_studio/framework/service_registry.hpp
+server/framework/common/include/status.hpp
+server/framework/common/include/service_registry.hpp
 server/framework/common/src/status.cpp
 server/framework/common/src/service_registry.cpp
 ```
@@ -1574,7 +1578,7 @@ Audio-Studio/server/framework/session/
 当前已实现首批 host-alone session 模块：
 
 ```text
-server/framework/session/include/audio_studio/framework/session/session_registry.hpp
+server/framework/session/include/session_registry.hpp
 server/framework/session/src/session_registry.cpp
 ```
 
@@ -1655,7 +1659,7 @@ Audio-Studio/server/framework/control/
 当前已实现首批 host-alone control 模块：
 
 ```text
-server/framework/control/include/audio_studio/framework/control/control_service.hpp
+server/framework/control/include/control_service.hpp
 server/framework/control/src/control_service.cpp
 ```
 
@@ -1693,7 +1697,7 @@ Audio-Studio/server/framework/audio/
 当前已实现首批 host-alone audio 模块：
 
 ```text
-server/framework/audio/include/audio_studio/framework/audio/audio_service.hpp
+server/framework/audio/include/audio_service.hpp
 server/framework/audio/src/audio_service.cpp
 ```
 
@@ -1731,7 +1735,7 @@ Audio-Studio/server/framework/log/
 当前已实现首批 host-alone log 模块：
 
 ```text
-server/framework/log/include/audio_studio/framework/log/log_service.hpp
+server/framework/log/include/log_service.hpp
 server/framework/log/src/log_service.cpp
 ```
 
@@ -1766,7 +1770,7 @@ Audio-Studio/server/framework/dump/
 当前已实现首批 host-alone dump 模块：
 
 ```text
-server/framework/dump/include/audio_studio/framework/dump/dump_service.hpp
+server/framework/dump/include/dump_service.hpp
 server/framework/dump/src/dump_service.cpp
 ```
 
@@ -1793,7 +1797,7 @@ Audio-Studio/server/framework/plugin/
 当前已实现首批 host-alone plugin 模块：
 
 ```text
-server/framework/plugin/include/audio_studio/framework/plugin/plugin_manager.hpp
+server/framework/plugin/include/plugin_manager.hpp
 server/framework/plugin/src/plugin_manager.cpp
 ```
 
@@ -1824,9 +1828,9 @@ Audio-Studio/server/framework/transport/
 当前已实现首批 host-alone transport 模块：
 
 ```text
-server/framework/transport/include/audio_studio/framework/transport/transport_frame.hpp
-server/framework/transport/include/audio_studio/framework/transport/frame_codec.hpp
-server/framework/transport/include/audio_studio/framework/transport/transport_manager.hpp
+server/framework/transport/include/transport_frame.hpp
+server/framework/transport/include/frame_codec.hpp
+server/framework/transport/include/transport_manager.hpp
 server/framework/transport/src/frame_codec.cpp
 server/framework/transport/src/transport_manager.cpp
 ```
@@ -1955,9 +1959,9 @@ Audio-Studio/server/platform/
 当前已实现首批 host-alone platform core：
 
 ```text
-server/platform/core/include/audio_studio/platform/core/platform_registry.hpp
+server/platform/core/include/platform_registry.hpp
 server/platform/core/src/platform_registry.cpp
-server/platform/a2/include/audio_studio/platform/a2/a2_platform.hpp
+server/platform/a2/include/a2_platform.hpp
 server/platform/a2/src/a2_platform.cpp
 ```
 

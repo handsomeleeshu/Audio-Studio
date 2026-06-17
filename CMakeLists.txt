@@ -43,6 +43,9 @@ add_library(audio_studio_config INTERFACE)
 add_dependencies(audio_studio_config genconfig)
 target_include_directories(audio_studio_config INTERFACE "${GENERATED_DIRECTORY}/include")
 
+add_library(audio_studio_cli11 INTERFACE)
+target_include_directories(audio_studio_cli11 INTERFACE "${PROJECT_SOURCE_DIR}/third_party/CLI11/include")
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 enable_testing()

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "audio_studio/framework/status.hpp"
+#include "status.hpp"
 #include "audio_device.hpp"
 
 namespace audio_studio::framework::audio {

@@ -1,4 +1,4 @@
-#include "audio_studio/framework/control/control_service.hpp"
+#include "control_service.hpp"
 
 #include <utility>
 

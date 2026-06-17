@@ -1,4 +1,4 @@
-#include "audio_studio/framework/log/log_service.hpp"
+#include "log_service.hpp"
 
 #include <algorithm>
 #include <utility>

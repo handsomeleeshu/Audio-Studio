@@ -1,4 +1,4 @@
-#include "audio_studio/framework/status.hpp"
+#include "status.hpp"
 
 #include <sstream>
 #include <utility>

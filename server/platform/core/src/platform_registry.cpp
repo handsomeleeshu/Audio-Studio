@@ -1,4 +1,4 @@
-#include "audio_studio/platform/core/platform_registry.hpp"
+#include "platform_registry.hpp"
 
 #include <algorithm>
 #include <utility>

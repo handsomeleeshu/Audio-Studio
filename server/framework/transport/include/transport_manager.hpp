@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "audio_studio/framework/status.hpp"
-#include "audio_studio/framework/transport/transport_frame.hpp"
+#include "status.hpp"
+#include "transport_frame.hpp"
 
 namespace audio_studio::framework::transport {
 

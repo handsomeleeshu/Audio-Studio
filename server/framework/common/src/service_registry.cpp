@@ -1,4 +1,4 @@
-#include "audio_studio/framework/service_registry.hpp"
+#include "service_registry.hpp"
 
 #include <utility>
 

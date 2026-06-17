@@ -1,4 +1,4 @@
-#include "audio_studio/platform/a2/a2_platform.hpp"
+#include "a2_platform.hpp"
 
 namespace audio_studio::platform::a2 {
 

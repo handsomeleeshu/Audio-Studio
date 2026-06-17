@@ -1,4 +1,4 @@
-#include "audio_studio/framework/transport/frame_codec.hpp"
+#include "frame_codec.hpp"
 
 #include <algorithm>
 

@@ -6,9 +6,9 @@
 #include <vector>
 #include <unistd.h>
 
-#include "audio_studio/framework/audio/audio_service.hpp"
-#include "audio_studio/framework/service_registry.hpp"
-#include "audio_studio/framework/status.hpp"
+#include "audio_service.hpp"
+#include "service_registry.hpp"
+#include "status.hpp"
 #include "audio_rpc.hpp"
 #include "audio_rpc_client.hpp"
 #include "json_rpc.hpp"
