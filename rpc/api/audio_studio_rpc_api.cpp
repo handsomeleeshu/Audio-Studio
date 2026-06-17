@@ -30,6 +30,14 @@ const char* targetPlatform() {
 #endif
 }
 
+std::string defaultAudioDriverFactory() {
+#if defined(_WIN32)
+  return "wasapi";
+#else
+  return "alsa";
+#endif
+}
+
 JsonValue statusResult(const framework::Status& status) {
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
   JsonValue result = JsonValue::object();
@@ -119,7 +127,7 @@ framework::audio::AudioStream audioStreamFromParams(RpcRuntimeContext& context,
   framework::audio::AudioStream stream;
   stream.id = optionalStringParam(object, "session_id", context.nextSessionId(prefix));
   stream.direction = direction;
-  stream.driver_factory = optionalStringParam(object, "driver_factory", "linux-host");
+  stream.driver_factory = optionalStringParam(object, "driver_factory", defaultAudioDriverFactory());
   stream.device_name = optionalStringParam(object, "device_name", optionalStringParam(object, "device", "default"));
   stream.sample_rate = static_cast<int>(optionalUInt32Param(object, "sample_rate", 48000));
   stream.channels = static_cast<int>(optionalUInt16Param(object, "channels", 2));
@@ -251,7 +259,7 @@ JsonValue listDevices(RpcRuntimeContext&, const JsonValue&) {
   JsonValue devices = JsonValue::array();
   JsonValue host = JsonValue::object();
   host["name"] = "default";
-  host["driver"] = "linux-host";
+  host["driver"] = defaultAudioDriverFactory();
   host["playback"] = true;
   host["capture"] = true;
   devices.pushBack(std::move(host));
@@ -267,6 +275,7 @@ JsonValue audioParamsExample() {
   params["channels"] = 2;
   params["bytes_per_sample"] = 2;
   params["device"] = "default";
+  params["driver_factory"] = defaultAudioDriverFactory();
   params["blocking_write"] = true;
   return params;
 }

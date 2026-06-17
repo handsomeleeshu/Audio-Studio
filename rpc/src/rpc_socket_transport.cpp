@@ -9,21 +9,36 @@ namespace audio_studio::rpc {
 SocketJsonRpcTransport::SocketJsonRpcTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint)
   : driver_(driver), endpoint_(std::move(endpoint)) {}
 
+SocketJsonRpcTransport::~SocketJsonRpcTransport() {
+  close();
+}
+
 std::string SocketJsonRpcTransport::send(const std::string& request_json) {
-  connect();
-  writeContentLengthFrame([this](const uint8_t* data, size_t size) { writeAll(data, size); }, request_json);
-  const std::string response = readContentLengthFrame([this] { return readByte(); });
-  socket_->close();
-  return response;
+  try {
+    connect();
+    writeContentLengthFrame([this](const uint8_t* data, size_t size) { writeAll(data, size); }, request_json);
+    return readContentLengthFrame([this] { return readByte(); });
+  } catch (...) {
+    close();
+    throw;
+  }
 }
 
 void SocketJsonRpcTransport::connect() {
+  if (socket_ && socket_->isConnected()) return;
   socket_ = driver_.createSocket(drivers::socket::SocketType::Tcp);
   if (!socket_) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "failed to create socket RPC client");
   auto status = socket_->open({drivers::socket::SocketType::Tcp});
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
   status = socket_->connect({endpoint_.host, endpoint_.port}, endpoint_.timeout_ms);
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+}
+
+void SocketJsonRpcTransport::close() {
+  if (!socket_) return;
+  (void)socket_->shutdown();
+  socket_->close();
+  socket_.reset();
 }
 
 void SocketJsonRpcTransport::writeAll(const uint8_t* data, size_t size) {

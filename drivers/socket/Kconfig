@@ -10,4 +10,9 @@ config DRIVER_SOCKET_LINUX_HOST
   default n
   depends on DRIVER_SOCKET
 
+config DRIVER_SOCKET_WINDOWS_HOST
+  bool "Build Windows host socket driver implementation"
+  default n
+  depends on DRIVER_SOCKET
+
 endmenu

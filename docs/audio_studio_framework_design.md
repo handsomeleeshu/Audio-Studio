@@ -408,7 +408,7 @@ rpc/src/rpc_pipe_server.cpp
 rpc/src/rpc_server.cpp
 ```
 
-该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。socket server 必须按 accepted connection 并发处理请求，避免两个 `as_play`/`as_record` 客户端互相阻塞；pipe transport 保持单 FIFO/单连接语义，用于受限或脚本化场景。
+该阶段提供完整 JSON-RPC 2.0 单请求、notification、batch、result/error response、method registry、client helper，以及基于 `Content-Length: <n>\r\n\r\n<payload>` 的通用 framing。socket 与 pipe 两种 transport 均通过 `DriverManager` 使用 `drivers/socket` 或 `drivers/pipe` interface，不在 RPC 层直接访问 OS API。socket client transport 必须复用同一条 TCP connection 承载同一个 CLI/client 生命周期内的多次 JSON-RPC control call，不能每个 call open/close；socket server 必须按 accepted connection 并发处理请求，避免两个 `as_play`/`as_record` 客户端互相阻塞；pipe transport 保持单 FIFO/单连接语义，用于受限或脚本化场景。
 
 RPC public header 直接放在 `rpc/include/` 下，不使用 `rpc/include/audio_studio/rpc/` 这种深层路径。工程内 include 统一使用短路径：
 
@@ -1865,7 +1865,7 @@ Audio-Studio/drivers/
 
 后续 driver 子目录详见本文 Driver 章节。
 
-当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。Linux host 测试实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 `CONFIG_DRIVER_*_LINUX_HOST` 选择 `src/` 下的实现源文件。
+当前 driver 层按 interface-first 方式重构，公共头文件直接放在各模块 `include/` 下，每个公共头只暴露 `I*` interface、Factory interface 和该模块自己的 singleton Registry。host 测试/默认实现头与源文件均放在各模块 `src/` 下，不出现在 public include 路径中。每个 `drivers/<module>/` 都有自己的 `CMakeLists.txt` 和 `Kconfig`，由对应 `CONFIG_DRIVER_*` 与 implementation 开关选择 `src/` 下的实现源文件。
 
 ```text
 drivers/include/driver_manager.hpp
@@ -1878,6 +1878,8 @@ drivers/os/src/linux_host_os_driver.cpp
 drivers/socket/include/socket_driver.hpp
 drivers/socket/src/linux_host_socket_driver.hpp
 drivers/socket/src/linux_host_socket_driver.cpp
+drivers/socket/src/windows_host_socket_driver.hpp
+drivers/socket/src/windows_host_socket_driver.cpp
 
 drivers/filesystem/include/filesystem_driver.hpp
 drivers/filesystem/src/linux_host_filesystem_driver.hpp
@@ -1896,8 +1898,12 @@ drivers/transport/src/linux_host_transport_driver.hpp
 drivers/transport/src/linux_host_transport_driver.cpp
 
 drivers/audio/include/audio_device.hpp
-drivers/audio/src/linux_host_audio_device.hpp
-drivers/audio/src/linux_host_audio_device.cpp
+drivers/audio/src/alsa_audio_device.hpp
+drivers/audio/src/alsa_audio_device.cpp
+drivers/audio/src/pulse_audio_device.hpp
+drivers/audio/src/pulse_audio_device.cpp
+drivers/audio/src/wasapi_audio_device.hpp
+drivers/audio/src/wasapi_audio_device.cpp
 
 drivers/control/include/control_device.hpp
 drivers/control/src/linux_host_control_device.hpp
@@ -1915,7 +1921,7 @@ drivers/dummy/include/dummy_driver.hpp
 drivers/dummy/src/dummy_driver.cpp
 ```
 
-`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开全部 Linux host 测试实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
+`CONFIG_DRIVERS_CORE=y` 时构建 `DriverManager`。`CONFIG_DRIVER_OS=y`、`CONFIG_DRIVER_SOCKET=y` 等基础开关表示 framework 需要对应 driver interface；具体实现由 `CONFIG_DRIVER_OS_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_LINUX_HOST=y`、`CONFIG_DRIVER_SOCKET_WINDOWS_HOST=y`、`CONFIG_DRIVER_AUDIO_ALSA=y`、`CONFIG_DRIVER_AUDIO_PULSE=y`、`CONFIG_DRIVER_AUDIO_WASAPI=y` 等 implementation 开关选择。`drivers/CMakeLists.txt` 进入各模块目录，模块根 `CMakeLists.txt` 构建被 Kconfig 选中的 implementation OBJECT target 并引用本模块 `src/` 源文件；`DriverManager` target 直接在 `drivers/CMakeLists.txt` 中定义。最终 executable 直接链接这些 OBJECT target，保证各实现 `.cpp` 内部的静态 registrar 一定进入链接并完成 factory 注册。`configs/profile/driver_interface_tests_defconfig` 在 Linux host 上打开 Linux host 基础 driver、ALSA 与 PulseAudio 音频实现，并通过 `server/tests/driver_interface_tests.cpp` 只经由 `DriverManager` API、各模块 Registry 和 `I*` interface 验证 OS、socket、filesystem、pipe、dynlib、transport、audio、control、log、dump。
 
 ### 4.13 server/platform
 
@@ -2337,7 +2343,7 @@ as_play/as_record
   -> JSON-RPC control plane + ASRP binary stream plane
   -> as_server AudioService
   -> DriverManager::audioRegistry()
-  -> drivers/audio LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice
+  -> drivers/audio AlsaAudioPlaybackDevice / AlsaAudioCaptureDevice
   -> ALSA device, e.g. default/null/plughw:2,0
 ```
 
@@ -3075,7 +3081,7 @@ server/tests/Kconfig
 cli/Kconfig
 ```
 
-模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO` 与 `CONFIG_DRIVER_AUDIO_LINUX_HOST`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`。
+模块开关按目录消费，例如 `CONFIG_GUI_BACKEND` 控制 `GUI/backend` 是否加入构建，`CONFIG_SERVER`、`CONFIG_CLI`、`CONFIG_FRAMEWORK_*`、`CONFIG_DRIVER_*` 继续沿用同一模式。每个 driver 模块自己维护 interface 和 implementation Kconfig，例如 `drivers/audio/Kconfig` 定义 `CONFIG_DRIVER_AUDIO`、`CONFIG_DRIVER_AUDIO_ALSA`、`CONFIG_DRIVER_AUDIO_PULSE`、`CONFIG_DRIVER_AUDIO_WASAPI`。PC OS 和 toolchain 不写入 `configs/`，只由 `build_all.sh` 选择对应 `scripts/cmake/toolchain/*.cmake`，并在生成 initial config 时按 host OS 选择 socket/audio 默认 implementation。
 
 #### 4.3 build_all.sh 是推荐唯一入口
 
@@ -4824,10 +4830,10 @@ drivers/src/driver_manager.cpp
 
 1. `DriverManager` 是 framework 使用 driver 的唯一装配入口。framework/service 层不 include `linux_host_*`、A2 物理驱动或其他 implementation header。
 2. 每个 driver 模块在自己的 public interface 头里定义 `I*Factory` 和 `*Registry`，例如 `SocketDriverRegistry`、`AudioDeviceRegistry`、`ControlDeviceRegistry`。Registry 是 singleton，拥有 factory，按 factory name 创建 interface 对象。
-3. Linux host 测试实现只在模块 `src/linux_host_*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、A2 物理驱动或 customer implementation header。
-4. `DriverManagerConfig` 保存默认 factory 名称，当前默认均为 `linux-host`，同时保存 `enable_*` 类别开关。server 使用默认配置，按 Kconfig 选中的 driver 类别全部启用；CLI client 使用最小配置，只启用当前 RPC transport 需要的 socket 或 pipe driver。
+3. host 测试/默认实现只在模块 `src/*` 头/源里定义具体 class。factory class 和静态 registrar 放在实现 `.cpp` 的匿名命名空间中，registrar 在对象文件加载时注册到该模块的 singleton Registry。`DriverManager` 不 include 任何 `linux_host_*`、ALSA/Pulse/WASAPI、A2 物理驱动或 customer implementation header。
+4. `DriverManagerConfig` 保存默认 factory 名称，同时保存 `enable_*` 类别开关。Linux 上非音频 host driver 默认 factory 仍为 `linux-host`，audio 默认 factory 为 `alsa`；Windows socket 默认 factory 为 `windows-host`，audio 默认 factory 为 `wasapi`。server 使用默认配置，按 Kconfig 选中的 driver 类别全部启用；CLI client 使用最小配置，只启用当前 RPC transport 需要的 socket 或 pipe driver。
 5. `initialize()` 先从各模块 singleton Registry 收集已注册 factory metadata；随后只为 `DriverManagerConfig.enable_* == true` 的类别创建或验证默认 service/factory。这样同一个 build profile 可以同时编 server 和 CLI，而不会因为 server 开启 `CONFIG_DRIVER_AUDIO` 就要求 CLI 初始化 audio driver。
-6. OS/socket/filesystem/pipe/dynlib 是全局 singleton service 类型，可由 `DriverManager` 持有；transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证启用时对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。per-device factory 必须返回带错误信息的 `DriverResult`/`AudioResult`，不能只返回 `nullptr`，以便 Linux host ALSA open/configure 失败时把底层错误完整上报到 framework、RPC 和 CLI。
+6. OS/socket/filesystem/pipe/dynlib 是全局 singleton service 类型，可由 `DriverManager` 持有；transport/audio/control/log/dump 是 per-device 类型，`DriverManager` 不提前创建实例，只保证启用时对应 Registry 有可用 factory。业务代码通过 `manager.audioRegistry().createPlayback(...)`、`manager.controlRegistry().create(...)` 等路径创建具体 device。per-device factory 必须返回带错误信息的 `DriverResult`/`AudioResult`，不能只返回 `nullptr`，以便 ALSA/Pulse/WASAPI open/configure 失败时把底层错误完整上报到 framework、RPC 和 CLI。
 7. `DriverManager` 维护 `DriverInfo` 元数据表，用于列出 category/name/detail/active 状态。初始化阶段从 singleton Registry 收集 factory name，先登记为 inactive；初始化成功创建或验证默认 factory 后再标记 active。
 8. `shutdown()` 负责关闭 socket driver、释放 DriverManager 持有的 singleton service，并清空 DriverManager 元数据表；各 driver module 的 singleton Registry 不清空，静态注册的 factory 在进程生命周期内持续可用。
 
@@ -4868,7 +4874,7 @@ public:
 
 当前 driver 注册流程是“模块自注册 + DriverManager 消费 singleton Registry”，不是由 `DriverManager` include 每个 implementation 头文件后集中注册。
 
-以 audio Linux host 实现为例：
+以 ALSA audio 实现为例：
 
 ```text
 drivers/audio/include/audio_device.hpp
@@ -4876,15 +4882,15 @@ drivers/audio/include/audio_device.hpp
   - 定义 IAudioPlaybackDeviceFactory / IAudioCaptureDeviceFactory
   - 定义 AudioDeviceRegistry::instance()
 
-drivers/audio/src/linux_host_audio_device.hpp
-  - 只声明 LinuxHostAudioPlaybackDevice / LinuxHostAudioCaptureDevice 实现类
+drivers/audio/src/alsa_audio_device.hpp
+  - 只声明 AlsaAudioPlaybackDevice / AlsaAudioCaptureDevice 实现类
 
-drivers/audio/src/linux_host_audio_device.cpp
-  - 在匿名 namespace 中定义 LinuxHostAudioPlaybackDeviceFactory / LinuxHostAudioCaptureDeviceFactory
+drivers/audio/src/alsa_audio_device.cpp
+  - 在匿名 namespace 中定义 AlsaAudioPlaybackDeviceFactory / AlsaAudioCaptureDeviceFactory
   - 用静态 registrar 注册到 AudioDeviceRegistry::instance()
 
 drivers/audio/CMakeLists.txt
-  - 根据 CONFIG_DRIVER_AUDIO_LINUX_HOST 选择 src/linux_host_audio_device.cpp
+  - 根据 CONFIG_DRIVER_AUDIO_ALSA 选择 src/alsa_audio_device.cpp
   - 构建 audio_studio_driver_audio OBJECT target
 ```
 
@@ -4893,15 +4899,15 @@ drivers/audio/CMakeLists.txt
 ```cpp
 namespace {
 
-class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
+class AlsaAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
 public:
-    std::string name() const override { return "linux-host"; }
+    std::string name() const override { return "alsa"; }
     std::unique_ptr<IAudioPlaybackDevice> create(const AudioOpenParams& params) const override;
 };
 
-const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
+const bool kAlsaAudioPlaybackDeviceRegistered = [] {
     auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(
-        std::make_unique<LinuxHostAudioPlaybackDeviceFactory>());
+        std::make_unique<AlsaAudioPlaybackDeviceFactory>());
     (void)status;
     return true;
 }();
@@ -4914,9 +4920,9 @@ const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
 ```text
 1. Kconfig 选择 implementation：
    CONFIG_DRIVER_AUDIO=y
-   CONFIG_DRIVER_AUDIO_LINUX_HOST=y
+   CONFIG_DRIVER_AUDIO_ALSA=y
 
-2. drivers/audio/CMakeLists.txt 将 src/linux_host_audio_device.cpp 加入 OBJECT target。
+2. drivers/audio/CMakeLists.txt 将 src/alsa_audio_device.cpp 加入 OBJECT target。
 
 3. 最终 executable 直接链接 audio_studio_driver_audio OBJECT target。
    这样对象文件一定进入最终链接，静态 registrar 不会被 static archive 丢弃。
@@ -4924,12 +4930,12 @@ const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
 4. 程序启动后，implementation .cpp 中的静态 registrar 执行，
    factory 注册到 AudioDeviceRegistry::instance()。
 
-5. DriverManager::initialize() 不 include 或 new 任何 LinuxHost* class，
+5. DriverManager::initialize() 不 include 或 new 任何 Alsa* / Pulse* / Wasapi* class，
    只从 AudioDeviceRegistry::instance() 收集 factory metadata，
    并检查 DriverManagerConfig 中指定的默认 factory 是否存在。
 
 6. framework 需要具体 per-device 实例时，通过 registry 创建：
-   manager.audioRegistry().createPlayback("linux-host", params)
+   manager.audioRegistry().createPlayback("alsa", params)
 ```
 
 新增 platform/custom driver implementation 时遵循同一机制：
@@ -4940,14 +4946,14 @@ const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
 3. 在同一个 .cpp 中用静态 registrar 注册到对应 Registry::instance()。
 4. 新增 Kconfig implementation 开关，例如 CONFIG_DRIVER_AUDIO_A2。
 5. 在模块根 CMakeLists.txt 中根据该 CONFIG 选择 platform/customer 源文件。
-6. 如默认 factory 名不是 linux-host，通过 DriverManagerConfig 指定，例如 audio_factory = "a2"。
+6. 如默认 factory 名不是 host OS 默认值，通过 DriverManagerConfig 指定，例如 audio_factory = "a2"。
 7. DriverManager 不需要修改，也不需要 include 新实现头。
 ```
 
 命名约束：
 
 ```text
-factory name 必须稳定，例如 linux-host、a2、customer-x。
+factory name 必须稳定，例如 linux-host、windows-host、alsa、pulse、wasapi、a2、customer-x。
 同一 Registry 内 factory name 不能重复。
 implementation header 放在实现目录，不能进入 public include。
 public include 只能暴露 interface、factory interface、Registry。
@@ -6500,12 +6506,12 @@ Audio 数据读写不进入 JSON-RPC method catalog。`AudioPlayback::writeFrame
   "bytes_per_sample": 2,
   "sample_format": "s16le",
   "device": "default",
-  "driver_factory": "linux-host",
+  "driver_factory": "alsa",
   "blocking_write": true
 }
 ```
 
-Linux host 默认实现中，`device` 直接映射到 ALSA device name，例如 `default`、`null`、`plughw:2,0`。server 端由 `AudioService` 根据 `driver_factory` 从 `DriverManager::audioRegistry()` 创建 playback/capture device；CLI 不直接 include ALSA 或任何 `linux_host_*` 实现头。
+Linux host 默认 audio 实现为 ALSA，`device` 直接映射到 ALSA device name，例如 `default`、`null`、`plughw:2,0`；PulseAudio 可通过 `driver_factory: "pulse"` 使用 Pulse 默认 server/device；Windows host 默认 audio 实现为 WASAPI，`driver_factory` 默认值为 `wasapi`。server 端由 `AudioService` 根据 `driver_factory` 从 `DriverManager::audioRegistry()` 创建 playback/capture device；CLI 不直接 include ALSA/Pulse/WASAPI 或任何 implementation 头。
 
 Audio framework 的并发模型：
 
@@ -6513,10 +6519,10 @@ Audio framework 的并发模型：
 2. `AudioPlaybackSession` / `AudioCaptureSession` 是真正的一路 audio session，每个 session 拥有自己的 driver instance、stream descriptor、统计信息和状态锁。
 3. `AudioService` API 使用字符串 `session_id` 或 session object；`numeric_session_id` 是 RPC/ASRP wire id，只能由 `RpcRuntimeContext` 映射。
 4. Audio Studio 不引入额外的 device lease manager，也不在 framework 层判断一个 ALSA device 能否被多路 open。能不能多路打开由底层 driver/OS/backend 决定。
-5. 如果底层 open/configure 失败，driver factory 或 session operation 必须返回包含底层错误文本的 `Status`。错误上报路径为 `linux_host_audio_device` -> `AudioService::createPlaybackSession/createCaptureSession` -> `audio.create*Session` JSON-RPC error -> `AudioRpcClient`/`as_play` stderr。
+5. 如果底层 open/configure 失败，driver factory 或 session operation 必须返回包含底层错误文本的 `Status`。错误上报路径为 `alsa_audio_device` / `pulse_audio_device` / `wasapi_audio_device` -> `AudioService::createPlaybackSession/createCaptureSession` -> `audio.create*Session` JSON-RPC error -> `AudioRpcClient`/`as_play` stderr。
 6. `as_play` 并发依赖“一个播放命令一个 RPC client connection，一个 playback session 一个 driver instance”。socket RPC server 必须并发处理不同 connection，pipe 模式只保证单连接语义。
 7. `blocking_write` 由 CLI/RPC create-session 参数一路透传到 `drivers::audio::AudioOpenParams`。server 的 StreamAck 必须在当前 block 的 driver write 完成后返回；如果设备实现选择非阻塞内部队列，也必须通过 ACK 字段准确报告 accepted/queued/credit。
-8. socket 数据面必须避免 per-chunk connect/close；同一个 `AudioRpcClient` 的 stream transport 可以连续承载 playback write、capture read 等 ASRP frame，直到 facade 主动 close 或析构。
+8. socket 控制面和数据面都必须避免 hot path per-call/per-chunk connect/close；同一个 `AudioRpcClient` 的 JSON-RPC transport 可以连续承载 start/stop/stats 等 control call，stream transport 可以连续承载 playback write、capture read 等 ASRP frame，直到 facade 主动 close 或析构。
 
 `as_play` 轻量流程：
 

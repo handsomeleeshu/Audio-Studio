@@ -1,16 +1,19 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 
-#include <alsa/asoundlib.h>
+#include <audioclient.h>
+#include <mmdeviceapi.h>
+#include <windows.h>
 
 #include "audio_device.hpp"
 
 namespace audio_studio::drivers::audio {
 
-class LinuxHostAudioPlaybackDevice final : public IAudioPlaybackDevice {
+class WasapiAudioPlaybackDevice final : public IAudioPlaybackDevice {
 public:
-  ~LinuxHostAudioPlaybackDevice() override;
+  ~WasapiAudioPlaybackDevice() override;
 
   AudioResult open(const AudioOpenParams& params) override;
   AudioResult prepare(const AudioStreamParams& params) override;
@@ -23,22 +26,25 @@ public:
   AudioDeviceCaps getCaps() const override;
 
 private:
-  AudioResult configurePcm();
-  AudioResult recover(int error);
+  AudioResult ensureStarted();
+  void releaseClient();
 
   std::string device_name_;
   AudioStreamParams params_;
-  snd_pcm_t* pcm_ = nullptr;
+  IAudioClient* audio_client_ = nullptr;
+  IAudioRenderClient* render_client_ = nullptr;
+  UINT32 buffer_frames_ = 0;
   bool prepared_ = false;
   bool running_ = false;
+  bool client_started_ = false;
   bool blocking_write_ = true;
   size_t frames_written_ = 0;
   size_t frame_bytes_ = 0;
 };
 
-class LinuxHostAudioCaptureDevice final : public IAudioCaptureDevice {
+class WasapiAudioCaptureDevice final : public IAudioCaptureDevice {
 public:
-  ~LinuxHostAudioCaptureDevice() override;
+  ~WasapiAudioCaptureDevice() override;
 
   AudioResult open(const AudioOpenParams& params) override;
   AudioResult prepare(const AudioStreamParams& params) override;
@@ -50,14 +56,17 @@ public:
   AudioDeviceCaps getCaps() const override;
 
 private:
-  AudioResult configurePcm();
-  AudioResult recover(int error);
+  AudioResult ensureStarted();
+  void releaseClient();
 
   std::string device_name_;
   AudioStreamParams params_;
-  snd_pcm_t* pcm_ = nullptr;
+  IAudioClient* audio_client_ = nullptr;
+  IAudioCaptureClient* capture_client_ = nullptr;
+  UINT32 buffer_frames_ = 0;
   bool prepared_ = false;
   bool running_ = false;
+  bool client_started_ = false;
   size_t frames_read_ = 0;
   size_t frame_bytes_ = 0;
 };

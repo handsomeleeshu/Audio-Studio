@@ -1,4 +1,4 @@
-#include "linux_host_audio_device.hpp"
+#include "alsa_audio_device.hpp"
 
 #include <algorithm>
 
@@ -6,12 +6,12 @@ namespace audio_studio::drivers::audio {
 
 namespace {
 
-class LinuxHostAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
+class AlsaAudioPlaybackDeviceFactory final : public IAudioPlaybackDeviceFactory {
 public:
-  std::string name() const override { return "linux-host"; }
+  std::string name() const override { return "alsa"; }
   AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioPlaybackDevice>& out) const override {
     out.reset();
-    auto device = std::make_unique<LinuxHostAudioPlaybackDevice>();
+    auto device = std::make_unique<AlsaAudioPlaybackDevice>();
     auto status = device->open(params);
     if (!status.ok()) return status;
     out = std::move(device);
@@ -19,12 +19,12 @@ public:
   }
 };
 
-class LinuxHostAudioCaptureDeviceFactory final : public IAudioCaptureDeviceFactory {
+class AlsaAudioCaptureDeviceFactory final : public IAudioCaptureDeviceFactory {
 public:
-  std::string name() const override { return "linux-host"; }
+  std::string name() const override { return "alsa"; }
   AudioResult create(const AudioOpenParams& params, std::unique_ptr<IAudioCaptureDevice>& out) const override {
     out.reset();
-    auto device = std::make_unique<LinuxHostAudioCaptureDevice>();
+    auto device = std::make_unique<AlsaAudioCaptureDevice>();
     auto status = device->open(params);
     if (!status.ok()) return status;
     out = std::move(device);
@@ -32,14 +32,14 @@ public:
   }
 };
 
-const bool kLinuxHostAudioPlaybackDeviceRegistered = [] {
-  auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(std::make_unique<LinuxHostAudioPlaybackDeviceFactory>());
+const bool kAlsaAudioPlaybackDeviceRegistered = [] {
+  auto status = AudioDeviceRegistry::instance().registerPlaybackFactory(std::make_unique<AlsaAudioPlaybackDeviceFactory>());
   (void)status;
   return true;
 }();
 
-const bool kLinuxHostAudioCaptureDeviceRegistered = [] {
-  auto status = AudioDeviceRegistry::instance().registerCaptureFactory(std::make_unique<LinuxHostAudioCaptureDeviceFactory>());
+const bool kAlsaAudioCaptureDeviceRegistered = [] {
+  auto status = AudioDeviceRegistry::instance().registerCaptureFactory(std::make_unique<AlsaAudioCaptureDeviceFactory>());
   (void)status;
   return true;
 }();
@@ -110,11 +110,11 @@ AudioResult configurePcmHandle(snd_pcm_t* pcm, const AudioStreamParams& params, 
 
 } // namespace
 
-LinuxHostAudioPlaybackDevice::~LinuxHostAudioPlaybackDevice() {
+AlsaAudioPlaybackDevice::~AlsaAudioPlaybackDevice() {
   close();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::open(const AudioOpenParams& params) {
+AudioResult AlsaAudioPlaybackDevice::open(const AudioOpenParams& params) {
   if (params.device_name.empty()) return AudioResult::invalidArgument("audio playback device name is empty");
   close();
   device_name_ = params.device_name;
@@ -129,7 +129,7 @@ AudioResult LinuxHostAudioPlaybackDevice::open(const AudioOpenParams& params) {
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::prepare(const AudioStreamParams& params) {
+AudioResult AlsaAudioPlaybackDevice::prepare(const AudioStreamParams& params) {
   if (device_name_.empty()) return AudioResult::unavailable("audio playback device is not open");
   if (pcm_ == nullptr) return AudioResult::unavailable("audio playback PCM handle is not open: " + device_name_);
   auto status = validateParams(params);
@@ -145,13 +145,13 @@ AudioResult LinuxHostAudioPlaybackDevice::prepare(const AudioStreamParams& param
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::start() {
+AudioResult AlsaAudioPlaybackDevice::start() {
   if (!prepared_) return AudioResult::unavailable("audio playback device is not prepared");
   running_ = true;
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::writeFrame(const AudioFrame& frame, uint32_t timeout_ms) {
+AudioResult AlsaAudioPlaybackDevice::writeFrame(const AudioFrame& frame, uint32_t timeout_ms) {
   if (!running_) return AudioResult::unavailable("audio playback device is not running");
   if (frame.empty()) return AudioResult::invalidArgument("audio frame is empty");
   if (frame_bytes_ == 0 || frame.size() % frame_bytes_ != 0) return AudioResult::invalidArgument("audio frame size is not aligned to sample frame");
@@ -176,14 +176,14 @@ AudioResult LinuxHostAudioPlaybackDevice::writeFrame(const AudioFrame& frame, ui
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::drain() {
+AudioResult AlsaAudioPlaybackDevice::drain() {
   if (pcm_ == nullptr) return AudioResult::unavailable("audio playback device is not open");
   const int rc = snd_pcm_drain(pcm_);
   if (rc < 0) return recover(rc);
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::stop() {
+AudioResult AlsaAudioPlaybackDevice::stop() {
   if (pcm_ == nullptr) return AudioResult::unavailable("audio playback device is not open");
   const int rc = snd_pcm_drop(pcm_);
   if (rc < 0) return recover(rc);
@@ -192,7 +192,7 @@ AudioResult LinuxHostAudioPlaybackDevice::stop() {
   return AudioResult::success();
 }
 
-void LinuxHostAudioPlaybackDevice::close() {
+void AlsaAudioPlaybackDevice::close() {
   if (pcm_ != nullptr) {
     snd_pcm_close(pcm_);
     pcm_ = nullptr;
@@ -202,29 +202,29 @@ void LinuxHostAudioPlaybackDevice::close() {
   frame_bytes_ = 0;
 }
 
-AudioStreamStats LinuxHostAudioPlaybackDevice::getStats() const {
+AudioStreamStats AlsaAudioPlaybackDevice::getStats() const {
   return {frames_written_, 0, running_};
 }
 
-AudioDeviceCaps LinuxHostAudioPlaybackDevice::getCaps() const {
+AudioDeviceCaps AlsaAudioPlaybackDevice::getCaps() const {
   return {};
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::configurePcm() {
+AudioResult AlsaAudioPlaybackDevice::configurePcm() {
   return configurePcmHandle(pcm_, params_, frame_bytes_);
 }
 
-AudioResult LinuxHostAudioPlaybackDevice::recover(int error) {
+AudioResult AlsaAudioPlaybackDevice::recover(int error) {
   const int rc = snd_pcm_recover(pcm_, error, 1);
   if (rc < 0) return alsaError("snd_pcm_recover playback", rc);
   return AudioResult::success();
 }
 
-LinuxHostAudioCaptureDevice::~LinuxHostAudioCaptureDevice() {
+AlsaAudioCaptureDevice::~AlsaAudioCaptureDevice() {
   close();
 }
 
-AudioResult LinuxHostAudioCaptureDevice::open(const AudioOpenParams& params) {
+AudioResult AlsaAudioCaptureDevice::open(const AudioOpenParams& params) {
   if (params.device_name.empty()) return AudioResult::invalidArgument("audio capture device name is empty");
   close();
   device_name_ = params.device_name;
@@ -238,7 +238,7 @@ AudioResult LinuxHostAudioCaptureDevice::open(const AudioOpenParams& params) {
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioCaptureDevice::prepare(const AudioStreamParams& params) {
+AudioResult AlsaAudioCaptureDevice::prepare(const AudioStreamParams& params) {
   if (device_name_.empty()) return AudioResult::unavailable("audio capture device is not open");
   if (pcm_ == nullptr) return AudioResult::unavailable("audio capture PCM handle is not open: " + device_name_);
   auto status = validateParams(params);
@@ -254,7 +254,7 @@ AudioResult LinuxHostAudioCaptureDevice::prepare(const AudioStreamParams& params
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioCaptureDevice::start() {
+AudioResult AlsaAudioCaptureDevice::start() {
   if (!prepared_) return AudioResult::unavailable("audio capture device is not prepared");
   const int rc = snd_pcm_prepare(pcm_);
   if (rc < 0) return alsaError("snd_pcm_prepare capture", rc);
@@ -267,7 +267,7 @@ AudioResult LinuxHostAudioCaptureDevice::start() {
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioCaptureDevice::readFrame(AudioFrame& frame, uint32_t timeout_ms) {
+AudioResult AlsaAudioCaptureDevice::readFrame(AudioFrame& frame, uint32_t timeout_ms) {
   if (!running_) return AudioResult::unavailable("audio capture device is not running");
   if (frame_bytes_ == 0) return AudioResult::unavailable("audio capture device is not configured");
 
@@ -301,7 +301,7 @@ AudioResult LinuxHostAudioCaptureDevice::readFrame(AudioFrame& frame, uint32_t t
   return AudioResult::success();
 }
 
-AudioResult LinuxHostAudioCaptureDevice::stop() {
+AudioResult AlsaAudioCaptureDevice::stop() {
   if (pcm_ == nullptr) return AudioResult::unavailable("audio capture device is not open");
   const int rc = snd_pcm_drop(pcm_);
   if (rc < 0) return recover(rc);
@@ -310,7 +310,7 @@ AudioResult LinuxHostAudioCaptureDevice::stop() {
   return AudioResult::success();
 }
 
-void LinuxHostAudioCaptureDevice::close() {
+void AlsaAudioCaptureDevice::close() {
   if (pcm_ != nullptr) {
     snd_pcm_close(pcm_);
     pcm_ = nullptr;
@@ -320,19 +320,19 @@ void LinuxHostAudioCaptureDevice::close() {
   frame_bytes_ = 0;
 }
 
-AudioStreamStats LinuxHostAudioCaptureDevice::getStats() const {
+AudioStreamStats AlsaAudioCaptureDevice::getStats() const {
   return {0, frames_read_, running_};
 }
 
-AudioDeviceCaps LinuxHostAudioCaptureDevice::getCaps() const {
+AudioDeviceCaps AlsaAudioCaptureDevice::getCaps() const {
   return {};
 }
 
-AudioResult LinuxHostAudioCaptureDevice::configurePcm() {
+AudioResult AlsaAudioCaptureDevice::configurePcm() {
   return configurePcmHandle(pcm_, params_, frame_bytes_);
 }
 
-AudioResult LinuxHostAudioCaptureDevice::recover(int error) {
+AudioResult AlsaAudioCaptureDevice::recover(int error) {
   const int rc = snd_pcm_recover(pcm_, error, 1);
   if (rc < 0) return alsaError("snd_pcm_recover capture", rc);
   return AudioResult::success();
