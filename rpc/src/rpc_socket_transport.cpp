@@ -49,21 +49,35 @@ char SocketJsonRpcTransport::readByte() {
 SocketRpcStreamTransport::SocketRpcStreamTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint)
   : driver_(driver), endpoint_(std::move(endpoint)) {}
 
-RpcBinaryFrame SocketRpcStreamTransport::exchange(const RpcBinaryFrame& frame) {
-  connect();
-  writeBinaryFrame([this](const uint8_t* data, size_t size) { writeAll(data, size); }, frame);
-  RpcBinaryFrame response = readBinaryFrame([this] { return readByte(); });
-  socket_->close();
-  return response;
+SocketRpcStreamTransport::~SocketRpcStreamTransport() {
+  close();
 }
 
-void SocketRpcStreamTransport::connect() {
+void SocketRpcStreamTransport::open() {
+  if (socket_ && socket_->isConnected()) return;
   socket_ = driver_.createSocket(drivers::socket::SocketType::Tcp);
   if (!socket_) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "failed to create socket RPC stream client");
   auto status = socket_->open({drivers::socket::SocketType::Tcp});
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
   status = socket_->connect({endpoint_.host, endpoint_.port}, endpoint_.timeout_ms);
   if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, status.message());
+}
+
+RpcBinaryFrame SocketRpcStreamTransport::exchange(const RpcBinaryFrame& frame) {
+  open();
+  writeBinaryFrame([this](const uint8_t* data, size_t size) { writeAll(data, size); }, frame);
+  return readBinaryFrame([this] { return readByte(); });
+}
+
+void SocketRpcStreamTransport::close() {
+  if (!socket_) return;
+  (void)socket_->shutdown();
+  socket_->close();
+  socket_.reset();
+}
+
+bool SocketRpcStreamTransport::isOpen() const {
+  return socket_ && socket_->isConnected();
 }
 
 void SocketRpcStreamTransport::writeAll(const uint8_t* data, size_t size) {

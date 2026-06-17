@@ -118,6 +118,7 @@ AudioResult LinuxHostAudioPlaybackDevice::open(const AudioOpenParams& params) {
   if (params.device_name.empty()) return AudioResult::invalidArgument("audio playback device name is empty");
   close();
   device_name_ = params.device_name;
+  blocking_write_ = params.blocking_write;
   prepared_ = false;
   running_ = false;
   int rc = snd_pcm_open(&pcm_, device_name_.c_str(), SND_PCM_STREAM_PLAYBACK, 0);

@@ -51,6 +51,8 @@ struct CliOptions {
   std::string sample_format = "s16le";
   std::string device = "default";
   std::string driver_factory = "linux-host";
+  bool blocking_write = true;
+  bool nonblocking_write = false;
   std::string file;
   std::string output;
   uint32_t duration_ms = 1000;
@@ -90,6 +92,7 @@ Args argsFromOptions(const CliOptions& options) {
   addValue(values, "--sample-format", options.sample_format);
   addValue(values, "--device", options.device);
   addValue(values, "--driver-factory", options.driver_factory);
+  addValue(values, "--blocking-write", options.blocking_write && !options.nonblocking_write ? "true" : "false");
   addIfSet(values, "--file", options.file);
   addIfSet(values, "--output", options.output);
   addValue(values, "--duration-ms", std::to_string(options.duration_ms));
@@ -121,6 +124,8 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   app.add_option("--sample-format", options.sample_format, "Audio sample format");
   app.add_option("--device", options.device, "Audio device name");
   app.add_option("--driver-factory", options.driver_factory, "Driver factory name");
+  app.add_option("--blocking-write", options.blocking_write, "Whether playback stream writes use blocking semantics");
+  app.add_flag("--nonblocking-write", options.nonblocking_write, "Request nonblocking playback stream writes");
   app.add_option("--file", options.file, "Playback input file");
   app.add_option("--output", options.output, "Record output file");
   app.add_option("--duration-ms", options.duration_ms, "Record duration in milliseconds");
@@ -158,6 +163,14 @@ rpc::JsonValue defaultRpcParams(const std::string& method, const Args& args) {
   return spec == nullptr ? rpc::JsonValue::object() : spec->params_example;
 }
 
+bool boolArg(const Args& args, const std::string& flag, bool fallback) {
+  const std::string value = args.valueAfter(flag);
+  if (value.empty()) return fallback;
+  if (value == "1" || value == "true" || value == "yes" || value == "on") return true;
+  if (value == "0" || value == "false" || value == "no" || value == "off") return false;
+  throw std::runtime_error("invalid boolean value for " + flag + ": " + value);
+}
+
 rpc::AudioSessionConfig audioSessionConfigFromArgs(const Args& args) {
   rpc::AudioSessionConfig config;
   config.session_id = args.valueAfter("--session", "");
@@ -167,6 +180,7 @@ rpc::AudioSessionConfig audioSessionConfigFromArgs(const Args& args) {
   config.sample_format = args.valueAfter("--sample-format", "s16le");
   config.device_name = args.valueAfter("--device", "default");
   config.driver_factory = args.valueAfter("--driver-factory", "linux-host");
+  config.blocking_write = args.has("--nonblocking-write") ? false : boolArg(args, "--blocking-write", true);
   return config;
 }
 
@@ -190,6 +204,7 @@ bool takesValue(const std::string& flag) {
     "--sample-format",
     "--device",
     "--driver-factory",
+    "--blocking-write",
     "--file",
     "--output",
     "--duration-ms",

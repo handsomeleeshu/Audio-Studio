@@ -60,13 +60,6 @@ AudioWriteResult parseWriteAck(const RpcBinaryFrame& ack) {
   return result;
 }
 
-AudioWriteResult parseDebugWrite(const JsonValue& value) {
-  AudioWriteResult result;
-  result.accepted = value.has("accepted") && value.at("accepted").isBool() && value.at("accepted").asBool();
-  result.bytes = optionalU32Field(value, "bytes", 0);
-  return result;
-}
-
 } // namespace
 
 AudioPlayback::AudioPlayback(AudioRpcClient& audio,
@@ -91,14 +84,17 @@ JsonValue AudioPlayback::start() {
 }
 
 JsonValue AudioPlayback::drain() {
+  audio_.closeStreamTransport();
   return audio_.callSessionMethod("audio.drain", session_id_);
 }
 
 JsonValue AudioPlayback::stop() {
+  audio_.closeStreamTransport();
   return audio_.callSessionMethod("audio.stop", session_id_);
 }
 
 JsonValue AudioPlayback::close() {
+  audio_.closeStreamTransport();
   return audio_.callSessionMethod("audio.closeSession", session_id_);
 }
 
@@ -108,10 +104,6 @@ JsonValue AudioPlayback::stats() {
 
 AudioWriteResult AudioPlayback::writeFrames(const std::vector<uint8_t>& data, AudioWriteOptions options) {
   return audio_.writePlaybackFrames(session_id_, numeric_session_id_, stream_, next_sequence_, data, options);
-}
-
-AudioWriteResult AudioPlayback::writeFrames(uint32_t debug_byte_count) {
-  return audio_.writePlaybackFramesDebug(session_id_, debug_byte_count);
 }
 
 AudioCapture::AudioCapture(AudioRpcClient& audio,
@@ -136,10 +128,12 @@ JsonValue AudioCapture::start() {
 }
 
 JsonValue AudioCapture::stop() {
+  audio_.closeStreamTransport();
   return audio_.callSessionMethod("audio.stop", session_id_);
 }
 
 JsonValue AudioCapture::close() {
+  audio_.closeStreamTransport();
   return audio_.callSessionMethod("audio.closeSession", session_id_);
 }
 
@@ -184,11 +178,7 @@ AudioWriteResult AudioRpcClient::writePlaybackFrames(const std::string& session_
                                                      AudioWriteOptions options) {
   if (data.empty()) return {};
   if (stream_transport_ == nullptr) {
-    if (data.size() > 65536) {
-      throw JsonRpcError(JsonRpcErrorCode::kInvalidParams,
-                         "AudioPlayback::writeFrames requires a binary stream transport for payloads larger than 65536 bytes");
-    }
-    return writePlaybackFramesDebug(session_id, static_cast<uint32_t>(data.size()));
+    throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "AudioPlayback::writeFrames requires a binary stream transport");
   }
 
   AudioWriteResult total;
@@ -216,12 +206,6 @@ AudioWriteResult AudioRpcClient::writePlaybackFrames(const std::string& session_
     offset += chunk;
   }
   return total;
-}
-
-AudioWriteResult AudioRpcClient::writePlaybackFramesDebug(const std::string& session_id, uint32_t bytes) {
-  JsonValue params = sessionParams(session_id);
-  params["bytes"] = bytes;
-  return parseDebugWrite(client_.call("audio.writeFrames", params));
 }
 
 AudioReadResult AudioRpcClient::readCaptureFrames(uint32_t numeric_session_id,
@@ -262,6 +246,10 @@ AudioReadResult AudioRpcClient::readCaptureFrames(uint32_t numeric_session_id,
   return result;
 }
 
+void AudioRpcClient::closeStreamTransport() {
+  if (stream_transport_ != nullptr && stream_transport_->isOpen()) stream_transport_->close();
+}
+
 JsonValue AudioRpcClient::createSessionParams(const AudioSessionConfig& config) const {
   JsonValue params = JsonValue::object();
   if (!config.session_id.empty()) params["session_id"] = config.session_id;
@@ -271,6 +259,7 @@ JsonValue AudioRpcClient::createSessionParams(const AudioSessionConfig& config) 
   if (!config.sample_format.empty()) params["sample_format"] = config.sample_format;
   if (!config.device_name.empty()) params["device"] = config.device_name;
   if (!config.driver_factory.empty()) params["driver_factory"] = config.driver_factory;
+  params["blocking_write"] = config.blocking_write;
   return params;
 }
 

@@ -35,10 +35,13 @@ private:
 class PipeRpcStreamTransport final : public IRpcStreamTransport {
 public:
   PipeRpcStreamTransport(drivers::pipe::IPipeDriver& driver, PipeRpcEndpoint endpoint);
+  ~PipeRpcStreamTransport() override;
+  void open() override;
   RpcBinaryFrame exchange(const RpcBinaryFrame& frame) override;
+  void close() override;
+  bool isOpen() const override;
 
 private:
-  void open();
   void writeAll(const uint8_t* data, size_t size);
   char readByte();
 

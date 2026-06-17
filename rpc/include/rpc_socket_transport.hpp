@@ -34,10 +34,13 @@ private:
 class SocketRpcStreamTransport final : public IRpcStreamTransport {
 public:
   SocketRpcStreamTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint);
+  ~SocketRpcStreamTransport() override;
+  void open() override;
   RpcBinaryFrame exchange(const RpcBinaryFrame& frame) override;
+  void close() override;
+  bool isOpen() const override;
 
 private:
-  void connect();
   void writeAll(const uint8_t* data, size_t size);
   char readByte();
 

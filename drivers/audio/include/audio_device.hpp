@@ -17,6 +17,7 @@ using AudioFrame = std::vector<uint8_t>;
 
 struct AudioOpenParams {
   std::string device_name;
+  bool blocking_write = true;
 };
 
 struct AudioStreamParams {

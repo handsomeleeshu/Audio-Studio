@@ -233,4 +233,11 @@ uint16_t optionalUInt16Param(const JsonValue& params, const std::string& name, u
   return static_cast<uint16_t>(value.asUInt64());
 }
 
+bool optionalBoolParam(const JsonValue& params, const std::string& name, bool fallback) {
+  if (!params.isObject() || !params.has(name)) return fallback;
+  const JsonValue& value = params.at(name);
+  if (!value.isBool()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "param must be boolean: " + name);
+  return value.asBool();
+}
+
 } // namespace audio_studio::rpc

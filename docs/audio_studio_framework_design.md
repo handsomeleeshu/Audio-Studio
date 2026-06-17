@@ -645,28 +645,33 @@ payload:
   audio/pcm、probe/raw、dump/raw、log/raw 等。
 ```
 
-`audio.writeFrames` 的 JSON-RPC method 只允许作为 debug/small-payload path，默认限制为小块数据。正式 `AudioPlayback::writeFrames(buffer)` 必须走 `stream.uri` 对应的 binary stream transport：
+Audio 数据面不提供 `audio.writeFrames` / `audio.readFrames` JSON-RPC method。正式用户 API 是 typed facade 的本地式调用，`AudioPlayback::writeFrames(buffer)` / `AudioCapture::readFrames(max_bytes)` 内部必须走 `stream.uri` 对应的 binary stream transport：
 
 ```text
 1. createPlaybackSession 返回 AudioPlayback remote handle + stream descriptor。
 2. audio_playback.writeFrames(buffer) 按 max_chunk_bytes 切块。
 3. 每块发送 RpcMessageType::StreamData / RpcPayloadType::Binary。
-4. server 返回 RpcMessageType::StreamAck / RpcPayloadType::Json。
-5. facade 根据 accepted_bytes、queued_bytes、credit_bytes 实现阻塞写入和 backpressure。
+4. server 调用对应 AudioPlaybackSession::writeFrames -> driver.writeFrame。
+5. driver.writeFrame 返回后，server 才返回 RpcMessageType::StreamAck / RpcPayloadType::Json。
+6. facade 根据 accepted_bytes、queued_bytes、credit_bytes 实现阻塞写入和 backpressure。
+7. socket stream transport 必须复用同一条 TCP connection 传输同一 remote handle 后续 chunk，不能每个 chunk open/close；drain/stop/close 或 facade 析构时关闭数据面连接。
 ```
 
 默认阻塞语义：
 
 ```text
 writeFrames(buffer, timeout):
-  阻塞到整块 buffer 被 server/driver 接收到内部队列，或超时/出错。
-  不表示硬件已经播放完成。
+  阻塞到 server 调用底层 driver.writeFrame 完成当前 block，或超时/出错。
+  对 ALSA 这类 host driver，writeFrame 必须等待 snd_pcm_writei 写完整个 block 后返回。
+  不表示后续 drain 已经完成，也不表示声卡已播放完所有历史数据。
 
 drain(timeout):
   等待 server/driver 已接收数据播放或处理完成。
 ```
 
-record/probe/dump 使用同一套 stream descriptor 和 ASRP binary frame，只是方向变为 read，server 发送 StreamData，client 发送 StreamAck。
+`blocking_write` 是 createPlaybackSession/createCaptureSession 的 open 参数，RPC 层、AudioService、driver factory 必须原样透传到 `AudioOpenParams`；具体设备实现可以忽略该能力，但必须能读到这个 flag。
+
+record/probe/dump 使用同一套 stream descriptor 和 ASRP binary frame，只是方向变为 read，server 发送 StreamData，client 通过下一次 read 请求或后续 ACK 承担 flow-control。
 
 ### 2.4 Backend-Orchestrated RPC / Client RPC Action Delegation
 
@@ -1228,8 +1233,6 @@ GUI/frontend runtime 配置：
       "audio.createCaptureSession",
       "audio.start",
       "audio.stop",
-      "audio.writeFrames",
-      "audio.readFrames",
       "control.openSession",
       "control.closeSession",
       "control.list",
@@ -6483,12 +6486,10 @@ audio.start
 audio.drain
 audio.stop
 audio.closeSession
-audio.writeFrames
-audio.readFrames
 audio.getStats
 ```
 
-`audio.writeFrames` / `audio.readFrames` 只作为 debug/small-payload JSON method 保留；正式大块数据传输必须使用 `createPlaybackSession` / `createCaptureSession` 返回的 `stream.uri` 和 `asrp-v1` binary frame。
+Audio 数据读写不进入 JSON-RPC method catalog。`AudioPlayback::writeFrames(buffer)` 和 `AudioCapture::readFrames(max_bytes)` 是 C++/JS typed facade API；facade 负责使用 `createPlaybackSession` / `createCaptureSession` 返回的 `stream.uri`、`numeric_session_id`、`numeric_stream_id` 和 `asrp-v1` binary frame 完成实际数据传输。
 
 `createPlaybackSession` / `createCaptureSession` 参数必须支持：
 
@@ -6499,7 +6500,8 @@ audio.getStats
   "bytes_per_sample": 2,
   "sample_format": "s16le",
   "device": "default",
-  "driver_factory": "linux-host"
+  "driver_factory": "linux-host",
+  "blocking_write": true
 }
 ```
 
@@ -6513,6 +6515,8 @@ Audio framework 的并发模型：
 4. Audio Studio 不引入额外的 device lease manager，也不在 framework 层判断一个 ALSA device 能否被多路 open。能不能多路打开由底层 driver/OS/backend 决定。
 5. 如果底层 open/configure 失败，driver factory 或 session operation 必须返回包含底层错误文本的 `Status`。错误上报路径为 `linux_host_audio_device` -> `AudioService::createPlaybackSession/createCaptureSession` -> `audio.create*Session` JSON-RPC error -> `AudioRpcClient`/`as_play` stderr。
 6. `as_play` 并发依赖“一个播放命令一个 RPC client connection，一个 playback session 一个 driver instance”。socket RPC server 必须并发处理不同 connection，pipe 模式只保证单连接语义。
+7. `blocking_write` 由 CLI/RPC create-session 参数一路透传到 `drivers::audio::AudioOpenParams`。server 的 StreamAck 必须在当前 block 的 driver write 完成后返回；如果设备实现选择非阻塞内部队列，也必须通过 ACK 字段准确报告 accepted/queued/credit。
+8. socket 数据面必须避免 per-chunk connect/close；同一个 `AudioRpcClient` 的 stream transport 可以连续承载 playback write、capture read 等 ASRP frame，直到 facade 主动 close 或析构。
 
 `as_play` 轻量流程：
 
