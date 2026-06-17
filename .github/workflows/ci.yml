@@ -20,7 +20,7 @@ jobs:
           cmake --version
           g++ --version
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpulse-dev
       - name: Make scripts executable
         run: chmod +x scripts/build_all.sh scripts/run_tests.sh
       - name: Run tests
