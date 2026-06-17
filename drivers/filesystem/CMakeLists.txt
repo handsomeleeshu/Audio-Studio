@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES)
 if(CONFIG_DRIVER_FILESYSTEM_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES src/linux_host_filesystem_driver.cpp)
 endif()
+if(CONFIG_DRIVER_FILESYSTEM_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES src/macos_filesystem_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_filesystem "${AUDIO_STUDIO_DRIVER_FILESYSTEM_SOURCES}")
 
 add_library(audio_studio_driver_filesystem OBJECT

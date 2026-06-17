@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_CONTROL_SOURCES)
 if(CONFIG_DRIVER_CONTROL_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_CONTROL_SOURCES src/linux_host_control_device.cpp)
 endif()
+if(CONFIG_DRIVER_CONTROL_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_CONTROL_SOURCES src/macos_control_device.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_control "${AUDIO_STUDIO_DRIVER_CONTROL_SOURCES}")
 
 add_library(audio_studio_driver_control OBJECT

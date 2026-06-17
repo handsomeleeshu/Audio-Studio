@@ -15,4 +15,9 @@ config DRIVER_SOCKET_WINDOWS_HOST
   default n
   depends on DRIVER_SOCKET
 
+config DRIVER_SOCKET_MACOS
+  bool "Build macOS socket driver implementation"
+  default n
+  depends on DRIVER_SOCKET
+
 endmenu

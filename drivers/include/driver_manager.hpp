@@ -27,24 +27,45 @@ struct DriverInfo {
 };
 
 struct DriverManagerConfig {
+#if defined(__APPLE__)
+  std::string os_factory = "macos";
+#else
   std::string os_factory = "linux-host";
+#endif
 #if defined(_WIN32)
   std::string socket_factory = "windows-host";
+#elif defined(__APPLE__)
+  std::string socket_factory = "macos";
 #else
   std::string socket_factory = "linux-host";
 #endif
+#if defined(__APPLE__)
+  std::string filesystem_factory = "macos";
+  std::string pipe_factory = "macos";
+  std::string dynlib_factory = "macos";
+  std::string transport_factory = "macos";
+#else
   std::string filesystem_factory = "linux-host";
   std::string pipe_factory = "linux-host";
   std::string dynlib_factory = "linux-host";
   std::string transport_factory = "linux-host";
+#endif
 #if defined(_WIN32)
   std::string audio_factory = "wasapi";
+#elif defined(__APPLE__)
+  std::string audio_factory = "macos";
 #else
   std::string audio_factory = "alsa";
 #endif
+#if defined(__APPLE__)
+  std::string control_factory = "macos";
+  std::string log_factory = "macos";
+  std::string dump_factory = "macos";
+#else
   std::string control_factory = "linux-host";
   std::string log_factory = "linux-host";
   std::string dump_factory = "linux-host";
+#endif
   bool enable_os = true;
   bool enable_socket = true;
   bool enable_filesystem = true;

@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_PIPE_SOURCES)
 if(CONFIG_DRIVER_PIPE_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_PIPE_SOURCES src/linux_host_pipe_driver.cpp)
 endif()
+if(CONFIG_DRIVER_PIPE_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_PIPE_SOURCES src/macos_pipe_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_pipe "${AUDIO_STUDIO_DRIVER_PIPE_SOURCES}")
 
 add_library(audio_studio_driver_pipe OBJECT

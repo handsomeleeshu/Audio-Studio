@@ -5,6 +5,9 @@ endif()
 if(CONFIG_DRIVER_SOCKET_WINDOWS_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_SOCKET_SOURCES src/windows_host_socket_driver.cpp)
 endif()
+if(CONFIG_DRIVER_SOCKET_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_SOCKET_SOURCES src/macos_socket_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_socket "${AUDIO_STUDIO_DRIVER_SOCKET_SOURCES}")
 
 add_library(audio_studio_driver_socket OBJECT
