@@ -77,10 +77,30 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt
   endif()
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
+# Apply our CMakeLists.txt patch to upstream alsa-utils
+# The upstream repo doesn't have CMake build support, so we add it
+set(ALSA_UTILS_CMAKELISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
+set(ALSA_UTILS_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils-CMakeLists.txt.patch")
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils")
+  if(NOT EXISTS "${ALSA_UTILS_CMAKELISTS}" AND EXISTS "${ALSA_UTILS_PATCH}")
+    message(STATUS "Applying CMakeLists.txt patch to alsa-utils...")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E copy "${ALSA_UTILS_PATCH}" "${ALSA_UTILS_CMAKELISTS}"
+      RESULT_VARIABLE COPY_RESULT
+    )
+    if(COPY_RESULT EQUAL 0)
+      message(STATUS "CMakeLists.txt patch applied successfully")
+    else()
+      message(WARNING "Failed to apply CMakeLists.txt patch")
+    endif()
+  endif()
+endif()
+
+if(EXISTS "${ALSA_UTILS_CMAKELISTS}")
   add_subdirectory(third_party/alsa-utils)
 else()
-  message(STATUS "alsatplg will not be built (submodule not available)")
+  message(STATUS "alsatplg will not be built (CMakeLists.txt not available)")
 endif()
 
 if(CONFIG_RPC_CORE OR CONFIG_FRAMEWORK_CONFIG)
