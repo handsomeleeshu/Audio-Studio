@@ -40,7 +40,7 @@ jobs:
           clang++ --version
       - name: Install system dependencies
         run: |
-          brew install cmake ninja pkg-config
+          brew install cmake ninja pkg-config libtool
           # Build and install alsa-lib for macOS
           cd /tmp
           curl -L https://github.com/alsa-project/alsa-lib/archive/refs/tags/v1.2.11.tar.gz -o alsa-lib.tar.gz
