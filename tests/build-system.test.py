@@ -16,6 +16,7 @@ GUI_BACKEND_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'gui_backend' / 'Release
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
+WINDOWS_RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'rpc_socket' / 'Debug'
 
 
 def run(command, **kwargs):
@@ -24,6 +25,10 @@ def run(command, **kwargs):
 
 def check_output(command):
     return subprocess.check_output(command, cwd=str(ROOT), text=True)
+
+
+def wine_check_output(command):
+    return check_output(['wine64', *map(str, command)])
 
 
 def retry_check_output(command, attempts=20, delay=0.1):
@@ -35,6 +40,14 @@ def retry_check_output(command, attempts=20, delay=0.1):
             last_error = exc
             time.sleep(delay)
     raise last_error
+
+
+def retry_wine_check_output(command, attempts=20, delay=0.1):
+    return retry_check_output(['wine64', *map(str, command)], attempts, delay)
+
+
+def wine_path(path):
+    return check_output(['winepath', '-w', str(path)]).strip()
 
 
 def find_free_port():
@@ -110,7 +123,12 @@ def assert_modular_kconfig_tree():
 
     audio_kconfig = read_text(ROOT / 'drivers' / 'audio' / 'Kconfig')
     require_contains(audio_kconfig, 'config DRIVER_AUDIO')
-    require_contains(audio_kconfig, 'config DRIVER_AUDIO_LINUX_HOST')
+    require_contains(audio_kconfig, 'config DRIVER_AUDIO_ALSA')
+    require_contains(audio_kconfig, 'config DRIVER_AUDIO_PULSE')
+    require_contains(audio_kconfig, 'config DRIVER_AUDIO_WASAPI')
+    socket_kconfig = read_text(ROOT / 'drivers' / 'socket' / 'Kconfig')
+    require_contains(socket_kconfig, 'config DRIVER_SOCKET_LINUX_HOST')
+    require_contains(socket_kconfig, 'config DRIVER_SOCKET_WINDOWS_HOST')
     rpc_kconfig = read_text(ROOT / 'rpc' / 'Kconfig')
     require_contains(rpc_kconfig, 'config RPC_CLIENT')
     require_contains(rpc_kconfig, 'config RPC_SERVER')
@@ -251,7 +269,8 @@ def main():
     require_contains(driver_config, 'CONFIG_RPC_TRANSPORT_PIPE=y')
     require_contains(driver_config, 'CONFIG_FRAMEWORK_AUDIO=y')
     require_contains(driver_config, 'CONFIG_DRIVER_SOCKET_LINUX_HOST=y')
-    require_contains(driver_config, 'CONFIG_DRIVER_AUDIO_LINUX_HOST=y')
+    require_contains(driver_config, 'CONFIG_DRIVER_AUDIO_ALSA=y')
+    require_contains(driver_config, 'CONFIG_DRIVER_AUDIO_PULSE=y')
     require_contains(driver_header, '#define CONFIG_DRIVER_DUMP_LINUX_HOST 1')
     assert (DRIVER_BUILD_DIR / 'audio_studio_server_tests').exists()
     assert (DRIVER_BUILD_DIR / 'audio_studio_driver_interface_tests').exists()
@@ -353,6 +372,54 @@ def main():
         if socket_server.poll() is None:
             socket_server.terminate()
 
+    if shutil.which('pactl'):
+        try:
+            subprocess.run(['pactl', 'info'], cwd=str(ROOT), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except subprocess.CalledProcessError:
+            print('build-system.test: skipped PulseAudio RPC smoke, pactl info failed', file=sys.stderr)
+        else:
+            pulse_port = find_free_port()
+            rpc_pulse_record_wav = ROOT / 'out' / 'rpc-pulse-record-smoke.wav'
+            if rpc_pulse_record_wav.exists():
+                rpc_pulse_record_wav.unlink()
+            pulse_server = subprocess.Popen(
+                [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', pulse_port, '--max-requests', '13'],
+                cwd=str(ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                pulse_play = retry_check_output([
+                    str(RPC_SOCKET_BUILD_DIR / 'as_play'),
+                    '--host', '127.0.0.1',
+                    '--port', pulse_port,
+                    '--driver-factory', 'pulse',
+                    '--device', 'default',
+                    '--file', str(rpc_play_wav),
+                ])
+                require_contains(pulse_play, '"ok":true')
+                require_contains(pulse_play, '"played_bytes":9600')
+                pulse_record = retry_check_output([
+                    str(RPC_SOCKET_BUILD_DIR / 'as_record'),
+                    '--host', '127.0.0.1',
+                    '--port', pulse_port,
+                    '--driver-factory', 'pulse',
+                    '--device', 'default',
+                    '--output', str(rpc_pulse_record_wav),
+                    '--duration-ms', '50',
+                    '--chunk-bytes', '4096',
+                ])
+                require_contains(pulse_record, '"ok":true')
+                require_contains(pulse_record, '"recorded_bytes":9600')
+                assert_wav(rpc_pulse_record_wav, 2400)
+                assert pulse_server.wait(timeout=5) == 0
+            finally:
+                if pulse_server.poll() is None:
+                    pulse_server.terminate()
+    else:
+        print('build-system.test: skipped PulseAudio RPC smoke, missing pactl', file=sys.stderr)
+
     if RPC_PIPE_BUILD_DIR.exists():
         shutil.rmtree(RPC_PIPE_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'rpc_pipe', 'linux', 'a2'])
@@ -419,13 +486,77 @@ def main():
             if path.exists():
                 path.unlink()
 
-    if shutil.which('x86_64-w64-mingw32-g++'):
+    if shutil.which('x86_64-w64-mingw32-g++-posix'):
         if WINDOWS_BUILD_DIR.exists():
             shutil.rmtree(WINDOWS_BUILD_DIR)
         run([str(BUILD_ALL), 'windows', 'a2'])
         assert (WINDOWS_BUILD_DIR / 'as_server.exe').exists()
     else:
-        print('build-system.test: skipped windows compile, missing x86_64-w64-mingw32-g++', file=sys.stderr)
+        print('build-system.test: skipped windows compile, missing x86_64-w64-mingw32-g++-posix', file=sys.stderr)
+
+    if shutil.which('x86_64-w64-mingw32-g++-posix') and shutil.which('wine64'):
+        if WINDOWS_RPC_SOCKET_BUILD_DIR.exists():
+            shutil.rmtree(WINDOWS_RPC_SOCKET_BUILD_DIR)
+        run([str(BUILD_ALL), '--profile', 'rpc_socket', 'windows', 'a2'])
+        windows_rpc_config = read_text(WINDOWS_RPC_SOCKET_BUILD_DIR / 'generated' / '.config')
+        require_contains(windows_rpc_config, 'CONFIG_DRIVER_SOCKET_WINDOWS_HOST=y')
+        require_contains(windows_rpc_config, 'CONFIG_DRIVER_AUDIO_WASAPI=y')
+        assert 'CONFIG_DRIVER_SOCKET_LINUX_HOST=y' not in windows_rpc_config
+        assert 'CONFIG_DRIVER_AUDIO_ALSA=y' not in windows_rpc_config
+        for exe in ['as_server.exe', 'as_control.exe', 'as_play.exe', 'as_record.exe', 'as_log.exe', 'as_dump.exe']:
+            assert (WINDOWS_RPC_SOCKET_BUILD_DIR / exe).exists()
+        windows_version = wine_check_output([WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_server.exe', '--version'])
+        require_contains(windows_version, 'Audio Studio as_server initial windows/a2')
+        windows_health = wine_check_output([WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_server.exe', '--health'])
+        require_contains(windows_health, '"tool_os":"windows"')
+        wine_check_output([WINDOWS_RPC_SOCKET_BUILD_DIR / 'audio_studio_cli_tests.exe'])
+
+        windows_port = find_free_port()
+        windows_record_wav = ROOT / 'out' / 'windows-wasapi-record-smoke.wav'
+        if windows_record_wav.exists():
+            windows_record_wav.unlink()
+        windows_server = subprocess.Popen(
+            ['wine64', str(WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_server.exe'),
+             '--rpc', '--host', '127.0.0.1', '--port', windows_port, '--max-requests', '14'],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            windows_cli = retry_wine_check_output([
+                WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_control.exe',
+                '--host', '127.0.0.1',
+                '--port', windows_port,
+                '--action', 'get-health',
+            ])
+            require_contains(windows_cli, '"ok":true')
+            require_contains(windows_cli, '"tool_os":"windows"')
+            windows_play = retry_wine_check_output([
+                WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_play.exe',
+                '--host', '127.0.0.1',
+                '--port', windows_port,
+                '--file', wine_path(rpc_play_wav),
+            ])
+            require_contains(windows_play, '"ok":true')
+            require_contains(windows_play, '"played_bytes":9600')
+            windows_record = retry_wine_check_output([
+                WINDOWS_RPC_SOCKET_BUILD_DIR / 'as_record.exe',
+                '--host', '127.0.0.1',
+                '--port', windows_port,
+                '--output', wine_path(windows_record_wav),
+                '--duration-ms', '50',
+                '--chunk-bytes', '4096',
+            ])
+            require_contains(windows_record, '"ok":true')
+            require_contains(windows_record, '"recorded_bytes":9600')
+            assert_wav(windows_record_wav, 2400)
+            assert windows_server.wait(timeout=5) == 0
+        finally:
+            if windows_server.poll() is None:
+                windows_server.terminate()
+    else:
+        print('build-system.test: skipped windows RPC/WASAPI smoke, missing posix MinGW or wine64', file=sys.stderr)
 
     print('build-system.test passed')
 

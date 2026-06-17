@@ -9,6 +9,14 @@
 
 namespace audio_studio::rpc {
 
+inline std::string defaultAudioDriverFactory() {
+#if defined(_WIN32)
+  return "wasapi";
+#else
+  return "alsa";
+#endif
+}
+
 struct AudioSessionConfig {
   std::string session_id;
   uint32_t sample_rate = 48000;
@@ -16,7 +24,7 @@ struct AudioSessionConfig {
   uint16_t bytes_per_sample = 2;
   std::string sample_format = "s16le";
   std::string device_name = "default";
-  std::string driver_factory = "linux-host";
+  std::string driver_factory = defaultAudioDriverFactory();
   bool blocking_write = true;
 };
 

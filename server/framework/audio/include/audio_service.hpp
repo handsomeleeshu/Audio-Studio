@@ -12,6 +12,14 @@
 
 namespace audio_studio::framework::audio {
 
+inline std::string defaultAudioDriverFactory() {
+#if defined(_WIN32)
+  return "wasapi";
+#else
+  return "alsa";
+#endif
+}
+
 enum class StreamDirection {
   kPlayback,
   kCapture,
@@ -20,7 +28,7 @@ enum class StreamDirection {
 struct AudioStream {
   std::string id;
   StreamDirection direction = StreamDirection::kPlayback;
-  std::string driver_factory = "linux-host";
+  std::string driver_factory = defaultAudioDriverFactory();
   std::string device_name = "default";
   int sample_rate = 48000;
   int channels = 2;
@@ -31,7 +39,7 @@ struct AudioStream {
 };
 
 struct AudioServiceConfig {
-  std::string driver_factory = "linux-host";
+  std::string driver_factory = defaultAudioDriverFactory();
   std::string default_device_name = "default";
 };
 

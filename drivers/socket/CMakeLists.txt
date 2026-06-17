@@ -2,6 +2,9 @@ set(AUDIO_STUDIO_DRIVER_SOCKET_SOURCES)
 if(CONFIG_DRIVER_SOCKET_LINUX_HOST)
   list(APPEND AUDIO_STUDIO_DRIVER_SOCKET_SOURCES src/linux_host_socket_driver.cpp)
 endif()
+if(CONFIG_DRIVER_SOCKET_WINDOWS_HOST)
+  list(APPEND AUDIO_STUDIO_DRIVER_SOCKET_SOURCES src/windows_host_socket_driver.cpp)
+endif()
 audio_studio_require_sources(audio_studio_driver_socket "${AUDIO_STUDIO_DRIVER_SOCKET_SOURCES}")
 
 add_library(audio_studio_driver_socket OBJECT
@@ -9,4 +12,7 @@ add_library(audio_studio_driver_socket OBJECT
 )
 target_include_directories(audio_studio_driver_socket PUBLIC include)
 target_link_libraries(audio_studio_driver_socket PUBLIC audio_studio_framework_common)
+if(CONFIG_DRIVER_SOCKET_WINDOWS_HOST)
+  target_link_libraries(audio_studio_driver_socket PUBLIC ws2_32)
+endif()
 target_compile_features(audio_studio_driver_socket PUBLIC cxx_std_17)

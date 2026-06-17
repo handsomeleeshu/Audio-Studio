@@ -21,7 +21,8 @@ int main() {
   assert(manager.initialized());
   assert(manager.hasDriver("os", "linux-host"));
   assert(manager.hasDriver("socket", "linux-host"));
-  assert(manager.hasDriver("audio", "linux-host"));
+  assert(manager.hasDriver("audio", "alsa"));
+  assert(manager.hasDriver("audio", "pulse"));
   assert(manager.listByCategory("dump").size() == 1);
 
   {
@@ -247,7 +248,7 @@ int main() {
 
   {
     std::unique_ptr<audio_studio::drivers::audio::IAudioPlaybackDevice> playback;
-    assert(manager.audioRegistry().createPlayback("linux-host", {"null"}, playback).ok());
+    assert(manager.audioRegistry().createPlayback("alsa", {"null"}, playback).ok());
     assert(playback);
     assert(playback->prepare({48000, 2, 2}).ok());
     assert(playback->start().ok());
@@ -257,13 +258,35 @@ int main() {
     assert(playback->stop().ok());
 
     std::unique_ptr<audio_studio::drivers::audio::IAudioCaptureDevice> capture;
-    assert(manager.audioRegistry().createCapture("linux-host", {"null"}, capture).ok());
+    assert(manager.audioRegistry().createCapture("alsa", {"null"}, capture).ok());
     assert(capture);
     assert(capture->prepare({48000, 1, 2}).ok());
     assert(capture->start().ok());
     audio_studio::drivers::audio::AudioFrame frame(2);
     assert(capture->readFrame(frame, 100).ok());
     assert(frame.size() == 2);
+  }
+
+  {
+    std::unique_ptr<audio_studio::drivers::audio::IAudioPlaybackDevice> playback;
+    assert(manager.audioRegistry().createPlayback("pulse", {"default"}, playback).ok());
+    assert(playback);
+    assert(playback->prepare({48000, 2, 2}).ok());
+    assert(playback->start().ok());
+    assert(playback->writeFrame(std::vector<uint8_t>(480, 0), 1000).ok());
+    assert(playback->getStats().frames_written == 120);
+    assert(playback->drain().ok());
+    assert(playback->stop().ok());
+
+    std::unique_ptr<audio_studio::drivers::audio::IAudioCaptureDevice> capture;
+    assert(manager.audioRegistry().createCapture("pulse", {"default"}, capture).ok());
+    assert(capture);
+    assert(capture->prepare({48000, 2, 2}).ok());
+    assert(capture->start().ok());
+    audio_studio::drivers::audio::AudioFrame frame(480);
+    assert(capture->readFrame(frame, 1000).ok());
+    assert(frame.size() == 480);
+    assert(capture->stop().ok());
   }
 
   {

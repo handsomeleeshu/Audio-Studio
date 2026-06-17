@@ -32,6 +32,14 @@
 namespace audio_studio::cli {
 namespace {
 
+std::string defaultAudioDriverFactory() {
+#if defined(_WIN32)
+  return "wasapi";
+#else
+  return "alsa";
+#endif
+}
+
 struct CliOptions {
   bool self_test = false;
   std::string target;
@@ -50,7 +58,7 @@ struct CliOptions {
   uint16_t bytes_per_sample = 2;
   std::string sample_format = "s16le";
   std::string device = "default";
-  std::string driver_factory = "linux-host";
+  std::string driver_factory = defaultAudioDriverFactory();
   bool blocking_write = true;
   bool nonblocking_write = false;
   std::string file;
@@ -179,7 +187,7 @@ rpc::AudioSessionConfig audioSessionConfigFromArgs(const Args& args) {
   config.bytes_per_sample = static_cast<uint16_t>(std::stoul(args.valueAfter("--bytes-per-sample", "2")));
   config.sample_format = args.valueAfter("--sample-format", "s16le");
   config.device_name = args.valueAfter("--device", "default");
-  config.driver_factory = args.valueAfter("--driver-factory", "linux-host");
+  config.driver_factory = args.valueAfter("--driver-factory", defaultAudioDriverFactory());
   config.blocking_write = args.has("--nonblocking-write") ? false : boolArg(args, "--blocking-write", true);
   return config;
 }

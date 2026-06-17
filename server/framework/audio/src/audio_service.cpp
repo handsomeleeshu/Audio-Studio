@@ -465,7 +465,7 @@ std::string AudioService::effectiveDeviceName(const AudioStream& stream) const {
 
 std::string AudioService::effectiveFactoryName(const AudioStream& stream) const {
   if (!stream.driver_factory.empty()) return stream.driver_factory;
-  return config_.driver_factory.empty() ? "linux-host" : config_.driver_factory;
+  return config_.driver_factory.empty() ? defaultAudioDriverFactory() : config_.driver_factory;
 }
 
 framework::Status AudioService::validateStream(const AudioStream& stream) const {

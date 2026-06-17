@@ -19,10 +19,12 @@ struct SocketRpcEndpoint {
 class SocketJsonRpcTransport final : public IJsonRpcTransport {
 public:
   SocketJsonRpcTransport(drivers::socket::ISocketDriver& driver, SocketRpcEndpoint endpoint);
+  ~SocketJsonRpcTransport() override;
   std::string send(const std::string& request_json) override;
 
 private:
   void connect();
+  void close();
   void writeAll(const uint8_t* data, size_t size);
   char readByte();
 

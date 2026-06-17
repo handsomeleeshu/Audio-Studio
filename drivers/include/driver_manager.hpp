@@ -28,12 +28,20 @@ struct DriverInfo {
 
 struct DriverManagerConfig {
   std::string os_factory = "linux-host";
+#if defined(_WIN32)
+  std::string socket_factory = "windows-host";
+#else
   std::string socket_factory = "linux-host";
+#endif
   std::string filesystem_factory = "linux-host";
   std::string pipe_factory = "linux-host";
   std::string dynlib_factory = "linux-host";
   std::string transport_factory = "linux-host";
-  std::string audio_factory = "linux-host";
+#if defined(_WIN32)
+  std::string audio_factory = "wasapi";
+#else
+  std::string audio_factory = "alsa";
+#endif
   std::string control_factory = "linux-host";
   std::string log_factory = "linux-host";
   std::string dump_factory = "linux-host";
