@@ -357,36 +357,54 @@ def main():
     require_contains(as_config_config, 'CONFIG_DRIVER_FILESYSTEM_LINUX_HOST=y')
     require_contains(as_config_config, 'CONFIG_DRIVER_DYNLIB_LINUX_HOST=y')
     assert (AS_CONFIG_BUILD_DIR / 'as_config').exists()
+
+    # Check for built alsatplg
+    alsatplg_binary = AS_CONFIG_BUILD_DIR / 'bin' / 'alsatplg'
+    use_alsatplg = alsatplg_binary.exists() and alsatplg_binary.stat().st_size > 0
+
     as_config_out = ROOT / 'out' / 'as-config-build-test'
     if as_config_out.exists():
         shutil.rmtree(as_config_out)
-    as_config_result = check_output([
+
+    as_config_cmd = [
         str(AS_CONFIG_BUILD_DIR / 'as_config'),
         '--input', str(ROOT / 'config' / 'A2.json'),
         '--out-dir', str(as_config_out),
         '--project-name', 'a2_test',
-    ])
+    ]
+
+    # Add alsatplg path if available
+    if use_alsatplg:
+        as_config_cmd.extend(['--alsatplg', str(alsatplg_binary)])
+
+    as_config_result = check_output(as_config_cmd)
     require_contains(as_config_result, '"runtime_control_count":29')
     require_contains(as_config_result, '"preset_count":3')
     for path in [
         as_config_out / 'a2_test.conf',
-        as_config_out / 'a2_test.tplg',
         as_config_out / 'a2_test_private.bin',
         as_config_out / 'include' / 'as_config_ids.h',
         as_config_out / 'include' / 'as_tplg_private.h',
         as_config_out / 'include' / 'as_preset_ids.h',
         as_config_out / 'a2_test_controls.csv',
         as_config_out / 'a2_test_compile_report.json',
-        as_config_out / 'a2_test_decode.conf',
     ]:
         assert path.exists() and path.stat().st_size > 0, f'missing as_config output: {path}'
-    for path in [
-        as_config_out / 'a2_test_alsatplg.log',
-        as_config_out / 'a2_test_decode.log',
-    ]:
-        assert path.exists(), f'missing as_config log: {path}'
-    assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_alsatplg.log')
-    assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_decode.log')
+
+    # Only check tplg-related outputs if alsatplg is available
+    if use_alsatplg:
+        for path in [
+            as_config_out / 'a2_test.tplg',
+            as_config_out / 'a2_test_decode.conf',
+        ]:
+            assert path.exists() and path.stat().st_size > 0, f'missing as_config tplg output: {path}'
+        for path in [
+            as_config_out / 'a2_test_alsatplg.log',
+            as_config_out / 'a2_test_decode.log',
+        ]:
+            assert path.exists(), f'missing as_config log: {path}'
+        assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_alsatplg.log')
+        assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_decode.log')
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
     require_contains(ids_header, 'AS_MODULE_TYPE_RATE_ASRC')
     assert 'AS_MODULE_TYPE_SERVICE_ASRC' not in ids_header

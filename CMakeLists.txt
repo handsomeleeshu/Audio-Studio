@@ -49,6 +49,12 @@ target_include_directories(audio_studio_cli11 INTERFACE "${PROJECT_SOURCE_DIR}/t
 add_subdirectory(plugins/module_config_sdk)
 add_subdirectory(plugins/builtin_module_configs)
 
+# Build alsatplg from SOF alsa-utils submodule
+# This provides topology compilation support on all platforms
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
+  add_subdirectory(third_party/alsa-utils)
+endif()
+
 if(CONFIG_RPC_CORE OR CONFIG_FRAMEWORK_CONFIG)
   add_library(audio_studio_json
     rpc/src/json_value.cpp
