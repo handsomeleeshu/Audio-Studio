@@ -31,6 +31,21 @@ set(ACONFIG_CONTENT "#ifndef __ACONFIG_H
 file(WRITE "${ALSATPLG_INCLUDE_DIR}/aconfig.h" "${ACONFIG_CONTENT}")
 message(STATUS "Generated ${ALSATPLG_INCLUDE_DIR}/aconfig.h")
 
+# Generate minimal version.h (normally created by autotools configure)
+set(VERSION_CONTENT "#ifndef __TOPOLOGY_VERSION_H
+#define __TOPOLOGY_VERSION_H
+
+#define SND_LIB_VERSION_STR \"1.2.16\"
+#define SND_LIB_MAJOR 1
+#define SND_LIB_MINOR 2
+#define SND_LIB_SUBMINOR 16
+#define SND_LIB_EXTREM 1000 /* from upper bits */
+
+#endif /* __TOPOLOGY_VERSION_H */
+")
+file(WRITE "${ALSATPLG_INCLUDE_DIR}/version.h" "${VERSION_CONTENT}")
+message(STATUS "Generated ${ALSATPLG_INCLUDE_DIR}/version.h")
+
 # Find ALSA library
 set(ALSA_FOUND FALSE)
 if(DEFINED ALSA_LIB_INCLUDE_DIR AND DEFINED ALSA_LIB_LIBRARY)
@@ -108,6 +123,11 @@ if(ALSA_FOUND AND ALSA_TOPOLOGY_FOUND)
     ${ALSATPLG_INCLUDE_DIR}
     ${ALSA_INCLUDE_DIR}
     ${ALSA_TOPOLOGY_INCLUDE_DIR}
+  )
+
+  # Define ALSA_TOPOLOGY_PLUGIN_DIR (normally set by autotools configure)
+  target_compile_definitions(alsatplg PRIVATE
+    ALSA_TOPOLOGY_PLUGIN_DIR="${CMAKE_INSTALL_PREFIX}/lib/alsa-topology"
   )
 
   target_link_libraries(alsatplg PRIVATE
