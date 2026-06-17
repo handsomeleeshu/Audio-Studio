@@ -52,12 +52,25 @@ target_include_directories(audio_studio_cli11 INTERFACE "${PROJECT_SOURCE_DIR}/t
 add_subdirectory(plugins/module_config_sdk)
 add_subdirectory(plugins/builtin_module_configs)
 
-# Build alsatplg from SOF alsa-utils submodule
-# This provides topology compilation support on all platforms
-# Auto-initialize submodule if not present
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
+# ==============================================================================
+# alsatplg - ALSA Topology Compiler
+# ==============================================================================
+# Build alsatplg using autotools (autogen.sh, configure, make)
+# This ensures the build is identical to upstream and avoids missing generated files.
+
+# Enable C language (required for alsatplg)
+include(CMakeDetermineCCompiler)
+if(NOT CMAKE_C_COMPILER)
+  message(STATUS "C compiler not determined, attempting to find...")
+  find_program(CMAKE_C_COMPILER gcc cc clang)
+  if(CMAKE_C_COMPILER)
+    set(CMAKE_C_COMPILER ${CMAKE_C_COMPILER} CACHE FILEPATH "C compiler" FORCE)
+  endif()
+endif()
+
+# Auto-initialize alsa-utils submodule if not present
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/autogen.sh")
   message(STATUS "alsa-utils submodule not found, attempting to initialize...")
-  find_package(Git QUIET)
   if(GIT_FOUND)
     execute_process(
       COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive third_party/alsa-utils
@@ -77,30 +90,42 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt
   endif()
 endif()
 
-# Apply our CMakeLists.txt patch to upstream alsa-utils
-# The upstream repo doesn't have CMake build support, so we add it
-set(ALSA_UTILS_CMAKELISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils/CMakeLists.txt")
-set(ALSA_UTILS_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils-CMakeLists.txt.patch")
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-utils")
-  if(NOT EXISTS "${ALSA_UTILS_CMAKELISTS}" AND EXISTS "${ALSA_UTILS_PATCH}")
-    message(STATUS "Applying CMakeLists.txt patch to alsa-utils...")
+# Auto-initialize alsa-lib submodule if not present
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsa-lib/configure.ac")
+  message(STATUS "alsa-lib submodule not found, attempting to initialize...")
+  if(GIT_FOUND)
     execute_process(
-      COMMAND ${CMAKE_COMMAND} -E copy "${ALSA_UTILS_PATCH}" "${ALSA_UTILS_CMAKELISTS}"
-      RESULT_VARIABLE COPY_RESULT
+      COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive third_party/alsa-lib
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      RESULT_VARIABLE GIT_SUBMODULE_RESULT
+      OUTPUT_QUIET ERROR_QUIET
     )
-    if(COPY_RESULT EQUAL 0)
-      message(STATUS "CMakeLists.txt patch applied successfully")
+    if(GIT_SUBMODULE_RESULT EQUAL 0)
+      message(STATUS "alsa-lib submodule initialized successfully")
     else()
-      message(WARNING "Failed to apply CMakeLists.txt patch")
+      message(WARNING "Failed to initialize alsa-lib submodule (git exit code: ${GIT_SUBMODULE_RESULT})")
     endif()
+  else()
+    message(WARNING "Git not found, cannot auto-initialize alsa-lib submodule")
   endif()
 endif()
 
-if(EXISTS "${ALSA_UTILS_CMAKELISTS}")
-  add_subdirectory(third_party/alsa-utils)
+# Build alsatplg as external project using autotools
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsatplg/CMakeLists.txt")
+  include(ExternalProject)
+  ExternalProject_Add(alsatplg
+    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/alsatplg"
+    BINARY_DIR "${CMAKE_BINARY_DIR}/third_party/alsatplg"
+    CMAKE_ARGS
+      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+      -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+    BUILD_ALWAYS FALSE
+    INSTALL_COMMAND ""
+  )
 else()
-  message(STATUS "alsatplg will not be built (CMakeLists.txt not available)")
+  message(STATUS "alsatplg build not available (third_party/alsatplg/CMakeLists.txt not found)")
 endif()
 
 if(CONFIG_RPC_CORE OR CONFIG_FRAMEWORK_CONFIG)
