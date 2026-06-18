@@ -450,6 +450,14 @@ def main():
     ])
     builtin_private_payload = (builtin_config_out / 'a2_builtin_module_config_test_private.bin').read_bytes()
     assert b'as-builtin-gain-volume-runtime-json-v1' in builtin_private_payload
+    assert b'as-builtin-eq-iir-runtime-json-v1' in builtin_private_payload
+    assert b'as-builtin-rate-asrc-runtime-json-v1' in builtin_private_payload
+    assert b'as-builtin-vavs-aec-runtime-json-v1' in builtin_private_payload
+    builtin_report = read_text(builtin_config_out / 'a2_builtin_module_config_test_compile_report.json')
+    require_contains(builtin_report, 'as.builtin.graph-copier-module-config-v1')
+    require_contains(builtin_report, 'as.builtin.gain-volume-module-config-v1')
+    require_contains(builtin_report, 'as.builtin.rate-asrc-module-config-v1')
+    require_contains(builtin_report, 'as.builtin.vavs-dereverb-module-config-v1')
 
     if MODULE_CONFIG_EXAMPLE_BUILD_DIR.exists():
         shutil.rmtree(MODULE_CONFIG_EXAMPLE_BUILD_DIR)
