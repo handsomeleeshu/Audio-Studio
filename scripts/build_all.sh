@@ -5,7 +5,7 @@ DEFAULT_OS=linux
 DEFAULT_PROFILE=as_server_minimal
 DEFAULT_PLATFORMS=(a2)
 SUPPORTED_OSES=(linux macos windows)
-SUPPORTED_PROFILES=(as_server_minimal as_config driver_interface_tests driver_interface_tests_macos gui_backend rpc_socket rpc_pipe)
+SUPPORTED_PROFILES=(as_server_minimal as_config audio_controller driver_interface_tests driver_interface_tests_macos gui_backend rpc_socket rpc_pipe)
 SUPPORTED_PLATFORMS=(a2 simulator)
 
 BUILD_TYPE=Debug
@@ -128,6 +128,9 @@ profile_config() {
         "as_config${EXECUTABLE_SUFFIX}"
       )
       ;;
+    audio_controller)
+      PROFILE_EXECUTABLES=("audio_controller${EXECUTABLE_SUFFIX}")
+      ;;
     driver_interface_tests)
       PROFILE_EXECUTABLES=(
         "as_server${EXECUTABLE_SUFFIX}"
@@ -190,6 +193,30 @@ check_tools() {
     fi
   done
   return 0
+}
+
+build_alsatplg_tool() {
+  if [[ "$BUILD_OS" != linux ]]; then
+    return 0
+  fi
+
+  case "$PROFILE" in
+    as_config|driver_interface_tests)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  local tplg_build_dir="${ROOT}/build_alsatplg"
+  local tplg_exe="${tplg_build_dir}/bin/alsatplg"
+
+  printf '[build] vendored alsatplg -> %s\n' "$tplg_exe"
+  (
+    set -x
+    cmake -S "${ROOT}/third_party/alsatplg" -B "$tplg_build_dir"
+    cmake --build "$tplg_build_dir" --parallel "$BUILD_JOBS"
+  )
 }
 
 create_initial_config() {
@@ -357,6 +384,23 @@ for PLATFORM in "${PLATFORMS[@]}"; do
   fi
 
   check_tools || continue
+  build_alsatplg_tool
+
+  if [[ "$PROFILE" == audio_controller ]]; then
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    (
+      set -x
+      cmake -S "${ROOT}/audio_controller" \
+        -B "$BUILD_DIR" \
+        -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
+    )
+    if [[ "$CONFIGURE_ONLY" == no ]]; then
+      cmake --build "$BUILD_DIR" --parallel "$BUILD_JOBS" -- ${BUILD_VERBOSE}
+    fi
+    continue
+  fi
 
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"

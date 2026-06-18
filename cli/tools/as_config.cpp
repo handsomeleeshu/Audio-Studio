@@ -57,6 +57,7 @@ void printCompileOutput(const audio_studio::framework::config::ConfigCompileOutp
   std::cout << "{"
             << "\"ok\":" << (output.ok ? "true" : "false") << ","
             << "\"tplg_built\":" << (output.tplg_built ? "true" : "false") << ","
+            << "\"tplg_decoded\":" << (output.tplg_decoded ? "true" : "false") << ","
             << jsonField("tool", "as_config") << ","
             << jsonField("conf_path", output.conf_path) << ","
             << jsonField("tplg_path", output.tplg_path) << ","

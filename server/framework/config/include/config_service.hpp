@@ -33,6 +33,7 @@ struct ConfigCompileRequest {
 struct ConfigCompileOutput {
   bool ok = false;
   bool tplg_built = false;
+  bool tplg_decoded = false;
   std::string conf_path;
   std::string tplg_path;
   std::string private_bin_path;

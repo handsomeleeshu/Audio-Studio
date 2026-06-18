@@ -325,7 +325,9 @@ int main() {
     assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
       assert(drivers.filesystem().stat(output.tplg_path, info).ok() && info.size > 0);
+      assert(output.tplg_decoded);
       assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+      assert(drivers.filesystem().stat(output.tplg_decode_log_path, info).ok());
     } else {
       bool path_exists = true;
       assert(drivers.filesystem().exists(output.tplg_path, path_exists).ok() && !path_exists);
@@ -341,6 +343,14 @@ int main() {
     assert(ids.find("#define AS_CONTROL_PLAY_MAIN_VOL_VOL_DB 0xCD13BD21u") != std::string::npos);
     const std::string presets = readFileText(output.preset_header_path);
     assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
+    const std::string conf = readFileText(output.conf_path);
+    assert(conf.find("SectionVendorTokens.\"sof_sched_tokens\"") != std::string::npos);
+    assert(conf.find("SectionVendorTokens.\"sof_comp_tokens\"") != std::string::npos);
+    assert(conf.find("SectionVendorTokens.\"sof_dai_tokens\"") != std::string::npos);
+    assert(conf.find("type \"scheduler\"") != std::string::npos);
+    assert(conf.find("SectionDAI.") != std::string::npos);
+    assert(conf.find("SectionBE.") != std::string::npos);
+    assert(conf.find("data [") != std::string::npos);
     const std::string private_payload = readFileText(output.private_bin_path);
     assert(private_payload.find("as-generic-runtime-json-v1") != std::string::npos);
     assert(private_payload.find("as-generic-install-json-v1") != std::string::npos);

@@ -288,6 +288,7 @@ JsonValue compileOutputJson(const framework::config::ConfigCompileOutput& output
   JsonValue result = JsonValue::object();
   result["ok"] = output.ok;
   result["tplg_built"] = output.tplg_built;
+  result["tplg_decoded"] = output.tplg_decoded;
   result["conf_path"] = output.conf_path;
   result["tplg_path"] = output.tplg_path;
   result["private_bin_path"] = output.private_bin_path;

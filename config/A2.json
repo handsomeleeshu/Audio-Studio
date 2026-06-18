@@ -857,6 +857,8 @@
       "type_id": "fx.virtual_bass",
       "category": "playback/fx",
       "abi_version": 3,
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "3e39955a-bd99-4a12-b2b5-e0d31c795b45",
       "io": {
         "in_ports": [
           {
@@ -927,6 +929,8 @@
       "type_id": "fx.surround_decoder",
       "category": "playback/spatial",
       "abi_version": 3,
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "5b54a0a4-fecd-4665-a1f2-b2b808c82bd0",
       "io": {
         "in_ports": [
           {
@@ -969,6 +973,7 @@
       "type_id": "fx.virtualizer",
       "category": "playback/spatial",
       "abi_version": 3,
+      "module_uuid": "65ffdca1-fd49-4d54-9e0d-37c52003877b",
       "io": {
         "in_ports": [
           {
@@ -1029,6 +1034,8 @@
       "type_id": "fx.loudness",
       "category": "playback/fx",
       "abi_version": 2,
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "9bf13a31-83a6-49de-9d7c-02504403c72d",
       "io": {
         "in_ports": [
           {
@@ -1063,6 +1070,8 @@
       "type_id": "protect.speaker",
       "category": "playback/protect",
       "abi_version": 2,
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "fb07911a-4035-47ee-b113-85d7dbc74464",
       "io": {
         "in_ports": [
           {
@@ -1191,6 +1200,8 @@
       "type_id": "service.anc_filter",
       "category": "service/core3",
       "abi_version": 1,
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "1e2dc7db-854f-444c-89d1-a1a4e5f06b60",
       "io": {
         "in_ports": [
           {
@@ -1250,6 +1261,7 @@
       "type_id": "vavs.aec",
       "category": "capture/vavs",
       "abi_version": 3,
+      "module_uuid": "1f2094cb-514c-49d4-aa0e-cda2cbd652aa",
       "io": {
         "in_ports": [
           {
@@ -1324,6 +1336,7 @@
       "type_id": "vavs.ns",
       "category": "capture/vavs",
       "abi_version": 3,
+      "module_uuid": "bd8d4152-4c27-4692-950a-11a2d5507e6e",
       "io": {
         "in_ports": [
           {
@@ -1365,6 +1378,7 @@
       "type_id": "vavs.agc",
       "category": "capture/vavs",
       "abi_version": 3,
+      "module_uuid": "76945bd4-fa83-495c-963d-f9664698a8fb",
       "io": {
         "in_ports": [
           {
@@ -1406,6 +1420,7 @@
       "type_id": "vavs.beamformer",
       "category": "capture/vavs",
       "abi_version": 3,
+      "module_uuid": "c594c8e4-c8d3-44d1-aa04-3b78c200b9d9",
       "io": {
         "in_ports": [
           {
@@ -1475,6 +1490,7 @@
       "type_id": "vavs.dereverb",
       "category": "capture/vavs",
       "abi_version": 2,
+      "module_uuid": "2308fe98-ef0c-450c-86aa-687633aafdd1",
       "io": {
         "in_ports": [
           {

@@ -14,6 +14,8 @@ LINUX_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_server_minimal' / 'Debug'
 DRIVER_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'driver_interface_tests' / 'Debug'
 GUI_BACKEND_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'gui_backend' / 'Release'
 AS_CONFIG_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_config' / 'Debug'
+AUDIO_CONTROLLER_BUILD_DIR = ROOT / 'out' / 'audio_controller'
+AUDIO_CONTROLLER_PROFILE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'audio_controller' / 'Debug'
 MODULE_CONFIG_EXAMPLE_BUILD_DIR = ROOT / 'out' / 'module-config-sdk-example'
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
@@ -76,7 +78,8 @@ def write_module_config_plugin_project(path):
     {
       "type_id": "test.third_party",
       "category": "test/plugin",
-      "module_class": "MODULE",
+      "module_class": "MODULE_ADAPTER",
+      "module_uuid": "2e3a1183-7da0-4a3d-b463-1b3b4e7a51ed",
       "parameters": [
         {
           "param_id": "knob",
@@ -368,17 +371,18 @@ def main():
     ])
     require_contains(as_config_result, '"runtime_control_count":29')
     require_contains(as_config_result, '"tplg_built":true')
+    require_contains(as_config_result, '"tplg_decoded":true')
     require_contains(as_config_result, '"preset_count":3')
     for path in [
         as_config_out / 'a2_test.conf',
         as_config_out / 'a2_test.tplg',
+        as_config_out / 'a2_test_decode.conf',
         as_config_out / 'a2_test_private.bin',
         as_config_out / 'include' / 'as_config_ids.h',
         as_config_out / 'include' / 'as_tplg_private.h',
         as_config_out / 'include' / 'as_preset_ids.h',
         as_config_out / 'a2_test_controls.csv',
         as_config_out / 'a2_test_compile_report.json',
-        as_config_out / 'a2_test_decode.conf',
     ]:
         assert path.exists() and path.stat().st_size > 0, f'missing as_config output: {path}'
     for path in [
@@ -388,6 +392,38 @@ def main():
         assert path.exists(), f'missing as_config log: {path}'
     assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_alsatplg.log')
     assert 'ALSA lib' not in read_text(as_config_out / 'a2_test_decode.log')
+    decoded_conf = read_text(as_config_out / 'a2_test_decode.conf')
+    require_contains(decoded_conf, 'SectionDAI {')
+    require_contains(decoded_conf, 'SectionBE {')
+
+    if AUDIO_CONTROLLER_BUILD_DIR.exists():
+        shutil.rmtree(AUDIO_CONTROLLER_BUILD_DIR)
+    run([
+        'cmake',
+        '-S', str(ROOT / 'audio_controller'),
+        '-B', str(AUDIO_CONTROLLER_BUILD_DIR),
+    ])
+    run(['cmake', '--build', str(AUDIO_CONTROLLER_BUILD_DIR)])
+    audio_controller_cli = AUDIO_CONTROLLER_BUILD_DIR / 'audio_controller'
+    assert audio_controller_cli.exists(), f'missing audio_controller CLI: {audio_controller_cli}'
+    audio_controller_list = check_output([
+        str(audio_controller_cli),
+        '--tplg', str(as_config_out / 'a2_test.tplg'),
+        '--list',
+    ])
+    require_contains(audio_controller_list, 'topology: ')
+    require_contains(audio_controller_list, 'pipelines: 4')
+    require_contains(audio_controller_list, 'widgets: ')
+    require_contains(audio_controller_list, 'routes: ')
+    require_contains(audio_controller_list, 'controls: 26')
+    require_contains(audio_controller_list, 'PLAY_MAIN.SCHED')
+    require_contains(audio_controller_list, 'PLAY_MAIN.VOL')
+    require_contains(audio_controller_list, 'CAPTURE_VOICE.NS')
+
+    if AUDIO_CONTROLLER_PROFILE_BUILD_DIR.exists():
+        shutil.rmtree(AUDIO_CONTROLLER_PROFILE_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'audio_controller', 'linux', 'a2'])
+    assert (AUDIO_CONTROLLER_PROFILE_BUILD_DIR / 'audio_controller').exists()
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
     require_contains(ids_header, 'AS_MODULE_TYPE_RATE_ASRC')
     assert 'AS_MODULE_TYPE_SERVICE_ASRC' not in ids_header
@@ -501,6 +537,7 @@ def main():
     ])
     require_contains(rpc_compile, '"jsonrpc":"2.0"')
     require_contains(rpc_compile, '"runtime_control_count":29')
+    require_contains(rpc_compile, '"tplg_decoded":true')
     assert (rpc_config_out / 'a2_rpc_test.tplg').exists()
     assert (rpc_config_out / 'a2_rpc_test_decode.conf').exists()
     assert 'ALSA lib' not in read_text(rpc_config_out / 'a2_rpc_test_alsatplg.log')
