@@ -129,7 +129,7 @@ profile_config() {
       )
       ;;
     audio_controller)
-      PROFILE_EXECUTABLES=("audio_controller${EXECUTABLE_SUFFIX}")
+      PROFILE_EXECUTABLES=("libaudio_controller.a")
       ;;
     driver_interface_tests)
       PROFILE_EXECUTABLES=(

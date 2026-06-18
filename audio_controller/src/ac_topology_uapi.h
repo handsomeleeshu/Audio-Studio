@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define AC_TPLG_MAGIC 0x41536f43u
-#define AC_TPLG_ABI_VERSION_MIN 0x4u
+#define AC_TPLG_ABI_VERSION_MIN 0x5u
 #define AC_TPLG_ABI_VERSION 0x5u
 #define AC_TPLG_NAME_SIZE 44u
 #define AC_TPLG_NUM_TEXTS 16u
@@ -38,6 +38,7 @@
 #define AC_DAPM_AIF_OUT 12u
 #define AC_DAPM_DAI_IN 13u
 #define AC_DAPM_DAI_OUT 14u
+#define AC_DAPM_BUFFER 16u
 #define AC_DAPM_SCHEDULER 17u
 #define AC_DAPM_EFFECT 18u
 #define AC_DAPM_SRC 20u
