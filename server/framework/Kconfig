@@ -19,6 +19,11 @@ config FRAMEWORK_AUDIO
   default n
   depends on FRAMEWORK_COMMON
 
+config FRAMEWORK_CONFIG
+  bool "Build config compiler framework library"
+  default n
+  depends on FRAMEWORK_COMMON && DRIVER_FILESYSTEM && DRIVER_OS && DRIVER_DYNLIB
+
 config FRAMEWORK_LOG
   bool "Build log framework library"
   default n

@@ -1,11 +1,14 @@
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 #include <unistd.h>
 
+#include "autoconfig.h"
 #include "audio_service.hpp"
 #include "service_registry.hpp"
 #include "status.hpp"
@@ -18,6 +21,9 @@
 #include "rpc_server.hpp"
 #include "rpc_socket_transport.hpp"
 #include "driver_manager.hpp"
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+#include "config_service.hpp"
+#endif
 
 namespace {
 
@@ -130,6 +136,13 @@ audio_studio::rpc::RpcBinaryFrame audioServiceStreamHandler(audio_studio::rpc::R
   }
 
   return streamError(request, "unsupported stream method");
+}
+
+std::string readFileText(const std::string& path) {
+  std::ifstream input(path);
+  std::ostringstream out;
+  out << input.rdbuf();
+  return out.str();
 }
 
 } // namespace
@@ -280,6 +293,71 @@ int main() {
 
   auto& drivers = audio_studio::drivers::DriverManager::instance();
   assert(drivers.initialize().ok());
+
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+  {
+    audio_studio::framework::config::ConfigService config_service(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
+    audio_studio::framework::config::ConfigCompileRequest request;
+    request.input_path = std::string(AUDIO_STUDIO_TEST_ROOT) + "/config/A2.json";
+    request.output_dir = drivers.filesystem().joinPath({
+      drivers.os().system().temporaryDirectory(),
+      "audio-studio-config-test-" + std::to_string(static_cast<long long>(getpid())),
+    });
+    (void)drivers.filesystem().remove(request.output_dir);
+    request.project_name = "a2_test";
+    request.build_tplg = audio_studio::framework::config::kHostSupportsAlsaTplg;
+    request.plugin_paths.push_back(AUDIO_STUDIO_CONFIG_TEST_PLUGIN_PATH);
+
+    audio_studio::framework::config::ConfigCompileOutput output;
+    assert(config_service.compile(request, output).ok());
+    assert(output.ok);
+    assert(output.module_type_count == 26);
+    assert(output.module_instance_count == 19);
+    assert(output.pipeline_count == 4);
+    assert(output.runtime_control_count == 29);
+    assert(output.install_param_count == 9);
+    assert(output.preset_count == 3);
+    assert(output.plugin_count == 1);
+
+    audio_studio::drivers::filesystem::FileInfo info;
+    assert(drivers.filesystem().stat(output.conf_path, info).ok() && info.size > 0);
+    assert(drivers.filesystem().stat(output.private_bin_path, info).ok() && info.size > 0);
+    assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
+    if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
+      assert(drivers.filesystem().stat(output.tplg_path, info).ok() && info.size > 0);
+      assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+    } else {
+      bool path_exists = true;
+      assert(drivers.filesystem().exists(output.tplg_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.tplg_decode_conf_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.alsatplg_log_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.tplg_decode_log_path, path_exists).ok() && !path_exists);
+    }
+
+    const std::string ids = readFileText(output.ids_header_path);
+    assert(ids.find("AS_MODULE_TYPE_RATE_ASRC") != std::string::npos);
+    assert(ids.find("AS_MODULE_TYPE_SERVICE_ASRC") == std::string::npos);
+    assert(ids.find("#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu") != std::string::npos);
+    assert(ids.find("#define AS_CONTROL_PLAY_MAIN_VOL_VOL_DB 0xCD13BD21u") != std::string::npos);
+    const std::string presets = readFileText(output.preset_header_path);
+    assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
+    const std::string private_payload = readFileText(output.private_bin_path);
+    assert(private_payload.find("as-generic-runtime-json-v1") != std::string::npos);
+    assert(private_payload.find("as-generic-install-json-v1") != std::string::npos);
+    assert(private_payload.find("as-generic-preset-json-v1") != std::string::npos);
+    assert(private_payload.find("\"pipelines\"") != std::string::npos);
+    assert(private_payload.find("\"dai_id\":\"CODEC_OUT_DAI0\"") != std::string::npos);
+    assert(private_payload.find("\"tdm_slots\":8") != std::string::npos);
+    assert(private_payload.find("\"codec_format\"") == std::string::npos);
+    assert(private_payload.find("\"config_format\"") != std::string::npos);
+    if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
+      const std::string alsatplg_log = readFileText(output.alsatplg_log_path);
+      const std::string decode_log = readFileText(output.tplg_decode_log_path);
+      assert(alsatplg_log.find("ALSA lib") == std::string::npos);
+      assert(decode_log.find("ALSA lib") == std::string::npos);
+    }
+  }
+#endif
 
   {
     JsonRpcEndpoint concurrent_endpoint;

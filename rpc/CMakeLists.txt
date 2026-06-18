@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 3.16)
 
 if(CONFIG_RPC_CORE)
   add_library(audio_studio_rpc_core
-    src/json_value.cpp
     src/json_rpc.cpp
     src/rpc_framing.cpp
     src/rpc_api_registry.cpp
   )
   target_include_directories(audio_studio_rpc_core PUBLIC include)
+  target_link_libraries(audio_studio_rpc_core PUBLIC audio_studio_json)
   target_compile_features(audio_studio_rpc_core PUBLIC cxx_std_17)
 endif()
 
@@ -23,6 +23,9 @@ if(CONFIG_RPC_AUDIO_METHODS)
     audio_studio_config
     audio_studio_framework_audio
   )
+  if(CONFIG_FRAMEWORK_CONFIG)
+    target_link_libraries(audio_studio_rpc_audio PUBLIC audio_studio_framework_config)
+  endif()
   target_compile_features(audio_studio_rpc_audio PUBLIC cxx_std_17)
 endif()
 

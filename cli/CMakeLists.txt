@@ -28,6 +28,19 @@ foreach(tool as_control as_play as_record as_log as_dump)
   target_compile_features(${tool} PRIVATE cxx_std_17)
 endforeach()
 
+if(CONFIG_FRAMEWORK_CONFIG)
+  add_executable(as_config tools/as_config.cpp)
+  target_link_libraries(as_config PRIVATE
+    audio_studio_cli_common
+    audio_studio_framework_config
+    audio_studio_drivers_core
+    audio_studio_driver_os
+    audio_studio_driver_filesystem
+    audio_studio_driver_dynlib
+  )
+  target_compile_features(as_config PRIVATE cxx_std_17)
+endif()
+
 if(CONFIG_BUILD_TESTS)
   add_executable(audio_studio_cli_tests tests/cli_tests.cpp)
   target_link_libraries(audio_studio_cli_tests PRIVATE audio_studio_cli_common audio_studio_dummy_driver)

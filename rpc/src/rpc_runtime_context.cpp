@@ -1,5 +1,6 @@
 #include "rpc_runtime_context.hpp"
 
+#include <stdexcept>
 #include <utility>
 
 #include "audio_service.hpp"
@@ -14,6 +15,19 @@ RpcRuntimeContext::RpcRuntimeContext(framework::audio::AudioService& audio_servi
 
 framework::audio::AudioService& RpcRuntimeContext::audio() {
   return audio_service_;
+}
+
+void RpcRuntimeContext::setConfigService(framework::config::ConfigService* config_service) {
+  config_service_ = config_service;
+}
+
+bool RpcRuntimeContext::hasConfigService() const {
+  return config_service_ != nullptr;
+}
+
+framework::config::ConfigService& RpcRuntimeContext::config() {
+  if (config_service_ == nullptr) throw std::runtime_error("config service is not configured");
+  return *config_service_;
 }
 
 const RpcStreamDefaults& RpcRuntimeContext::streamDefaults() const {
