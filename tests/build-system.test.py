@@ -367,6 +367,7 @@ def main():
         '--project-name', 'a2_test',
     ])
     require_contains(as_config_result, '"runtime_control_count":29')
+    require_contains(as_config_result, '"tplg_built":true')
     require_contains(as_config_result, '"preset_count":3')
     for path in [
         as_config_out / 'a2_test.conf',
@@ -404,6 +405,36 @@ def main():
     a2_json_text = read_text(ROOT / 'config' / 'A2.json')
     assert 'param_encoding' not in a2_json_text
     require_contains(a2_json_text, '"type_id": "rate.asrc"')
+
+    as_config_no_tplg_out = ROOT / 'out' / 'as-config-no-tplg-test'
+    if as_config_no_tplg_out.exists():
+        shutil.rmtree(as_config_no_tplg_out)
+    no_tplg_result = check_output([
+        str(AS_CONFIG_BUILD_DIR / 'as_config'),
+        '--input', str(ROOT / 'config' / 'A2.json'),
+        '--out-dir', str(as_config_no_tplg_out),
+        '--project-name', 'a2_no_tplg_test',
+        '--no-tplg',
+    ])
+    require_contains(no_tplg_result, '"runtime_control_count":29')
+    require_contains(no_tplg_result, '"tplg_built":false')
+    for path in [
+        as_config_no_tplg_out / 'a2_no_tplg_test.conf',
+        as_config_no_tplg_out / 'a2_no_tplg_test_private.bin',
+        as_config_no_tplg_out / 'include' / 'as_config_ids.h',
+        as_config_no_tplg_out / 'include' / 'as_tplg_private.h',
+        as_config_no_tplg_out / 'include' / 'as_preset_ids.h',
+        as_config_no_tplg_out / 'a2_no_tplg_test_controls.csv',
+        as_config_no_tplg_out / 'a2_no_tplg_test_compile_report.json',
+    ]:
+        assert path.exists() and path.stat().st_size > 0, f'missing no-tplg as_config output: {path}'
+    for path in [
+        as_config_no_tplg_out / 'a2_no_tplg_test.tplg',
+        as_config_no_tplg_out / 'a2_no_tplg_test_alsatplg.log',
+        as_config_no_tplg_out / 'a2_no_tplg_test_decode.conf',
+        as_config_no_tplg_out / 'a2_no_tplg_test_decode.log',
+    ]:
+        assert not path.exists(), f'unexpected no-tplg as_config output: {path}'
 
     builtin_module_config_plugin = AS_CONFIG_BUILD_DIR / 'plugins' / 'builtin_module_configs' / 'libaudio_studio_builtin_module_configs.so'
     assert builtin_module_config_plugin.exists(), f'missing builtin module config plugin: {builtin_module_config_plugin}'

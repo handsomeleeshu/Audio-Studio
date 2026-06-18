@@ -40,6 +40,20 @@ jobs:
         run: brew install cmake ninja
       - name: Make scripts executable
         run: chmod +x scripts/build_all.sh
+      - name: Build macOS as_config
+        run: ./scripts/build_all.sh --profile as_config macos a2
+      - name: Run macOS as_config portable generation
+        run: |
+          out/macos/a2/as_config/Debug/as_config \
+            --input config/A2.json \
+            --out-dir out/as-config-macos-ci \
+            --project-name a2_macos_ci \
+            --no-tplg
+          test -s out/as-config-macos-ci/a2_macos_ci.conf
+          test -s out/as-config-macos-ci/a2_macos_ci_private.bin
+          test -s out/as-config-macos-ci/include/as_config_ids.h
+          test ! -e out/as-config-macos-ci/a2_macos_ci.tplg
+          test ! -e out/as-config-macos-ci/a2_macos_ci_decode.conf
       - name: Build macOS driver interface tests
         run: ./scripts/build_all.sh --profile driver_interface_tests_macos macos a2
       - name: Run macOS driver interface tests

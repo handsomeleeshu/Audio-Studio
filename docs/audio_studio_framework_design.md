@@ -3334,16 +3334,16 @@ as_config \
 | 文件 | 说明 |
 |---|---|
 | `a2.conf` | as_config 生成的 ALSA topology conf，中间产物，保留用于 review/debug |
-| `a2.tplg` | `alsatplg -c a2.conf` 生成的 ALSA topology binary |
+| `a2.tplg` | Linux host 且启用 `build_tplg` 时，由 `alsatplg -c a2.conf` 生成的 ALSA topology binary |
 | `a2_private.bin` | Audio Studio private binary block，A2 driver/audio_controller 可直接解析 |
 | `include/as_config_ids.h` | 自动生成 module type、parameter、control 稳定 ID 宏 |
 | `include/as_tplg_private.h` | private block C 结构定义 |
 | `include/as_preset_ids.h` | preset 稳定 ID 宏 |
 | `a2_controls.csv` | KControl 映射表，用于 driver/debug/test |
-| `a2_compile_report.json` | 编译报告，列出数量、输出路径、警告和工具日志位置 |
-| `a2_alsatplg.log` | `alsatplg -c` 输出日志，必须不包含 topology error |
-| `a2_decode.conf` | `alsatplg -d a2.tplg` 反解出的 topology conf，用于合法性验证 |
-| `a2_decode.log` | `alsatplg -d` 输出日志，必须不包含 topology error |
+| `a2_compile_report.json` | 编译报告，列出数量、`build_tplg/tplg_built` 状态、输出路径、警告和工具日志位置 |
+| `a2_alsatplg.log` | Linux host 且启用 `build_tplg` 时，`alsatplg -c` 输出日志，必须不包含 topology error |
+| `a2_decode.conf` | Linux host 且启用 `build_tplg` 时，`alsatplg -d a2.tplg` 反解出的 topology conf，用于合法性验证 |
+| `a2_decode.log` | Linux host 且启用 `build_tplg` 时，`alsatplg -d` 输出日志，必须不包含 topology error |
 
 ---
 
@@ -7206,7 +7206,7 @@ A2.json
 2. 稳定 ID 输入只包含身份字段，例如 `type_id`、`type_id:param_id`、`pipe_id:node_id:module_type:param_id`、`preset_id`。其他 module 或 parameter 的增删改不会改变既有身份的 ID。
 3. `presets` 被编译为 Audio Studio private preset transaction，不默认生成 ALSA KControl。
 4. 三方算法通过 module config plugin 扩展。插件导出 `audio_studio_register_module_config_handlers_v1`，注册自己的 `IModuleConfigHandler`，只负责 validate/pack 自己 module 的 config/preset/runtime payload。
-5. framework/config 通过 drivers 层 filesystem、dynlib、os process abstraction 访问文件、动态库和 `alsatplg`，不直接判断具体宿主 OS。
+5. framework/config 通过 drivers 层 filesystem、dynlib、os process abstraction 访问文件、动态库和进程执行；`alsatplg -c/-d` 仅在 Linux host 默认启用，非 Linux host 默认只生成 conf/private/header/csv/report 等 portable 产物。
 6. 当前 A2 输入中 `service.asrc` 已更名为 `rate.asrc`；`fx.virtualizer` 与 `vavs.*` module 使用 `module_class: MODULE_ADAPTER` 标记。
 7. 标准 DAPM graph 只连接实际生成的 widget，不把 `A2 Playback Main` 这类 PCM stream name 写入 route，避免 `undefined source/sink widget`。
 8. bytes 型 runtime parameter 默认不生成标准 `SectionControlBytes`，而是进入 `AS_PRIVATE`；A2 ASoC Codec 驱动可从 private metadata 暴露自定义 KControl。
@@ -7221,6 +7221,14 @@ as_config --input config/A2.json --out-dir out/as_config/a2 --project-name a2
 ```
 
 会生成 26 个 module type、19 个 module instance、4 条 pipeline、29 个 runtime control、9 个 install-time parameter、3 个 preset，并调用 `alsatplg -c` 生成 `a2.tplg`，再调用 `alsatplg -d` 反解验证 tplg 合法性。
+
+非 Linux host 或不方便部署 `alsatplg` 的环境使用：
+
+```bash
+as_config --input config/A2.json --out-dir out/as_config/a2 --project-name a2 --no-tplg
+```
+
+该模式只生成 ALSA topology conf 与 Audio Studio sidecar 文件，不生成 `a2.tplg`、`a2_decode.conf` 或 `alsatplg` 日志。CI 中 Linux job 覆盖完整 `tplg/decode` 合法性验证，macOS job 覆盖 `--no-tplg` portable 生成链路。
 
 ### 附录 A.1 as_config 设计说明：以 A2.json 为示例的配置编译映射
 
@@ -7363,16 +7371,16 @@ as_config \
 | 文件 | 说明 |
 |---|---|
 | `a2.conf` | as_config 生成的 ALSA topology conf，中间产物，保留用于 review/debug |
-| `a2.tplg` | `alsatplg -c a2.conf` 生成的 ALSA topology binary |
+| `a2.tplg` | Linux host 且启用 `build_tplg` 时，由 `alsatplg -c a2.conf` 生成的 ALSA topology binary |
 | `a2_private.bin` | Audio Studio private binary block，A2 driver/audio_controller 可直接解析 |
 | `include/as_config_ids.h` | 自动生成 module type、parameter、control 稳定 ID 宏 |
 | `include/as_tplg_private.h` | private block C 结构定义 |
 | `include/as_preset_ids.h` | preset 稳定 ID 宏 |
 | `a2_controls.csv` | KControl 映射表，用于 driver/debug/test |
-| `a2_compile_report.json` | 编译报告，列出数量、输出路径、警告和工具日志位置 |
-| `a2_alsatplg.log` | `alsatplg -c` 输出日志，必须不包含 topology error |
-| `a2_decode.conf` | `alsatplg -d a2.tplg` 反解出的 topology conf，用于合法性验证 |
-| `a2_decode.log` | `alsatplg -d` 输出日志，必须不包含 topology error |
+| `a2_compile_report.json` | 编译报告，列出数量、`build_tplg/tplg_built` 状态、输出路径、警告和工具日志位置 |
+| `a2_alsatplg.log` | Linux host 且启用 `build_tplg` 时，`alsatplg -c` 输出日志，必须不包含 topology error |
+| `a2_decode.conf` | Linux host 且启用 `build_tplg` 时，`alsatplg -d a2.tplg` 反解出的 topology conf，用于合法性验证 |
+| `a2_decode.log` | Linux host 且启用 `build_tplg` 时，`alsatplg -d` 输出日志，必须不包含 topology error |
 
 ---
 

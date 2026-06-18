@@ -305,7 +305,7 @@ int main() {
     });
     (void)drivers.filesystem().remove(request.output_dir);
     request.project_name = "a2_test";
-    request.build_tplg = true;
+    request.build_tplg = audio_studio::framework::config::kHostSupportsAlsaTplg;
     request.plugin_paths.push_back(AUDIO_STUDIO_CONFIG_TEST_PLUGIN_PATH);
 
     audio_studio::framework::config::ConfigCompileOutput output;
@@ -321,9 +321,18 @@ int main() {
 
     audio_studio::drivers::filesystem::FileInfo info;
     assert(drivers.filesystem().stat(output.conf_path, info).ok() && info.size > 0);
-    assert(drivers.filesystem().stat(output.tplg_path, info).ok() && info.size > 0);
     assert(drivers.filesystem().stat(output.private_bin_path, info).ok() && info.size > 0);
-    assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+    assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
+    if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
+      assert(drivers.filesystem().stat(output.tplg_path, info).ok() && info.size > 0);
+      assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+    } else {
+      bool path_exists = true;
+      assert(drivers.filesystem().exists(output.tplg_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.tplg_decode_conf_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.alsatplg_log_path, path_exists).ok() && !path_exists);
+      assert(drivers.filesystem().exists(output.tplg_decode_log_path, path_exists).ok() && !path_exists);
+    }
 
     const std::string ids = readFileText(output.ids_header_path);
     assert(ids.find("AS_MODULE_TYPE_RATE_ASRC") != std::string::npos);
@@ -341,10 +350,12 @@ int main() {
     assert(private_payload.find("\"tdm_slots\":8") != std::string::npos);
     assert(private_payload.find("\"codec_format\"") == std::string::npos);
     assert(private_payload.find("\"config_format\"") != std::string::npos);
-    const std::string alsatplg_log = readFileText(output.alsatplg_log_path);
-    const std::string decode_log = readFileText(output.tplg_decode_log_path);
-    assert(alsatplg_log.find("ALSA lib") == std::string::npos);
-    assert(decode_log.find("ALSA lib") == std::string::npos);
+    if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
+      const std::string alsatplg_log = readFileText(output.alsatplg_log_path);
+      const std::string decode_log = readFileText(output.tplg_decode_log_path);
+      assert(alsatplg_log.find("ALSA lib") == std::string::npos);
+      assert(decode_log.find("ALSA lib") == std::string::npos);
+    }
   }
 #endif
 

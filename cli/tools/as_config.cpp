@@ -14,7 +14,7 @@ namespace {
 struct ConfigCliOptions {
   bool self_test = false;
   bool list_module_configs = false;
-  bool build_tplg = true;
+  bool build_tplg = audio_studio::framework::config::kHostSupportsAlsaTplg;
   bool no_tplg = false;
   bool strict = true;
   std::string target;
@@ -35,7 +35,7 @@ int parseOptions(int argc, char** argv, ConfigCliOptions& options) {
   app.add_option("--out-dir,-o", options.output_dir, "Output directory for generated files");
   app.add_option("--project-name", options.project_name, "Generated artifact basename");
   app.add_option("--alsatplg", options.alsatplg, "alsatplg executable path");
-  app.add_flag("--build-tplg", options.build_tplg, "Run alsatplg after generating conf");
+  app.add_flag("--build-tplg", options.build_tplg, "Run alsatplg compile/decode after generating conf on Linux hosts");
   app.add_flag("--no-tplg", options.no_tplg, "Only generate conf and sidecar outputs");
   app.add_flag("--strict", options.strict, "Fail on strict validation errors");
   app.add_option("--plugin", options.plugin_paths, "Module config plugin dynamic library path");
@@ -56,6 +56,7 @@ std::string jsonField(const std::string& key, const std::string& value) {
 void printCompileOutput(const audio_studio::framework::config::ConfigCompileOutput& output) {
   std::cout << "{"
             << "\"ok\":" << (output.ok ? "true" : "false") << ","
+            << "\"tplg_built\":" << (output.tplg_built ? "true" : "false") << ","
             << jsonField("tool", "as_config") << ","
             << jsonField("conf_path", output.conf_path) << ","
             << jsonField("tplg_path", output.tplg_path) << ","

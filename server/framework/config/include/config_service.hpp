@@ -14,18 +14,25 @@
 
 namespace audio_studio::framework::config {
 
+#if defined(__linux__)
+inline constexpr bool kHostSupportsAlsaTplg = true;
+#else
+inline constexpr bool kHostSupportsAlsaTplg = false;
+#endif
+
 struct ConfigCompileRequest {
   std::string input_path;
   std::string output_dir;
   std::string project_name = "a2";
   std::string alsatplg = "alsatplg";
-  bool build_tplg = true;
+  bool build_tplg = kHostSupportsAlsaTplg;
   bool strict = true;
   std::vector<std::string> plugin_paths;
 };
 
 struct ConfigCompileOutput {
   bool ok = false;
+  bool tplg_built = false;
   std::string conf_path;
   std::string tplg_path;
   std::string private_bin_path;

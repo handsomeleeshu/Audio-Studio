@@ -1165,6 +1165,8 @@ std::string generateReport(const ConfigCompileRequest& request,
   std::ostringstream out;
   out << "{";
   out << "\"ok\":" << (output.ok ? "true" : "false") << ",";
+  out << "\"build_tplg\":" << (request.build_tplg ? "true" : "false") << ",";
+  out << "\"tplg_built\":" << (output.tplg_built ? "true" : "false") << ",";
   out << "\"input_path\":" << quote(request.input_path) << ",";
   out << "\"output_dir\":" << quote(request.output_dir) << ",";
   out << "\"conf_path\":" << quote(output.conf_path) << ",";
@@ -1201,6 +1203,7 @@ std::string generateReport(const ConfigCompileRequest& request,
 JsonValue outputToJson(const ConfigCompileOutput& output) {
   JsonValue result = JsonValue::object();
   result["ok"] = output.ok;
+  result["tplg_built"] = output.tplg_built;
   result["conf_path"] = output.conf_path;
   result["tplg_path"] = output.tplg_path;
   result["private_bin_path"] = output.private_bin_path;
@@ -1321,6 +1324,9 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
   if (filesystem_ == nullptr) return Status::unavailable("filesystem driver is not configured");
   if (request.input_path.empty()) return Status::invalidArgument("config input path is empty");
   if (request.output_dir.empty()) return Status::invalidArgument("config output directory is empty");
+  if (request.build_tplg && !kHostSupportsAlsaTplg) {
+    return Status::unavailable("alsatplg compile/decode validation is supported on Linux hosts only; set build_tplg=false");
+  }
 
   const size_t plugins_before = plugin_libraries_.size();
   auto status = loadPlugins(dynlib_, request.plugin_paths, module_configs_, plugin_libraries_);
@@ -1414,6 +1420,7 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
     if (containsAlsaTopologyError(decode_log)) {
       return Status::internal("alsatplg decode reported topology errors; see " + output.tplg_decode_log_path);
     }
+    output.tplg_built = true;
   }
 
   output.ok = true;

@@ -287,6 +287,7 @@ JsonValue stringArrayParam(const JsonValue& params, const std::string& name) {
 JsonValue compileOutputJson(const framework::config::ConfigCompileOutput& output) {
   JsonValue result = JsonValue::object();
   result["ok"] = output.ok;
+  result["tplg_built"] = output.tplg_built;
   result["conf_path"] = output.conf_path;
   result["tplg_path"] = output.tplg_path;
   result["private_bin_path"] = output.private_bin_path;
@@ -318,7 +319,7 @@ framework::config::ConfigCompileRequest compileRequestFromParams(const JsonValue
   request.output_dir = requireStringParam(object, "output_dir");
   request.project_name = optionalStringParam(object, "project_name", "a2");
   request.alsatplg = optionalStringParam(object, "alsatplg", "alsatplg");
-  request.build_tplg = optionalBoolParam(object, "build_tplg", true);
+  request.build_tplg = optionalBoolParam(object, "build_tplg", framework::config::kHostSupportsAlsaTplg);
   request.strict = optionalBoolParam(object, "strict", true);
   const auto plugins = stringArrayParam(object, "plugin_paths");
   for (const auto& item : plugins.asArray()) request.plugin_paths.push_back(item.asString());
@@ -349,7 +350,7 @@ JsonValue compileParamsExample() {
   params["output_dir"] = "out/as_config/a2";
   params["project_name"] = "a2";
   params["alsatplg"] = "alsatplg";
-  params["build_tplg"] = true;
+  params["build_tplg"] = framework::config::kHostSupportsAlsaTplg;
   params["strict"] = true;
   params["plugin_paths"] = JsonValue::array();
   return params;

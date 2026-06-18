@@ -201,6 +201,8 @@ create_initial_config() {
     printf '# Profile: %s\n' "$PROFILE"
     if [[ "$BUILD_OS" == windows ]]; then
       grep -v -E '^(CONFIG_FRAMEWORK_CONFIG|CONFIG_DRIVER_OS|CONFIG_DRIVER_OS_LINUX_HOST|CONFIG_DRIVER_FILESYSTEM|CONFIG_DRIVER_FILESYSTEM_LINUX_HOST|CONFIG_DRIVER_DYNLIB|CONFIG_DRIVER_DYNLIB_LINUX_HOST|CONFIG_DRIVER_SOCKET_LINUX_HOST|CONFIG_DRIVER_AUDIO_ALSA|CONFIG_DRIVER_AUDIO_PULSE)=y$' "$profile_config"
+    elif [[ "$BUILD_OS" == macos ]]; then
+      grep -v -E '^(CONFIG_DRIVER_OS_LINUX_HOST|CONFIG_DRIVER_FILESYSTEM_LINUX_HOST|CONFIG_DRIVER_DYNLIB_LINUX_HOST|CONFIG_DRIVER_SOCKET_LINUX_HOST|CONFIG_DRIVER_PIPE_LINUX_HOST|CONFIG_DRIVER_TRANSPORT_LINUX_HOST|CONFIG_DRIVER_AUDIO_ALSA|CONFIG_DRIVER_AUDIO_PULSE|CONFIG_DRIVER_CONTROL_LINUX_HOST|CONFIG_DRIVER_LOG_LINUX_HOST|CONFIG_DRIVER_DUMP_LINUX_HOST)=y$' "$profile_config"
     else
       cat "$profile_config"
     fi
@@ -213,6 +215,37 @@ create_initial_config() {
       fi
       if grep -q '^CONFIG_DRIVER_AUDIO=y' "$profile_config"; then
         printf 'CONFIG_DRIVER_AUDIO_WASAPI=y\n'
+      fi
+    elif [[ "$BUILD_OS" == macos ]]; then
+      if grep -q '^CONFIG_DRIVER_OS=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_OS_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_OS_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_SOCKET=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_SOCKET_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_SOCKET_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_FILESYSTEM=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_FILESYSTEM_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_FILESYSTEM_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_PIPE=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_PIPE_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_PIPE_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_DYNLIB=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_DYNLIB_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_DYNLIB_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_TRANSPORT=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_TRANSPORT_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_TRANSPORT_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_AUDIO=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_AUDIO_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_AUDIO_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_CONTROL=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_CONTROL_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_CONTROL_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_LOG=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_LOG_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_LOG_MACOS=y\n'
+      fi
+      if grep -q '^CONFIG_DRIVER_DUMP=y' "$profile_config" && ! grep -q '^CONFIG_DRIVER_DUMP_MACOS=y' "$profile_config"; then
+        printf 'CONFIG_DRIVER_DUMP_MACOS=y\n'
       fi
     fi
   } > "$output"
