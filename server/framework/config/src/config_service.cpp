@@ -539,11 +539,41 @@ std::map<std::string, std::string> loadSofUuidRegistry() {
   return registry;
 }
 
+const std::map<std::string, std::string>& builtinSofUuidRegistry() {
+  static const std::map<std::string, std::string> registry = {
+    {"asrc", "c8ec72f6-8526-4faf-9d39a23d0b541de2"},
+    {"crossover", "948c9ad1-806a-4131-ad6cb2bda9e35a9f"},
+    {"dai", "c2b00d27-ffbc-4150-a51a245c79c5e54b"},
+    {"dcblock", "b809efaf-5681-42b1-9ed604bb012dd384"},
+    {"drc", "b36ee4da-006f-47f9-a06dfecbe2d8b6ce"},
+    {"eq_fir", "43a90ce7-f3a5-41df-ac06ba98651ae6a3"},
+    {"eq_iir", "5150c0e6-27f9-4ec8-8351c705b642d12f"},
+    {"host", "8b9d100c-6d78-418f-90a3e0e805d0852b"},
+    {"kpb", "d8218443-5ff3-4a4c-b3886cfe07b9562e"},
+    {"mixer", "bc06c037-12aa-417c-9a9789282e321a76"},
+    {"multiband_drc", "0d9f2256-8e4f-47b3-8448239a334f1191"},
+    {"mux", "c607ff4d-9cb6-49dc-b6787da3c63ea557"},
+    {"selector", "55a88ed5-3d18-46ca-88f10ee6eae9930f"},
+    {"src", "c1c5326d-8390-46b4-aa4795c3beca6550"},
+    {"up_down_mixer", "42f8060c-832f-4dbf-b24751e961997b34"},
+    {"volume", "b77e677e-5ff4-4188-af14fba8bdbf8682"},
+  };
+  return registry;
+}
+
 std::string sofUuidFromRegistry(const std::string& registry_name) {
-  static const auto registry = loadSofUuidRegistry();
-  const auto it = registry.find(registry_name);
-  if (it == registry.end()) throw std::runtime_error("SOF UUID registry entry not found: " + registry_name);
-  return it->second;
+  if (!findSofUuidRegistryPath().empty()) {
+    static const auto registry = loadSofUuidRegistry();
+    const auto it = registry.find(registry_name);
+    if (it == registry.end()) throw std::runtime_error("SOF UUID registry entry not found: " + registry_name);
+    return it->second;
+  }
+
+  const auto& fallback = builtinSofUuidRegistry();
+  const auto fallback_it = fallback.find(registry_name);
+  if (fallback_it != fallback.end()) return fallback_it->second;
+
+  throw std::runtime_error("SOF UUID registry not found; set SOF_UUID_REGISTRY or run from the VASS workspace");
 }
 
 void appendLe16(std::vector<uint8_t>& out, uint16_t value) {

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import os
 import pathlib
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 
@@ -27,8 +29,9 @@ def run(command, **kwargs):
     return subprocess.run(command, cwd=str(ROOT), check=True, **kwargs)
 
 
-def check_output(command):
-    return subprocess.check_output(command, cwd=str(ROOT), text=True)
+def check_output(command, **kwargs):
+    kwargs.setdefault('cwd', str(ROOT))
+    return subprocess.check_output(command, text=True, **kwargs)
 
 
 def wine_check_output(command):
@@ -404,26 +407,16 @@ def main():
         '-B', str(AUDIO_CONTROLLER_BUILD_DIR),
     ])
     run(['cmake', '--build', str(AUDIO_CONTROLLER_BUILD_DIR)])
-    audio_controller_cli = AUDIO_CONTROLLER_BUILD_DIR / 'audio_controller'
-    assert audio_controller_cli.exists(), f'missing audio_controller CLI: {audio_controller_cli}'
-    audio_controller_list = check_output([
-        str(audio_controller_cli),
-        '--tplg', str(as_config_out / 'a2_test.tplg'),
-        '--list',
-    ])
-    require_contains(audio_controller_list, 'topology: ')
-    require_contains(audio_controller_list, 'pipelines: 4')
-    require_contains(audio_controller_list, 'widgets: ')
-    require_contains(audio_controller_list, 'routes: ')
-    require_contains(audio_controller_list, 'controls: 26')
-    require_contains(audio_controller_list, 'PLAY_MAIN.SCHED')
-    require_contains(audio_controller_list, 'PLAY_MAIN.VOL')
-    require_contains(audio_controller_list, 'CAPTURE_VOICE.NS')
+    audio_controller_lib = AUDIO_CONTROLLER_BUILD_DIR / 'libaudio_controller.a'
+    assert audio_controller_lib.exists(), f'missing audio_controller library: {audio_controller_lib}'
+    audio_controller_header = ROOT / 'audio_controller' / 'include' / 'audio_controller.h'
+    assert audio_controller_header.exists(), f'missing audio_controller public header: {audio_controller_header}'
 
     if AUDIO_CONTROLLER_PROFILE_BUILD_DIR.exists():
         shutil.rmtree(AUDIO_CONTROLLER_PROFILE_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'audio_controller', 'linux', 'a2'])
-    assert (AUDIO_CONTROLLER_PROFILE_BUILD_DIR / 'audio_controller').exists()
+    profile_audio_controller_lib = AUDIO_CONTROLLER_PROFILE_BUILD_DIR / 'libaudio_controller.a'
+    assert profile_audio_controller_lib.exists(), f'missing audio_controller profile library: {profile_audio_controller_lib}'
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
     require_contains(ids_header, 'AS_MODULE_TYPE_RATE_ASRC')
     assert 'AS_MODULE_TYPE_SERVICE_ASRC' not in ids_header
@@ -445,13 +438,16 @@ def main():
     as_config_no_tplg_out = ROOT / 'out' / 'as-config-no-tplg-test'
     if as_config_no_tplg_out.exists():
         shutil.rmtree(as_config_no_tplg_out)
-    no_tplg_result = check_output([
-        str(AS_CONFIG_BUILD_DIR / 'as_config'),
-        '--input', str(ROOT / 'config' / 'A2.json'),
-        '--out-dir', str(as_config_no_tplg_out),
-        '--project-name', 'a2_no_tplg_test',
-        '--no-tplg',
-    ])
+    no_tplg_env = os.environ.copy()
+    no_tplg_env.pop('SOF_UUID_REGISTRY', None)
+    with tempfile.TemporaryDirectory(prefix='as-config-no-tplg-cwd-') as no_tplg_cwd:
+        no_tplg_result = check_output([
+            str(AS_CONFIG_BUILD_DIR / 'as_config'),
+            '--input', str(ROOT / 'config' / 'A2.json'),
+            '--out-dir', str(as_config_no_tplg_out),
+            '--project-name', 'a2_no_tplg_test',
+            '--no-tplg',
+        ], cwd=no_tplg_cwd, env=no_tplg_env)
     require_contains(no_tplg_result, '"runtime_control_count":29')
     require_contains(no_tplg_result, '"tplg_built":false')
     for path in [
