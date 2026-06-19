@@ -7,6 +7,7 @@
 #define AC_TPLG_ABI_VERSION_MIN 0x5u
 #define AC_TPLG_ABI_VERSION 0x5u
 #define AC_TPLG_NAME_SIZE 44u
+#define AC_TPLG_TLV_SIZE 32u
 #define AC_TPLG_NUM_TEXTS 16u
 #define AC_TPLG_MAX_CHAN 8u
 #define AC_TPLG_STREAM_CONFIG_MAX 8u
@@ -232,11 +233,41 @@ typedef struct ac_tplg_manifest {
   uint32_t priv_size;
 } ac_tplg_manifest_t;
 
+typedef struct ac_tplg_private {
+  uint32_t size;
+} ac_tplg_private_t;
+
+typedef struct ac_tplg_io_ops {
+  uint32_t get;
+  uint32_t put;
+  uint32_t info;
+} ac_tplg_io_ops_t;
+
+typedef struct ac_tplg_ctl_tlv {
+  uint32_t size;
+  uint32_t type;
+  uint32_t data[AC_TPLG_TLV_SIZE];
+} ac_tplg_ctl_tlv_t;
+
 typedef struct ac_tplg_ctl_hdr {
   uint32_t size;
   uint32_t type;
   char name[AC_TPLG_NAME_SIZE];
+  uint32_t access;
+  ac_tplg_io_ops_t ops;
+  ac_tplg_ctl_tlv_t tlv;
 } ac_tplg_ctl_hdr_t;
+
+typedef struct ac_tplg_bytes_control {
+  ac_tplg_ctl_hdr_t hdr;
+  uint32_t size;
+  uint32_t max;
+  uint32_t mask;
+  uint32_t base;
+  uint32_t num_regs;
+  ac_tplg_io_ops_t ext_ops;
+  ac_tplg_private_t priv;
+} ac_tplg_bytes_control_t;
 #pragma pack(pop)
 
 #endif

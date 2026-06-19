@@ -96,6 +96,48 @@ static void ac_parser_free(const ac_allocator_t* allocator, void* ptr)
         allocator->free(allocator->user, ptr);
 }
 
+static void ac_control_release(ac_control_t* control,
+                               const ac_allocator_t* allocator)
+{
+    if (!control || !allocator)
+        return;
+
+    ac_parser_free(allocator, control->payload);
+    control->payload = 0;
+    control->payload_size = 0u;
+    control->payload_type = 0u;
+}
+
+static void ac_control_list_release(ac_control_list_t* list,
+                                    const ac_allocator_t* allocator)
+{
+    size_t i;
+
+    if (!list || !allocator)
+        return;
+
+    for (i = 0u; i < list->count; i++)
+        ac_control_release(&list->items[i], allocator);
+
+    ac_parser_free(allocator, list->items);
+    list->items = 0;
+    list->count = 0u;
+    list->capacity = 0u;
+}
+
+static void ac_widget_release(ac_widget_t* widget,
+                              const ac_allocator_t* allocator)
+{
+    if (!widget || !allocator)
+        return;
+
+    ac_parser_free(allocator, widget->tokens.items);
+    widget->tokens.items = 0;
+    widget->tokens.count = 0u;
+    widget->tokens.capacity = 0u;
+    ac_control_list_release(&widget->controls, allocator);
+}
+
 static int ac_parser_reserve(void** items,
                              size_t* capacity,
                              size_t needed,
@@ -144,6 +186,23 @@ static int ac_append_token(ac_token_list_t* list,
         return -1;
 
     list->items[list->count] = *token;
+    list->count++;
+    return 0;
+}
+
+static int ac_append_widget_control(ac_control_list_t* list,
+                                    const ac_control_t* control,
+                                    const ac_allocator_t* allocator)
+{
+    int ret;
+
+    ret = ac_parser_reserve((void**)&list->items, &list->capacity,
+                            list->count + 1u, sizeof(list->items[0]),
+                            allocator);
+    if (ret != 0)
+        return -1;
+
+    list->items[list->count] = *control;
     list->count++;
     return 0;
 }
@@ -400,18 +459,43 @@ static int ac_parse_vendor_arrays(const uint8_t* data,
     return 0;
 }
 
-static int ac_skip_control(const uint8_t* payload,
-                           size_t payload_size,
-                           size_t* offset,
-                           ac_control_t* control)
+static int ac_copy_control_payload(ac_control_t* control,
+                                   const uint8_t* payload,
+                                   uint32_t payload_size,
+                                   const ac_allocator_t* allocator)
+{
+    if (payload_size == 0u)
+        return 0;
+
+    control->payload = (uint8_t*)ac_parser_alloc(allocator, payload_size);
+    if (!control->payload)
+        return -1;
+
+    memcpy(control->payload, payload, payload_size);
+    control->payload_size = payload_size;
+    return 0;
+}
+
+static int ac_parse_control(const uint8_t* payload,
+                            size_t payload_size,
+                            size_t* offset,
+                            ac_control_t* control,
+                            const ac_allocator_t* allocator,
+                            int keep_payload)
 {
     uint32_t hdr_size;
     uint32_t object_size;
+    uint32_t private_size;
+    const ac_tplg_ctl_hdr_t* hdr;
+    const ac_tplg_private_t* private_header;
+    const ac_tplg_bytes_control_t* bytes_control;
+    const uint8_t* private_payload;
 
     if (payload_size - *offset < sizeof(ac_tplg_ctl_hdr_t))
         return -1;
 
-    hdr_size = ac_parser_read_u32(payload + *offset);
+    hdr = (const ac_tplg_ctl_hdr_t*)(const void*)(payload + *offset);
+    hdr_size = hdr->size;
     if (hdr_size < sizeof(ac_tplg_ctl_hdr_t) ||
         hdr_size + sizeof(uint32_t) > payload_size - *offset)
         return -1;
@@ -419,13 +503,36 @@ static int ac_skip_control(const uint8_t* payload,
     object_size = ac_parser_read_u32(payload + *offset + hdr_size);
     if (object_size < hdr_size || object_size > payload_size - *offset)
         return -1;
+    if (object_size < sizeof(ac_tplg_private_t))
+        return -1;
+
+    private_header =
+        (const ac_tplg_private_t*)(const void*)(payload + *offset +
+                                               object_size -
+                                               sizeof(*private_header));
+    private_size = private_header->size;
+    if ((size_t)object_size + private_size > payload_size - *offset)
+        return -1;
 
     memset(control, 0, sizeof(*control));
-    control->type = ac_parser_read_u32(payload + *offset + sizeof(uint32_t));
-    ac_parser_copy(control->name, sizeof(control->name),
-                   (const char*)(const void*)(payload + *offset + 8u),
-                   AC_TPLG_NAME_SIZE);
-    *offset += object_size;
+    control->type = hdr->type;
+    ac_parser_copy(control->name, sizeof(control->name), hdr->name,
+                   sizeof(hdr->name));
+
+    if (keep_payload && hdr->type == AC_TPLG_TYPE_BYTES &&
+        private_size > 0u) {
+        if (object_size < sizeof(*bytes_control))
+            return -1;
+        bytes_control =
+            (const ac_tplg_bytes_control_t*)(const void*)(payload + *offset);
+        private_payload = payload + *offset + object_size;
+        control->payload_type = bytes_control->hdr.ops.info;
+        if (ac_copy_control_payload(control, private_payload, private_size,
+                                    allocator) != 0)
+            return -1;
+    }
+
+    *offset += (size_t)object_size + private_size;
 
     return 0;
 }
@@ -445,7 +552,8 @@ static int ac_parse_controls(ac_topology_t* topology,
 
     offset = 0u;
     for (i = 0u; i < count; i++) {
-        if (ac_skip_control(payload, payload_size, &offset, &control) != 0) {
+        if (ac_parse_control(payload, payload_size, &offset, &control,
+                             allocator, 0) != 0) {
             ac_parser_set_error(error, error_size,
                                 "invalid control block");
             return -1;
@@ -530,26 +638,45 @@ static int ac_parse_widgets(ac_topology_t* topology,
                            widget.name, strlen(widget.name));
         }
 
-        if (ac_append_widget(topology, &widget, allocator) != 0) {
-            ac_parser_set_error(error, error_size,
-                                "out of memory while storing widget");
-            return -1;
-        }
-
         offset += (size_t)raw->size + raw->priv_size;
         for (control_index = 0u; control_index < raw->num_kcontrols;
              control_index++) {
-            if (ac_skip_control(payload, payload_size, &offset,
-                                &control) != 0) {
+            ac_control_t summary_control;
+
+            if (ac_parse_control(payload, payload_size, &offset, &control,
+                                 allocator, 1) != 0) {
+                ac_widget_release(&widget, allocator);
                 ac_parser_set_error(error, error_size,
                                     "invalid widget control");
                 return -1;
             }
-            if (ac_append_control(topology, &control, allocator) != 0) {
+
+            if (ac_append_widget_control(&widget.controls, &control,
+                                         allocator) != 0) {
+                ac_control_release(&control, allocator);
+                ac_widget_release(&widget, allocator);
                 ac_parser_set_error(error, error_size,
                                     "out of memory while storing control");
                 return -1;
             }
+
+            summary_control = control;
+            summary_control.payload = 0;
+            summary_control.payload_size = 0u;
+            summary_control.payload_type = 0u;
+            if (ac_append_control(topology, &summary_control, allocator) != 0) {
+                ac_widget_release(&widget, allocator);
+                ac_parser_set_error(error, error_size,
+                                    "out of memory while storing control");
+                return -1;
+            }
+        }
+
+        if (ac_append_widget(topology, &widget, allocator) != 0) {
+            ac_widget_release(&widget, allocator);
+            ac_parser_set_error(error, error_size,
+                                "out of memory while storing widget");
+            return -1;
         }
     }
 
@@ -901,7 +1028,10 @@ void ac_topology_clear(ac_topology_t* topology,
         return;
 
     for (i = 0u; i < topology->widget_count; i++)
-        ac_parser_free(allocator, topology->widgets[i].tokens.items);
+        ac_widget_release(&topology->widgets[i], allocator);
+
+    for (i = 0u; i < topology->control_count; i++)
+        ac_control_release(&topology->controls[i], allocator);
 
     ac_parser_free(allocator, topology->pcms);
     ac_parser_free(allocator, topology->dais);

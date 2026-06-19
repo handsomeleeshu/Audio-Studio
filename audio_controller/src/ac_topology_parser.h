@@ -29,6 +29,20 @@ typedef struct ac_token_list {
     size_t capacity;
 } ac_token_list_t;
 
+typedef struct ac_control {
+    char name[AC_MAX_NAME];
+    uint32_t type;
+    uint32_t payload_type;
+    uint32_t payload_size;
+    uint8_t* payload;
+} ac_control_t;
+
+typedef struct ac_control_list {
+    ac_control_t* items;
+    size_t count;
+    size_t capacity;
+} ac_control_list_t;
+
 typedef struct ac_widget {
     char name[AC_MAX_NAME];
     char stream_name[AC_MAX_NAME];
@@ -37,6 +51,7 @@ typedef struct ac_widget {
     uint32_t block_index;
     uint32_t num_kcontrols;
     ac_token_list_t tokens;
+    ac_control_list_t controls;
 } ac_widget_t;
 
 typedef struct ac_route {
@@ -76,11 +91,6 @@ typedef struct ac_link {
     uint32_t num_hw_configs;
     uint32_t default_hw_config_id;
 } ac_link_t;
-
-typedef struct ac_control {
-    char name[AC_MAX_NAME];
-    uint32_t type;
-} ac_control_t;
 
 typedef struct ac_pipeline {
     char name[AC_MAX_NAME];

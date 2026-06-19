@@ -2,6 +2,8 @@
 #include "ac_topology_uapi.h"
 
 #include <ipc/control.h>
+#include <kernel/abi.h>
+#include <sof-ctrl.h>
 #include <sof-pipeline.h>
 
 #include <stdint.h>
@@ -17,6 +19,14 @@ struct ac_sof_mem_header {
 };
 
 static audio_controller_driver_ops_t g_ac_sof_alloc_driver;
+
+static int ac_first_control_payload(const ac_widget_t* widget,
+                                    const uint8_t** data,
+                                    uint32_t* size,
+                                    uint32_t* type);
+
+static int ac_comp_uses_init_payload(int comp_type);
+static int ac_comp_uses_runtime_payload(int comp_type);
 
 static uintptr_t ac_align_up_uintptr(uintptr_t value, uint32_t alignment)
 {
@@ -152,6 +162,17 @@ static int ac_process_type_from_string(const char* process_type)
         return SOF_COMP_MUX;
     if (ac_streq(process_type, "DEMUX"))
         return SOF_COMP_DEMUX;
+    if (ac_streq(process_type, "CHAN_REMAP") ||
+        ac_streq(process_type, "CHANNEL_REMAP"))
+        return SOF_COMP_CHANNEL_REMAP;
+    if (ac_streq(process_type, "DELAY_LINE"))
+        return SOF_COMP_DELAY_LINE;
+    if (ac_streq(process_type, "FADER_BALANCE"))
+        return SOF_COMP_FADER_BALANCE;
+    if (ac_streq(process_type, "DSP_FILTER"))
+        return SOF_COMP_DSP_FILTER;
+    if (ac_streq(process_type, "VERISILICON_CODEC"))
+        return SOF_COMP_VERISILICON_CODEC;
     if (ac_streq(process_type, "DYNAMIC_PROCESS"))
         return SOF_COMP_MODULE_ADAPTER;
 
@@ -174,6 +195,28 @@ static int ac_dai_type_from_string(const char* dai_type)
         return SOF_DAI_DW_TDM;
 
     return -1;
+}
+
+static int ac_comp_uses_init_payload(int comp_type)
+{
+    switch (comp_type) {
+    case SOF_COMP_CHANNEL_REMAP:
+    case SOF_COMP_DSP_FILTER:
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+static int ac_comp_uses_runtime_payload(int comp_type)
+{
+    switch (comp_type) {
+    case SOF_COMP_CHANNEL_REMAP:
+    case SOF_COMP_DSP_FILTER:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 static int ac_comp_type_for_widget(const ac_widget_t* widget)
@@ -319,6 +362,10 @@ static int ac_fill_comp_config(const ac_widget_t* widget,
                                struct sof_comp_config* config)
 {
     int dai_type;
+    int payload_ret;
+    const uint8_t* control_data;
+    uint32_t control_size;
+    uint32_t control_type;
 
     memset(config, 0, sizeof(*config));
     config->comp_id = comp_id;
@@ -375,7 +422,143 @@ static int ac_fill_comp_config(const ac_widget_t* widget,
         config->def.size = 0u;
         config->def.type = 0u;
         config->def.data = 0;
+        if (ac_comp_uses_init_payload(config->type)) {
+            payload_ret = ac_first_control_payload(widget, &control_data,
+                                                   &control_size,
+                                                   &control_type);
+            if (payload_ret < 0)
+                return -1;
+            if (payload_ret > 0) {
+                config->def.size = control_size;
+                config->def.type = control_type;
+                config->def.data = control_data;
+            }
+        }
         break;
+    }
+
+    return 0;
+}
+
+static int ac_control_payload_data(const ac_control_t* control,
+                                   const uint8_t** data,
+                                   uint32_t* size,
+                                   uint32_t* type)
+{
+    const struct sof_abi_hdr* hdr;
+
+    if (!control || !control->payload || control->payload_size == 0u ||
+        !data || !size || !type)
+        return 0;
+
+    if (control->payload_size >= sizeof(*hdr)) {
+        hdr = (const struct sof_abi_hdr*)(const void*)control->payload;
+        if (hdr->magic == SOF_ABI_MAGIC) {
+            if (hdr->size > control->payload_size - sizeof(*hdr))
+                return -1;
+            *data = (const uint8_t*)hdr->data;
+            *size = hdr->size;
+            *type = hdr->type;
+            return 1;
+        }
+    }
+
+    *data = control->payload;
+    *size = control->payload_size;
+    *type = control->payload_type;
+    return 1;
+}
+
+static int ac_first_control_payload(const ac_widget_t* widget,
+                                    const uint8_t** data,
+                                    uint32_t* size,
+                                    uint32_t* type)
+{
+    size_t i;
+    int ret;
+
+    for (i = 0u; i < widget->controls.count; i++) {
+        ret = ac_control_payload_data(&widget->controls.items[i], data, size,
+                                      type);
+        if (ret < 0)
+            return -1;
+        if (ret > 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+static int ac_apply_control_payload(audio_controller_t* controller,
+                                    uint16_t comp_id,
+                                    const ac_control_t* control)
+{
+    const uint8_t* data;
+    uint32_t size;
+    uint32_t type;
+    struct sof_ipc_ctrl_data* cdata;
+    size_t msg_size;
+    int ret;
+
+    ret = ac_control_payload_data(control, &data, &size, &type);
+    if (ret < 0) {
+        ac_report_error_detail(controller, "invalid control payload: ",
+                               control->name);
+        return -1;
+    }
+    if (ret == 0)
+        return 0;
+
+    msg_size = sizeof(*cdata) + sizeof(struct sof_abi_hdr) + size;
+    cdata = (struct sof_ipc_ctrl_data*)controller->driver.alloc(
+        controller->driver.user, msg_size, AC_SOF_MEM_ALIGN);
+    if (!cdata)
+        return -1;
+
+    memset(cdata, 0, msg_size);
+    cdata->comp_id = comp_id;
+    cdata->type = SOF_CTRL_TYPE_DATA_SET;
+    cdata->cmd = SOF_CTRL_CMD_BINARY;
+    cdata->num_elems = size;
+    cdata->data->magic = SOF_ABI_MAGIC;
+    cdata->data->type = type;
+    cdata->data->size = size;
+    cdata->data->abi = SOF_ABI_VERSION;
+
+    ret = sof_ctrl_set(cdata, (void*)data);
+    controller->driver.free(controller->driver.user, cdata);
+
+    return ret < 0 ? -1 : 0;
+}
+
+static int ac_apply_widget_controls(audio_controller_t* controller,
+                                    const ac_pipeline_t* pipeline,
+                                    const uint16_t* comp_ids)
+{
+    const ac_topology_t* topology;
+    const ac_widget_t* widget;
+    size_t i;
+    size_t j;
+
+    topology = &controller->topology;
+    for (i = 0u; i < topology->widget_count; i++) {
+        if (comp_ids[i] == 0u)
+            continue;
+
+        widget = &topology->widgets[i];
+        if (widget->pipeline_id != pipeline->id)
+            continue;
+        if (!ac_comp_uses_runtime_payload(ac_comp_type_for_widget(widget)))
+            continue;
+
+        for (j = 0u; j < widget->controls.count; j++) {
+            if (ac_apply_control_payload(controller, comp_ids[i],
+                                         &widget->controls.items[j]) != 0) {
+                ac_report_error_detail(controller, "sof_ctrl_set failed: ",
+                                       widget->name);
+                return -1;
+            }
+        }
     }
 
     return 0;
@@ -588,12 +771,19 @@ static int ac_install_one_pipeline(audio_controller_t* controller,
     }
 
     ret = sof_pipeline_install(pipe);
-    controller->driver.free(controller->driver.user, comp_ids);
     if (ret < 0) {
+        controller->driver.free(controller->driver.user, comp_ids);
         ac_destroy_pipe(pipe);
         ac_report_error_int(controller, "sof_pipeline_install failed: ", ret);
         return -1;
     }
+
+    if (ac_apply_widget_controls(controller, pipeline, comp_ids) != 0) {
+        controller->driver.free(controller->driver.user, comp_ids);
+        ac_destroy_pipe(pipe);
+        return -1;
+    }
+    controller->driver.free(controller->driver.user, comp_ids);
 
     memset(out, 0, sizeof(*out));
     out->pipe_id = pipeline->id;
