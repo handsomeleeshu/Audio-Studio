@@ -16,6 +16,7 @@ using LogResult = framework::Status;
 
 struct LogDeviceConfig {
   std::string source;
+  std::map<std::string, std::string> options;
 };
 
 struct LogRawChunk {

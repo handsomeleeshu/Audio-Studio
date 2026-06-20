@@ -30,6 +30,19 @@ framework::config::ConfigService& RpcRuntimeContext::config() {
   return *config_service_;
 }
 
+void RpcRuntimeContext::setLogService(framework::log::LogService* log_service) {
+  log_service_ = log_service;
+}
+
+bool RpcRuntimeContext::hasLogService() const {
+  return log_service_ != nullptr;
+}
+
+framework::log::LogService& RpcRuntimeContext::log() {
+  if (log_service_ == nullptr) throw std::runtime_error("log service is not configured");
+  return *log_service_;
+}
+
 const RpcStreamDefaults& RpcRuntimeContext::streamDefaults() const {
   return stream_defaults_;
 }

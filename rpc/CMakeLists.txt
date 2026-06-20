@@ -23,6 +23,9 @@ if(CONFIG_RPC_AUDIO_METHODS)
     audio_studio_config
     audio_studio_framework_audio
   )
+  if(CONFIG_FRAMEWORK_LOG)
+    target_link_libraries(audio_studio_rpc_audio PUBLIC audio_studio_framework_log)
+  endif()
   if(CONFIG_FRAMEWORK_CONFIG)
     target_link_libraries(audio_studio_rpc_audio PUBLIC audio_studio_framework_config)
   endif()

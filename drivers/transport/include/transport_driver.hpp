@@ -13,9 +13,12 @@
 namespace audio_studio::drivers::transport {
 
 using TransportResult = framework::Status;
+using DataLinkResult = framework::Status;
 
 struct TransportConfig {
   std::string name;
+  std::string endpoint;
+  std::map<std::string, std::string> options;
 };
 
 struct TransportCaps {
@@ -24,18 +27,37 @@ struct TransportCaps {
   bool ordered = true;
 };
 
-class ITransportDriver {
-public:
-  virtual ~ITransportDriver() = default;
+using DataLinkDeviceConfig = TransportConfig;
+using DataLinkDeviceCaps = TransportCaps;
 
-  virtual TransportResult open(const TransportConfig& config) = 0;
+class IDataLinkDevice {
+public:
+  virtual ~IDataLinkDevice() = default;
+
+  virtual DataLinkResult open(const DataLinkDeviceConfig& config) = 0;
   virtual void close() = 0;
+  virtual DataLinkResult writeBlock(const uint8_t* data, size_t size, uint32_t timeout_ms) = 0;
+  virtual DataLinkResult readBlock(uint8_t* buffer, size_t capacity, size_t& actual_size, uint32_t timeout_ms) = 0;
+  virtual DataLinkResult flush() = 0;
+  virtual bool isConnected() const = 0;
+  virtual DataLinkDeviceCaps caps() const = 0;
+  virtual std::string name() const = 0;
+};
+
+class ITransportDriver : public IDataLinkDevice {
+public:
+  ~ITransportDriver() override = default;
+
   virtual TransportResult write(const uint8_t* data, size_t size, uint32_t timeout_ms) = 0;
   virtual TransportResult read(uint8_t* buffer, size_t capacity, size_t& actual_size, uint32_t timeout_ms) = 0;
-  virtual TransportResult flush() = 0;
-  virtual bool isConnected() const = 0;
-  virtual TransportCaps caps() const = 0;
-  virtual std::string name() const = 0;
+
+  DataLinkResult writeBlock(const uint8_t* data, size_t size, uint32_t timeout_ms) override {
+    return write(data, size, timeout_ms);
+  }
+
+  DataLinkResult readBlock(uint8_t* buffer, size_t capacity, size_t& actual_size, uint32_t timeout_ms) override {
+    return read(buffer, capacity, actual_size, timeout_ms);
+  }
 };
 
 class ITransportDriverFactory {

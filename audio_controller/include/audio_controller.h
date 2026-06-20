@@ -23,6 +23,17 @@ typedef enum audio_controller_log_level {
 typedef void* audio_controller_thread_t;
 typedef void* audio_controller_mutex_t;
 
+typedef struct audio_controller_datalink_device_ops {
+    void* user;
+    int (*open)(void* user);
+    void (*close)(void* user);
+    int (*read)(void* user, void* buffer, size_t capacity,
+                size_t* actual_size, unsigned int timeout_ms);
+    int (*write)(void* user, const void* data, size_t size,
+                 unsigned int timeout_ms);
+    size_t (*mtu)(void* user);
+} audio_controller_datalink_device_ops_t;
+
 typedef struct audio_controller_driver_ops {
     void* user;
     void* (*alloc)(void* user, size_t size, size_t alignment);
@@ -38,6 +49,7 @@ typedef struct audio_controller_driver_ops {
     void (*mutex_destroy)(void* user, audio_controller_mutex_t mutex);
     int (*mutex_lock)(void* user, audio_controller_mutex_t mutex);
     int (*mutex_unlock)(void* user, audio_controller_mutex_t mutex);
+    const audio_controller_datalink_device_ops_t* datalink;
 } audio_controller_driver_ops_t;
 
 typedef struct audio_controller_create_params {
@@ -72,6 +84,16 @@ typedef struct audio_controller_installed_pipelines {
         pipelines[AUDIO_CONTROLLER_MAX_INSTALLED_PIPELINES];
 } audio_controller_installed_pipelines_t;
 
+typedef struct audio_controller_transport_stats {
+    int initialized;
+    int running;
+    int datalink_open;
+    uint32_t datalink_mtu;
+    uint32_t tx_packets;
+    uint32_t rx_packets;
+    uint32_t retries;
+} audio_controller_transport_stats_t;
+
 audio_controller_t* audio_controller_create(const audio_controller_create_params_t* params);
 void audio_controller_destroy(audio_controller_t* controller);
 
@@ -83,6 +105,8 @@ int audio_controller_install_pipeline(audio_controller_t* controller,
 int audio_controller_install_all(audio_controller_t* controller,
                                  audio_controller_installed_pipelines_t* installed);
 int audio_controller_get_summary(audio_controller_t* controller, audio_controller_topology_summary_t* summary);
+int audio_controller_get_transport_stats(audio_controller_t* controller,
+                                         audio_controller_transport_stats_t* stats);
 const char* audio_controller_get_last_error(audio_controller_t* controller);
 
 #ifdef __cplusplus

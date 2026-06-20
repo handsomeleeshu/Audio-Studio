@@ -34,6 +34,21 @@ if(CONFIG_PLATFORM_A2)
   target_compile_features(audio_studio_platform_a2 PUBLIC cxx_std_17)
 endif()
 
+if(CONFIG_PLATFORM_SIMULATOR)
+  add_library(audio_studio_platform_simulator OBJECT
+    platform/simulator/src/rv32qemu_log_device.cpp
+    platform/simulator/src/simulator_pipe_transport_driver.cpp
+    platform/simulator/src/simulator_platform.cpp
+  )
+  target_include_directories(audio_studio_platform_simulator PUBLIC platform/simulator/include)
+  target_link_libraries(audio_studio_platform_simulator PUBLIC
+    audio_studio_platform_core
+    audio_studio_driver_log
+    audio_studio_driver_transport
+    audio_studio_framework_transport)
+  target_compile_features(audio_studio_platform_simulator PUBLIC cxx_std_17)
+endif()
+
 if(CONFIG_FRAMEWORK_SESSION)
   add_library(audio_studio_framework_session
     framework/session/src/session_registry.cpp
@@ -86,7 +101,9 @@ if(CONFIG_FRAMEWORK_LOG)
   add_library(audio_studio_framework_log
     framework/log/src/log_service.cpp
   )
-  target_include_directories(audio_studio_framework_log PUBLIC framework/log/include)
+  target_include_directories(audio_studio_framework_log PUBLIC
+    framework/log/include
+    "${PROJECT_SOURCE_DIR}/drivers/log/include")
   target_link_libraries(audio_studio_framework_log PUBLIC audio_studio_framework_common)
   target_compile_features(audio_studio_framework_log PUBLIC cxx_std_17)
 endif()
@@ -111,10 +128,14 @@ endif()
 
 if(CONFIG_FRAMEWORK_TRANSPORT)
   add_library(audio_studio_framework_transport
+    framework/transport/src/datalink_frame.cpp
+    framework/transport/src/datalink_manager.cpp
     framework/transport/src/frame_codec.cpp
     framework/transport/src/transport_manager.cpp
   )
-  target_include_directories(audio_studio_framework_transport PUBLIC framework/transport/include)
+  target_include_directories(audio_studio_framework_transport PUBLIC
+    framework/transport/include
+    "${PROJECT_SOURCE_DIR}/drivers/transport/include")
   target_link_libraries(audio_studio_framework_transport PUBLIC audio_studio_framework_common)
   target_compile_features(audio_studio_framework_transport PUBLIC cxx_std_17)
 endif()
@@ -168,6 +189,9 @@ if(CONFIG_PLATFORM_CORE)
 endif()
 if(CONFIG_PLATFORM_A2)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_a2)
+endif()
+if(CONFIG_PLATFORM_SIMULATOR)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_simulator)
 endif()
 if(CONFIG_FRAMEWORK_SESSION)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)

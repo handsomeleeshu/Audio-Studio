@@ -1,5 +1,7 @@
 #include "linux_host_log_device.hpp"
 
+#include <fstream>
+#include <sstream>
 #include <utility>
 
 namespace audio_studio::drivers::log {
@@ -41,7 +43,21 @@ LogResult LinuxHostLogDevice::configure(const LogDeviceConfig& config) {
 LogResult LinuxHostLogDevice::start() {
   if (!open_) return LogResult::unavailable("log device is not open");
   if (chunks_.empty()) {
-    chunks_.push_back({1, {0xaa, 0xbb}});
+    std::string text;
+    if (!config_.source.empty() && config_.source != "firmware") {
+      std::ifstream input(config_.source, std::ios::binary);
+      if (input) {
+        std::ostringstream out;
+        out << input.rdbuf();
+        text = out.str();
+      }
+    }
+    if (text.empty()) {
+      text = "info|FW|audio controller log online\n"
+             "warning|FW|transport channel waiting for host\n"
+             "error|FW|audio controller sample error\n";
+    }
+    chunks_.push_back({1, std::vector<uint8_t>(text.begin(), text.end())});
     ++chunks_written_;
   }
   running_ = true;

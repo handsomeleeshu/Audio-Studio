@@ -1,6 +1,8 @@
 #include <cassert>
 #include <chrono>
 #include <fstream>
+#include <iostream>
+#include <mutex>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -10,8 +12,13 @@
 
 #include "autoconfig.h"
 #include "audio_service.hpp"
+#include "datalink_frame.hpp"
+#include "datalink_manager.hpp"
+#include "frame_codec.hpp"
 #include "service_registry.hpp"
 #include "status.hpp"
+#include "log_service.hpp"
+#include "transport_manager.hpp"
 #include "audio_rpc.hpp"
 #include "audio_rpc_client.hpp"
 #include "json_rpc.hpp"
@@ -26,6 +33,107 @@
 #endif
 
 namespace {
+
+class ScriptedDataLinkDevice final : public audio_studio::drivers::transport::IDataLinkDevice {
+public:
+  explicit ScriptedDataLinkDevice(size_t mtu) : mtu_(mtu) {}
+
+  audio_studio::framework::Status open(const audio_studio::drivers::transport::DataLinkDeviceConfig& config) override {
+    name_ = config.name.empty() ? "scripted" : config.name;
+    connected_ = true;
+    return audio_studio::framework::Status::success();
+  }
+
+  void close() override { connected_ = false; }
+
+  audio_studio::framework::Status writeBlock(const uint8_t* data, size_t size, uint32_t) override {
+    if (!connected_) return audio_studio::framework::Status::unavailable("scripted datalink is closed");
+    if (data == nullptr && size > 0) return audio_studio::framework::Status::invalidArgument("scripted datalink write is null");
+    audio_studio::framework::transport::DataLinkFrame frame;
+    auto status = audio_studio::framework::transport::DataLinkFrameCodec::decode(data, size, frame);
+    if (!status.ok()) return status;
+    if ((frame.flags & audio_studio::framework::transport::kDataLinkFrameData) != 0) {
+      ++data_frames_;
+      std::vector<uint8_t> transport_payload = frame.payload;
+      auto ack = audio_studio::framework::transport::DataLinkFrameCodec::makeAck(frame);
+      if (!sent_nak_ && inject_first_nak_) {
+        ack.flags = audio_studio::framework::transport::kDataLinkFrameNak;
+        sent_nak_ = true;
+      }
+      auto encoded = audio_studio::framework::transport::DataLinkFrameCodec::encode(ack);
+      rx_.insert(rx_.end(), encoded.begin(), encoded.end());
+      if (auto_transport_ack_) {
+        audio_studio::framework::transport::TransportFrame request;
+        if (audio_studio::framework::transport::FrameCodec::decode(transport_payload.data(), transport_payload.size(), request).ok() &&
+            ((request.flags & audio_studio::framework::transport::kTransportFrameAck) == 0)) {
+          audio_studio::framework::transport::TransportFrame response;
+          response.version = request.version;
+          response.channel_id = request.channel_id;
+          response.command_id = request.command_id;
+          response.flags = audio_studio::framework::transport::kTransportFrameAck |
+                           audio_studio::framework::transport::kTransportFrameResponse;
+          response.sequence_id = request.sequence_id;
+          response.session_id = request.session_id;
+          response.payload = {'o', 'k'};
+          enqueueTransportPacket(response);
+        }
+      }
+    }
+    written_.insert(written_.end(), data, data + size);
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status readBlock(uint8_t* buffer, size_t capacity, size_t& actual_size, uint32_t) override {
+    actual_size = 0;
+    if (!connected_) return audio_studio::framework::Status::unavailable("scripted datalink is closed");
+    if (buffer == nullptr && capacity > 0) return audio_studio::framework::Status::invalidArgument("scripted datalink read is null");
+    const size_t count = std::min(capacity, rx_.size());
+    if (count == 0) return audio_studio::framework::Status::unavailable("scripted datalink has no frame");
+    std::copy(rx_.begin(), rx_.begin() + static_cast<long>(count), buffer);
+    rx_.erase(rx_.begin(), rx_.begin() + static_cast<long>(count));
+    actual_size = count;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status flush() override { return audio_studio::framework::Status::success(); }
+  bool isConnected() const override { return connected_; }
+  audio_studio::drivers::transport::DataLinkDeviceCaps caps() const override {
+    return {mtu_, false, true};
+  }
+  std::string name() const override { return name_; }
+
+  void injectFirstNak() { inject_first_nak_ = true; }
+  void enableTransportAck() { auto_transport_ack_ = true; }
+  size_t dataFrames() const { return data_frames_; }
+  const std::vector<uint8_t>& writtenBytes() const { return written_; }
+
+private:
+  void enqueueTransportPacket(const audio_studio::framework::transport::TransportFrame& transport_frame) {
+    using namespace audio_studio::framework::transport;
+    const auto payload = FrameCodec::encode(transport_frame);
+    DataLinkFrame frame;
+    frame.flags = kDataLinkFrameData | kDataLinkFrameEnd;
+    frame.link_sequence = next_peer_sequence_++;
+    frame.transport_size = static_cast<uint32_t>(payload.size());
+    frame.fragment_offset = 0;
+    frame.fragment_index = 0;
+    frame.fragment_count = 1;
+    frame.payload = payload;
+    const auto encoded = DataLinkFrameCodec::encode(frame);
+    rx_.insert(rx_.end(), encoded.begin(), encoded.end());
+  }
+
+  size_t mtu_ = 64;
+  bool connected_ = false;
+  bool inject_first_nak_ = false;
+  bool sent_nak_ = false;
+  bool auto_transport_ack_ = false;
+  size_t data_frames_ = 0;
+  uint32_t next_peer_sequence_ = 1000;
+  std::string name_;
+  std::vector<uint8_t> rx_;
+  std::vector<uint8_t> written_;
+};
 
 uint16_t findFreePort(audio_studio::drivers::socket::ISocketDriver& driver) {
   for (uint16_t port = 29170; port < 29220; ++port) {
@@ -160,6 +268,91 @@ int main() {
   assert(!registry.registerService("", "bad").ok());
   assert(!registry.registerService("health", "duplicate").ok());
 
+  {
+    using namespace audio_studio::framework::transport;
+    DataLinkFrame frame;
+    frame.flags = kDataLinkFrameData | kDataLinkFrameEnd;
+    frame.link_sequence = 42;
+    frame.transport_size = 5;
+    frame.fragment_offset = 0;
+    frame.fragment_index = 0;
+    frame.fragment_count = 1;
+    frame.payload = {1, 2, 3, 4, 5};
+    const auto encoded = DataLinkFrameCodec::encode(frame);
+    DataLinkFrame decoded;
+    assert(DataLinkFrameCodec::decode(encoded.data(), encoded.size(), decoded).ok());
+    assert(decoded.link_sequence == 42);
+    assert(decoded.payload == frame.payload);
+    auto corrupted = encoded;
+    corrupted.back() ^= 0xff;
+    assert(!DataLinkFrameCodec::decode(corrupted.data(), corrupted.size(), decoded).ok());
+  }
+
+  {
+    ScriptedDataLinkDevice device(48);
+    assert(device.open({"unit-test-link"}).ok());
+    device.injectFirstNak();
+    audio_studio::framework::transport::DataLinkManager link(device, {5, 2});
+    const std::vector<uint8_t> payload(180, 0x7b);
+    auto link_status = link.sendPacket(payload, 100);
+    if (!link_status.ok()) std::cerr << "sendPacket failed: " << link_status.message() << "\n";
+    assert(link_status.ok());
+    assert(device.dataFrames() > 4);
+    assert(link.stats().retries == 1);
+  }
+
+  {
+    using namespace audio_studio::framework::transport;
+    TransportFrame request;
+    request.channel_id = 6;
+    request.command_id = 9;
+    request.flags = kTransportFrameRequest | kTransportFrameAckRequired;
+    request.sequence_id = 77;
+    request.session_id = 88;
+    request.payload = {0x10, 0x20};
+    const auto encoded = FrameCodec::encode(request);
+    TransportFrame decoded;
+    assert(FrameCodec::decode(encoded.data(), encoded.size(), decoded).ok());
+    assert(decoded.command_id == 9);
+    assert(decoded.flags == (kTransportFrameRequest | kTransportFrameAckRequired));
+    assert(decoded.session_id == 88);
+    assert(decoded.payload == request.payload);
+    auto corrupted = encoded;
+    corrupted.back() ^= 0x5a;
+    assert(!FrameCodec::decode(corrupted.data(), corrupted.size(), decoded).ok());
+  }
+
+  {
+    using namespace audio_studio::framework::transport;
+    ScriptedDataLinkDevice device(256);
+    assert(device.open({"transport-sync"}).ok());
+    device.enableTransportAck();
+    TransportManager manager;
+    assert(manager.bindDataLinkDevice(device).ok());
+    assert(manager.openChannel(6, "log").ok());
+    TransportFrame response;
+    auto sync_status = manager.sendSync(6, 1, {0x01, 0x02}, response, 100);
+    if (!sync_status.ok()) std::cerr << "sendSync failed: " << sync_status.message() << "\n";
+    assert(sync_status.ok());
+    assert((response.flags & kTransportFrameAck) != 0);
+    assert(response.payload == std::vector<uint8_t>({'o', 'k'}));
+
+    std::mutex callback_mutex;
+    bool callback_called = false;
+    assert(manager.sendAsync(6, 2, {0x03}, [&](const audio_studio::framework::Status& status, const TransportFrame& async_response) {
+      std::lock_guard<std::mutex> lock(callback_mutex);
+      assert(status.ok());
+      assert((async_response.flags & kTransportFrameAck) != 0);
+      callback_called = true;
+    }, 100).ok());
+    assert(manager.drainAsync(6).ok());
+    {
+      std::lock_guard<std::mutex> lock(callback_mutex);
+      assert(callback_called);
+    }
+    assert(manager.closeChannel(6).ok());
+  }
+
   using audio_studio::rpc::InProcessJsonRpcTransport;
   using audio_studio::rpc::JsonRpcClient;
   using audio_studio::rpc::JsonRpcEndpoint;
@@ -209,8 +402,11 @@ int main() {
   assert(batch.asArray()[0].at("id").asInt64() == 7);
 
   audio_studio::framework::audio::AudioService audio_service;
+  audio_studio::framework::log::LogService log_service;
   JsonRpcEndpoint audio_endpoint;
-  audio_studio::rpc::registerAudioRpcMethods(audio_endpoint, audio_service);
+  auto audio_context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(audio_service);
+  audio_context->setLogService(&log_service);
+  audio_studio::rpc::registerAudioStudioRpcMethods(audio_endpoint, audio_context);
   InProcessJsonRpcTransport audio_transport(audio_endpoint);
   JsonRpcClient audio_client(audio_transport);
   audio_studio::rpc::AudioRpcClient typed_audio(audio_client);
@@ -293,6 +489,42 @@ int main() {
 
   auto& drivers = audio_studio::drivers::DriverManager::instance();
   assert(drivers.initialize().ok());
+  log_service.configureDeviceRegistry(&drivers.logRegistry());
+
+  {
+    using namespace audio_studio;
+    framework::log::LogSessionConfig config;
+    config.session_id = "log-rpc-test";
+    config.driver_factory = "linux-host";
+    config.source = "firmware";
+    config.min_level = "debug";
+    framework::log::LogSessionInfo session;
+    assert(log_service.createSession(config, session).ok());
+    assert(log_service.start(session.session_id).ok());
+    std::vector<framework::log::LogEntry> entries;
+    assert(log_service.readEntries(session.session_id, 4, entries).ok());
+    assert(!entries.empty());
+    assert(entries.front().tag == "FW");
+    assert(entries.front().message.find("audio controller") != std::string::npos);
+    assert(log_service.stop(session.session_id).ok());
+    assert(log_service.closeSession(session.session_id).ok());
+
+    rpc::JsonValue create_params = rpc::JsonValue::object();
+    create_params["session_id"] = "log-rpc-2";
+    create_params["driver_factory"] = "linux-host";
+    create_params["source"] = "firmware";
+    create_params["min_level"] = "info";
+    auto created = audio_client.call("log.createSession", create_params);
+    assert(created.at("session").at("session_id").asString() == "log-rpc-2");
+    rpc::JsonValue session_params = rpc::JsonValue::object();
+    session_params["session_id"] = "log-rpc-2";
+    assert(audio_client.call("log.start", session_params).at("session").at("running").asBool());
+    auto read_entries = audio_client.call("log.readEntries", session_params);
+    assert(read_entries.at("entries").asArray().size() >= 1);
+    assert(read_entries.at("entries").asArray()[0].at("text").asString().find("audio controller") != std::string::npos);
+    assert(audio_client.call("log.stop", session_params).at("session").at("running").asBool() == false);
+    assert(audio_client.call("log.closeSession", session_params).at("closed").asBool());
+  }
 
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   {

@@ -18,5 +18,6 @@ config PLATFORM_CORE
   depends on SERVER && FRAMEWORK_COMMON
 
 source "server/platform/a2/Kconfig"
+source "server/platform/simulator/Kconfig"
 
 endmenu

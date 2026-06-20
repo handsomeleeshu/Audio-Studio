@@ -24,6 +24,9 @@
 #if defined(CONFIG_FRAMEWORK_CONFIG)
 #include "config_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+#include "log_service.hpp"
+#endif
 #endif
 
 namespace {
@@ -96,6 +99,13 @@ audio_studio::framework::audio::AudioService& audioService() {
 #if defined(CONFIG_FRAMEWORK_CONFIG)
 audio_studio::framework::config::ConfigService& configService() {
   static audio_studio::framework::config::ConfigService service;
+  return service;
+}
+#endif
+
+#if defined(CONFIG_FRAMEWORK_LOG)
+audio_studio::framework::log::LogService& logService() {
+  static audio_studio::framework::log::LogService service;
   return service;
 }
 #endif
@@ -202,6 +212,9 @@ audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefa
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   context->setConfigService(&configService());
 #endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+  context->setLogService(&logService());
+#endif
   audio_studio::rpc::registerAudioStudioRpcMethods(endpoint, context);
 #else
   audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
@@ -215,6 +228,9 @@ RpcEndpointBundle makeEndpointBundle(audio_studio::rpc::RpcStreamDefaults stream
   bundle.context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(audioService(), std::move(stream_defaults));
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   bundle.context->setConfigService(&configService());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+  bundle.context->setLogService(&logService());
 #endif
   audio_studio::rpc::registerAudioStudioRpcMethods(bundle.endpoint, bundle.context);
   return bundle;
@@ -251,14 +267,19 @@ int main(int argc, char** argv) {
   }
 #if defined(CONFIG_RPC)
   if (!options.rpc_once.empty()) {
-#if defined(CONFIG_DRIVERS_CORE) && defined(CONFIG_FRAMEWORK_CONFIG)
+#if defined(CONFIG_DRIVERS_CORE) && (defined(CONFIG_FRAMEWORK_CONFIG) || defined(CONFIG_FRAMEWORK_LOG))
     auto& drivers = audio_studio::drivers::DriverManager::instance();
     auto status = drivers.initialize();
     if (!status.ok()) {
       std::cerr << status.toJson() << "\n";
       return 1;
     }
+#if defined(CONFIG_FRAMEWORK_CONFIG)
     configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
+    logService().configureDeviceRegistry(&drivers.logRegistry());
+#endif
     std::cout << handleRpcOnce(options.rpc_once) << "\n";
     drivers.shutdown();
     return 0;
@@ -283,6 +304,9 @@ int main(int argc, char** argv) {
 #endif
 #if defined(CONFIG_FRAMEWORK_CONFIG) && defined(CONFIG_DRIVER_FILESYSTEM) && defined(CONFIG_DRIVER_OS) && defined(CONFIG_DRIVER_DYNLIB)
       configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
+      logService().configureDeviceRegistry(&drivers.logRegistry());
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {

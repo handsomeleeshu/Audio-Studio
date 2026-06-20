@@ -5,6 +5,13 @@
 
 namespace audio_studio::cli {
 
+struct CliLogEntry {
+  int sequence = 0;
+  std::string level;
+  std::string tag;
+  std::string text;
+};
+
 class Args {
 public:
   Args(int argc, char** argv);
@@ -21,6 +28,7 @@ private:
 std::string jsonEscape(const std::string& input);
 std::string okJson(const std::string& tool, const std::string& detail);
 std::string usageText(const std::string& tool, const std::string& action);
+std::string formatLogEntry(const CliLogEntry& entry, bool color);
 int runDummyTool(const std::string& tool, const std::string& action, const Args& args);
 int runCliTool(const std::string& tool, const std::string& action, const Args& args);
 int runCliTool(const std::string& tool, const std::string& default_action, int argc, char** argv);

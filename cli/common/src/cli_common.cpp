@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -58,12 +59,21 @@ struct CliOptions {
   uint16_t bytes_per_sample = 2;
   std::string sample_format = "s16le";
   std::string device = "default";
+  std::string source = "firmware";
+  std::string level = "info";
   std::string driver_factory = defaultAudioDriverFactory();
+  std::string datalink_endpoint;
+  std::string datalink_rx;
+  std::string datalink_tx;
+  uint32_t datalink_mtu = 0;
   bool blocking_write = true;
   bool nonblocking_write = false;
+  bool raw_log = false;
+  bool no_color = false;
   std::string file;
   std::string output;
   uint32_t duration_ms = 1000;
+  uint32_t count = 32;
   double seconds = 0.0;
   uint32_t chunk_bytes = 0;
   std::vector<std::string> paths;
@@ -99,11 +109,20 @@ Args argsFromOptions(const CliOptions& options) {
   addValue(values, "--bytes-per-sample", std::to_string(options.bytes_per_sample));
   addValue(values, "--sample-format", options.sample_format);
   addValue(values, "--device", options.device);
+  addValue(values, "--source", options.source);
+  addValue(values, "--level", options.level);
   addValue(values, "--driver-factory", options.driver_factory);
+  addIfSet(values, "--datalink-endpoint", options.datalink_endpoint);
+  addIfSet(values, "--datalink-rx", options.datalink_rx);
+  addIfSet(values, "--datalink-tx", options.datalink_tx);
+  if (options.datalink_mtu > 0) addValue(values, "--datalink-mtu", std::to_string(options.datalink_mtu));
   addValue(values, "--blocking-write", options.blocking_write && !options.nonblocking_write ? "true" : "false");
+  if (options.raw_log) values.push_back("--raw");
+  if (options.no_color) values.push_back("--no-color");
   addIfSet(values, "--file", options.file);
   addIfSet(values, "--output", options.output);
   addValue(values, "--duration-ms", std::to_string(options.duration_ms));
+  addValue(values, "--count", std::to_string(options.count));
   if (options.seconds > 0.0) addValue(values, "--seconds", std::to_string(options.seconds));
   if (options.chunk_bytes > 0) addValue(values, "--chunk-bytes", std::to_string(options.chunk_bytes));
   values.insert(values.end(), options.paths.begin(), options.paths.end());
@@ -112,6 +131,7 @@ Args argsFromOptions(const CliOptions& options) {
 
 int parseCliOptions(const std::string& tool, const std::string& default_action, int argc, char** argv, CliOptions& options) {
   options.action = default_action;
+  if (tool == "as_log") options.driver_factory = "linux-host";
   CLI::App app{"Audio Studio command line tool", tool};
   app.option_defaults()->always_capture_default();
   app.add_flag("--self-test", options.self_test, "Run the host-side self test path");
@@ -131,12 +151,21 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   app.add_option("--bytes-per-sample", options.bytes_per_sample, "Audio bytes per sample");
   app.add_option("--sample-format", options.sample_format, "Audio sample format");
   app.add_option("--device", options.device, "Audio device name");
+  app.add_option("--source", options.source, "Log source path or firmware source name");
+  app.add_option("--level", options.level, "Minimum decoded log level");
   app.add_option("--driver-factory", options.driver_factory, "Driver factory name");
+  app.add_option("--datalink-endpoint", options.datalink_endpoint, "Simulator data-link endpoint prefix");
+  app.add_option("--datalink-rx", options.datalink_rx, "Simulator data-link RX file");
+  app.add_option("--datalink-tx", options.datalink_tx, "Simulator data-link TX file");
+  app.add_option("--datalink-mtu", options.datalink_mtu, "Simulator data-link MTU");
   app.add_option("--blocking-write", options.blocking_write, "Whether playback stream writes use blocking semantics");
   app.add_flag("--nonblocking-write", options.nonblocking_write, "Request nonblocking playback stream writes");
+  app.add_flag("--raw", options.raw_log, "Read raw log chunks instead of decoded entries");
+  app.add_flag("--no-color", options.no_color, "Disable ANSI color in log output");
   app.add_option("--file", options.file, "Playback input file");
   app.add_option("--output", options.output, "Record output file");
   app.add_option("--duration-ms", options.duration_ms, "Record duration in milliseconds");
+  app.add_option("--count", options.count, "Maximum log entries or raw chunks to read");
   app.add_option("--seconds", options.seconds, "Record duration in seconds");
   app.add_option("--chunk-bytes", options.chunk_bytes, "Audio stream chunk size in bytes");
   app.add_option("path", options.paths, "Optional playback input or record output path");
@@ -211,11 +240,18 @@ bool takesValue(const std::string& flag) {
     "--bytes-per-sample",
     "--sample-format",
     "--device",
+    "--source",
+    "--level",
     "--driver-factory",
+    "--datalink-endpoint",
+    "--datalink-rx",
+    "--datalink-tx",
+    "--datalink-mtu",
     "--blocking-write",
     "--file",
     "--output",
     "--duration-ms",
+    "--count",
     "--seconds",
     "--chunk-bytes",
     "--method",
@@ -577,6 +613,79 @@ int runAudioTool(const std::string& tool, rpc::JsonRpcClient& client, rpc::IRpcS
   }
   return -1;
 }
+
+std::string logSessionIdFromArgs(const Args& args) {
+  return args.valueAfter("--session", "as_log");
+}
+
+rpc::JsonValue logSessionParamsFromArgs(const Args& args) {
+  rpc::JsonValue params = rpc::JsonValue::object();
+  params["session_id"] = logSessionIdFromArgs(args);
+  params["driver_factory"] = args.valueAfter("--driver-factory", "linux-host");
+  params["source"] = args.valueAfter("--source", args.valueAfter("--device", "firmware"));
+  params["min_level"] = args.valueAfter("--level", "info");
+  params["raw"] = args.has("--raw");
+  if (!args.valueAfter("--datalink-endpoint").empty()) {
+    params["datalink_endpoint"] = args.valueAfter("--datalink-endpoint");
+  }
+  if (!args.valueAfter("--datalink-rx").empty()) {
+    params["datalink_rx"] = args.valueAfter("--datalink-rx");
+  }
+  if (!args.valueAfter("--datalink-tx").empty()) {
+    params["datalink_tx"] = args.valueAfter("--datalink-tx");
+  }
+  if (!args.valueAfter("--datalink-mtu").empty()) {
+    params["datalink_mtu"] = static_cast<uint32_t>(std::stoul(args.valueAfter("--datalink-mtu")));
+  }
+  return params;
+}
+
+CliLogEntry cliLogEntryFromJson(const rpc::JsonValue& value) {
+  CliLogEntry entry;
+  entry.sequence = static_cast<int>(value.at("sequence").asInt64());
+  entry.level = value.at("level").asString();
+  entry.tag = value.at("tag").asString();
+  entry.text = value.has("text") ? value.at("text").asString() : value.at("message").asString();
+  return entry;
+}
+
+int runLogTool(rpc::JsonRpcClient& client, const Args& args) {
+  const std::string session_id = logSessionIdFromArgs(args);
+  auto create_params = logSessionParamsFromArgs(args);
+  client.call("log.createSession", create_params);
+
+  rpc::JsonValue session_params = rpc::JsonValue::object();
+  session_params["session_id"] = session_id;
+  client.call("log.start", session_params);
+
+  try {
+    const uint32_t count = uint32Arg(args, "--count", 32);
+    if (args.has("--raw")) {
+      session_params["max_chunks"] = count;
+      auto raw = client.call("log.readRaw", session_params);
+      for (const auto& chunk : raw.at("chunks").asArray()) {
+        std::cout << chunk.at("bytes").asString();
+      }
+    } else {
+      session_params["max_entries"] = count;
+      auto result = client.call("log.readEntries", session_params);
+      const bool color = !args.has("--no-color");
+      for (const auto& item : result.at("entries").asArray()) {
+        std::cout << formatLogEntry(cliLogEntryFromJson(item), color) << "\n";
+      }
+    }
+    client.call("log.stop", session_params);
+    client.call("log.closeSession", session_params);
+  } catch (...) {
+    try {
+      client.call("log.stop", session_params);
+      client.call("log.closeSession", session_params);
+    } catch (...) {
+    }
+    throw;
+  }
+  return 0;
+}
 #endif
 
 } // namespace
@@ -627,6 +736,38 @@ std::string okJson(const std::string& tool, const std::string& detail) {
 
 std::string usageText(const std::string& tool, const std::string& action) {
   return "usage: " + tool + " [--self-test|--target dummy] (" + action + ")";
+}
+
+std::string formatLogEntry(const CliLogEntry& entry, bool color) {
+  auto normalized = entry.level;
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  std::string label = "INF";
+  std::string ansi = "\033[32m";
+  if (normalized == "critical") {
+    label = "CRT";
+    ansi = "\033[35m";
+  } else if (normalized == "error" || normalized == "err") {
+    label = "ERR";
+    ansi = "\033[31m";
+  } else if (normalized == "warning" || normalized == "warn") {
+    label = "WRN";
+    ansi = "\033[33m";
+  } else if (normalized == "debug") {
+    label = "DBG";
+    ansi = "\033[36m";
+  } else if (normalized == "verbose") {
+    label = "VRB";
+    ansi = "\033[90m";
+  }
+
+  std::ostringstream out;
+  if (color) out << ansi;
+  out << "#" << entry.sequence << " [" << label << "] [" << (entry.tag.empty() ? "FW" : entry.tag) << "] " << entry.text;
+  if (color) out << "\033[0m";
+  return out.str();
 }
 
 int runDummyTool(const std::string& tool, const std::string& action, const Args& args) {
@@ -698,6 +839,11 @@ int runCliTool(const std::string& tool, const std::string& action, const Args& a
         manager.shutdown();
         return audio_result;
       }
+      if (tool == "as_log") {
+        const int log_result = runLogTool(client, args);
+        manager.shutdown();
+        return log_result;
+      }
       std::cout << client.call(method, params).dump() << "\n";
       manager.shutdown();
       return 0;
@@ -715,6 +861,11 @@ int runCliTool(const std::string& tool, const std::string& action, const Args& a
       if (audio_result >= 0) {
         manager.shutdown();
         return audio_result;
+      }
+      if (tool == "as_log") {
+        const int log_result = runLogTool(client, args);
+        manager.shutdown();
+        return log_result;
       }
       std::cout << client.call(method, params).dump() << "\n";
       manager.shutdown();

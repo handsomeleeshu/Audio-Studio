@@ -21,6 +21,7 @@ AUDIO_CONTROLLER_PROFILE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'audio_cont
 MODULE_CONFIG_EXAMPLE_BUILD_DIR = ROOT / 'out' / 'module-config-sdk-example'
 PREBUILT_ALSATPLG = ROOT / 'third_party' / 'alsatplg' / 'bin' / 'alsatplg'
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
+RPC_SOCKET_SIMULATOR_BUILD_DIR = ROOT / 'out' / 'linux' / 'simulator' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
 WINDOWS_RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'rpc_socket' / 'Debug'
@@ -220,6 +221,11 @@ def assert_modular_kconfig_tree():
     require_contains(rpc_kconfig, 'config RPC_SERVER')
     require_contains(rpc_kconfig, 'config RPC_TRANSPORT_SOCKET')
     require_contains(rpc_kconfig, 'config RPC_TRANSPORT_PIPE')
+    platform_kconfig = read_text(ROOT / 'server' / 'platform' / 'Kconfig')
+    require_contains(platform_kconfig, 'source "server/platform/a2/Kconfig"')
+    require_contains(platform_kconfig, 'source "server/platform/simulator/Kconfig"')
+    simulator_kconfig = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'Kconfig')
+    require_contains(simulator_kconfig, 'config PLATFORM_SIMULATOR')
 
 
 def assert_driver_cmake_tree():
@@ -428,6 +434,7 @@ def main():
         '-B', str(AUDIO_CONTROLLER_BUILD_DIR),
     ])
     run(['cmake', '--build', str(AUDIO_CONTROLLER_BUILD_DIR)])
+    run(['ctest', '--test-dir', str(AUDIO_CONTROLLER_BUILD_DIR), '--output-on-failure'])
     audio_controller_lib = AUDIO_CONTROLLER_BUILD_DIR / 'libaudio_controller.a'
     assert audio_controller_lib.exists(), f'missing audio_controller library: {audio_controller_lib}'
     audio_controller_header = ROOT / 'audio_controller' / 'include' / 'audio_controller.h'
@@ -436,6 +443,7 @@ def main():
     if AUDIO_CONTROLLER_PROFILE_BUILD_DIR.exists():
         shutil.rmtree(AUDIO_CONTROLLER_PROFILE_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'audio_controller', 'linux', 'a2'])
+    run(['ctest', '--test-dir', str(AUDIO_CONTROLLER_PROFILE_BUILD_DIR), '--output-on-failure'])
     profile_audio_controller_lib = AUDIO_CONTROLLER_PROFILE_BUILD_DIR / 'libaudio_controller.a'
     assert profile_audio_controller_lib.exists(), f'missing audio_controller profile library: {profile_audio_controller_lib}'
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
@@ -586,7 +594,7 @@ def main():
     if rpc_socket_record_wav.exists():
         rpc_socket_record_wav.unlink()
     socket_server = subprocess.Popen(
-        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '15'],
+        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '20'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -601,6 +609,16 @@ def main():
         ])
         require_contains(socket_cli, '"ok":true')
         require_contains(socket_cli, '"platform":"a2"')
+        socket_log = retry_check_output([
+            str(RPC_SOCKET_BUILD_DIR / 'as_log'),
+            '--host', '127.0.0.1',
+            '--port', socket_port,
+            '--level', 'info',
+            '--count', '2',
+            '--no-color',
+        ])
+        require_contains(socket_log, '[INF] [FW] audio controller log online')
+        require_contains(socket_log, '[WRN] [FW] transport channel waiting for host')
         socket_play = retry_check_output([
             str(RPC_SOCKET_BUILD_DIR / 'as_play'),
             '--host', '127.0.0.1',
@@ -645,6 +663,40 @@ def main():
     finally:
         if socket_server.poll() is None:
             socket_server.terminate()
+
+    if RPC_SOCKET_SIMULATOR_BUILD_DIR.exists():
+        shutil.rmtree(RPC_SOCKET_SIMULATOR_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'rpc_socket', 'linux', 'simulator'])
+    rpc_socket_sim_config = read_text(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'generated' / '.config')
+    require_contains(rpc_socket_sim_config, 'CONFIG_TARGET_PLATFORM_SIMULATOR=y')
+    require_contains(rpc_socket_sim_config, 'CONFIG_PLATFORM_SIMULATOR=y')
+    assert (RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server').exists()
+    assert (RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_log').exists()
+    run(['ctest', '--test-dir', str(RPC_SOCKET_SIMULATOR_BUILD_DIR), '--output-on-failure'])
+    simulator_port = find_free_port()
+    simulator_server = subprocess.Popen(
+        [str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', simulator_port, '--max-requests', '5'],
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        simulator_log = retry_check_output([
+            str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_log'),
+            '--host', '127.0.0.1',
+            '--port', simulator_port,
+            '--driver-factory', 'rv32qemu-simulator',
+            '--level', 'debug',
+            '--count', '2',
+            '--no-color',
+        ])
+        require_contains(simulator_log, '[INF] [FW] rv32qemu audio controller log channel open')
+        require_contains(simulator_log, '[DBG] [TRP] transport manager log read request')
+        assert simulator_server.wait(timeout=5) == 0
+    finally:
+        if simulator_server.poll() is None:
+            simulator_server.terminate()
 
     if shutil.which('pactl'):
         try:
@@ -712,7 +764,7 @@ def main():
         if path.exists():
             path.unlink()
     pipe_server = subprocess.Popen(
-        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '14'],
+        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '19'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -729,6 +781,16 @@ def main():
         ])
         require_contains(pipe_cli, '"ok":true')
         require_contains(pipe_cli, '"platform":"a2"')
+        pipe_log = retry_check_output([
+            str(RPC_PIPE_BUILD_DIR / 'as_log'),
+            '--rpc', 'pipe',
+            '--request-pipe', str(request_pipe),
+            '--response-pipe', str(response_pipe),
+            '--level', 'warning',
+            '--count', '1',
+            '--no-color',
+        ])
+        require_contains(pipe_log, '[WRN] [FW] transport channel waiting for host')
         pipe_play = retry_check_output([
             str(RPC_PIPE_BUILD_DIR / 'as_play'),
             '--rpc', 'pipe',
