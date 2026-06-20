@@ -11,7 +11,7 @@ endif()
 
 if(CONFIG_DRIVERS_CORE OR CONFIG_DRIVER_DUMMY OR CONFIG_DRIVER_OS OR CONFIG_DRIVER_SOCKET OR
    CONFIG_DRIVER_FILESYSTEM OR CONFIG_DRIVER_PIPE OR CONFIG_DRIVER_DYNLIB OR
-   CONFIG_DRIVER_TRANSPORT OR CONFIG_DRIVER_AUDIO OR CONFIG_DRIVER_CONTROL OR
+   CONFIG_DRIVER_DATALINK OR CONFIG_DRIVER_AUDIO OR CONFIG_DRIVER_CONTROL OR
    CONFIG_DRIVER_LOG OR CONFIG_DRIVER_DUMP)
   add_subdirectory("${PROJECT_SOURCE_DIR}/drivers" "${CMAKE_BINARY_DIR}/drivers")
 endif()
@@ -37,14 +37,14 @@ endif()
 if(CONFIG_PLATFORM_SIMULATOR)
   add_library(audio_studio_platform_simulator OBJECT
     platform/simulator/src/rv32qemu_log_device.cpp
-    platform/simulator/src/simulator_pipe_transport_driver.cpp
+    platform/simulator/src/simulator_pipe_datalink_device.cpp
     platform/simulator/src/simulator_platform.cpp
   )
   target_include_directories(audio_studio_platform_simulator PUBLIC platform/simulator/include)
   target_link_libraries(audio_studio_platform_simulator PUBLIC
     audio_studio_platform_core
     audio_studio_driver_log
-    audio_studio_driver_transport
+    audio_studio_driver_datalink
     audio_studio_framework_transport)
   target_compile_features(audio_studio_platform_simulator PUBLIC cxx_std_17)
 endif()
@@ -135,7 +135,7 @@ if(CONFIG_FRAMEWORK_TRANSPORT)
   )
   target_include_directories(audio_studio_framework_transport PUBLIC
     framework/transport/include
-    "${PROJECT_SOURCE_DIR}/drivers/transport/include")
+    "${PROJECT_SOURCE_DIR}/drivers/datalink/include")
   target_link_libraries(audio_studio_framework_transport PUBLIC audio_studio_framework_common)
   target_compile_features(audio_studio_framework_transport PUBLIC cxx_std_17)
 endif()
@@ -166,8 +166,8 @@ endif()
 if(CONFIG_DRIVER_DYNLIB)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_dynlib)
 endif()
-if(CONFIG_DRIVER_TRANSPORT)
-  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_transport)
+if(CONFIG_DRIVER_DATALINK)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_datalink)
 endif()
 if(CONFIG_DRIVER_AUDIO)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_audio)

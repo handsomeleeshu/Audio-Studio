@@ -11,28 +11,15 @@ set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-option(AUDIO_CONTROLLER_PLATFORM_RV32QEMU "Build rv32qemu audio_controller platform ops" ON)
-
-set(AUDIO_CONTROLLER_PLATFORM_SOURCES)
-set(AUDIO_CONTROLLER_PLATFORM_INCLUDE_DIRS)
-if(AUDIO_CONTROLLER_PLATFORM_RV32QEMU)
-  list(APPEND AUDIO_CONTROLLER_PLATFORM_SOURCES
-    platform/rv32qemu/src/ac_rv32qemu_datalink.c)
-  list(APPEND AUDIO_CONTROLLER_PLATFORM_INCLUDE_DIRS
-    "${CMAKE_CURRENT_LIST_DIR}/platform/rv32qemu/include")
-endif()
-
 add_library(audio_controller STATIC
   src/ac_audio_controller.c
   src/ac_datalink.c
   src/ac_transport.c
   src/ac_topology_parser.c
-  src/ac_sof_loader.c
-  ${AUDIO_CONTROLLER_PLATFORM_SOURCES})
+  src/ac_sof_loader.c)
 
 target_include_directories(audio_controller PUBLIC
-  "${CMAKE_CURRENT_LIST_DIR}/include"
-  ${AUDIO_CONTROLLER_PLATFORM_INCLUDE_DIRS})
+  "${CMAKE_CURRENT_LIST_DIR}/include")
 
 target_include_directories(audio_controller PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/src"

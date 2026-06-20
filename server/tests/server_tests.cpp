@@ -34,11 +34,11 @@
 
 namespace {
 
-class ScriptedDataLinkDevice final : public audio_studio::drivers::transport::IDataLinkDevice {
+class ScriptedDataLinkDevice final : public audio_studio::drivers::datalink::IDataLinkDevice {
 public:
   explicit ScriptedDataLinkDevice(size_t mtu) : mtu_(mtu) {}
 
-  audio_studio::framework::Status open(const audio_studio::drivers::transport::DataLinkDeviceConfig& config) override {
+  audio_studio::framework::Status open(const audio_studio::drivers::datalink::DataLinkDeviceConfig& config) override {
     name_ = config.name.empty() ? "scripted" : config.name;
     connected_ = true;
     return audio_studio::framework::Status::success();
@@ -97,7 +97,7 @@ public:
 
   audio_studio::framework::Status flush() override { return audio_studio::framework::Status::success(); }
   bool isConnected() const override { return connected_; }
-  audio_studio::drivers::transport::DataLinkDeviceCaps caps() const override {
+  audio_studio::drivers::datalink::DataLinkDeviceCaps caps() const override {
     return {mtu_, false, true};
   }
   std::string name() const override { return name_; }

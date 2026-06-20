@@ -69,10 +69,20 @@ private:
     bool running = false;
     size_t entries_read = 0;
     size_t raw_chunks_read = 0;
+    size_t decoded_lines_read = 0;
+    std::string raw_trace_path;
+    std::string decoded_trace_path;
   };
 
+  static bool sofLoggerEnabled(const Session& session);
+  static std::string optionString(const LogSessionConfig& config, const std::string& key);
+  static std::string safePathToken(const std::string& value);
+  static std::string shellQuote(const std::string& value);
   static LogEntry decodeLine(int sequence, const std::string& line);
+  static LogEntry decodeSofLoggerLine(int sequence, const std::string& line);
   static bool passesLevel(const std::string& level, const std::string& min_level);
+  framework::Status appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks);
+  framework::Status decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries);
   framework::Status requireSession(const std::string& id, Session*& session);
   framework::Status requireSession(const std::string& id, const Session*& session) const;
   LogSessionInfo infoFor(const Session& session) const;

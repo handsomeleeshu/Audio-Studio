@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "datalink_frame.hpp"
-#include "transport_driver.hpp"
+#include "datalink_device.hpp"
 
 namespace audio_studio::framework::transport {
 
@@ -24,7 +24,7 @@ struct DataLinkManagerStats {
 
 class DataLinkManager {
 public:
-  DataLinkManager(drivers::transport::IDataLinkDevice& device, DataLinkManagerConfig config = {});
+  DataLinkManager(drivers::datalink::IDataLinkDevice& device, DataLinkManagerConfig config = {});
 
   framework::Status sendPacket(const std::vector<uint8_t>& payload, uint32_t timeout_ms);
   framework::Status receivePacket(std::vector<uint8_t>& payload, uint32_t timeout_ms);
@@ -34,7 +34,7 @@ private:
   framework::Status readFrame(DataLinkFrame& frame, uint32_t timeout_ms);
   framework::Status sendAck(const DataLinkFrame& frame, bool ok, uint32_t timeout_ms);
 
-  drivers::transport::IDataLinkDevice& device_;
+  drivers::datalink::IDataLinkDevice& device_;
   DataLinkManagerConfig config_;
   DataLinkManagerStats stats_;
   uint32_t next_link_sequence_ = 1;

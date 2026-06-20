@@ -171,6 +171,34 @@ def require_contains(text, expected):
     assert expected in text, f'missing {expected!r}'
 
 
+def assert_datalink_driver_naming():
+    assert (ROOT / 'drivers' / 'datalink' / 'include' / 'datalink_device.hpp').exists()
+    assert not (ROOT / 'drivers' / 'transport' / 'include' / 'transport_driver.hpp').exists()
+    assert not (ROOT / 'audio_controller' / 'platform').exists()
+
+    forbidden = (
+        'ITransportDriver',
+        'ITransportDriverFactory',
+        'TransportDriverRegistry',
+        'linux_host_transport_driver',
+        'macos_transport_driver',
+        'CONFIG_DRIVER_TRANSPORT',
+    )
+    for root in (
+        ROOT / 'drivers',
+        ROOT / 'server',
+        ROOT / 'configs',
+        ROOT / 'audio_controller',
+    ):
+        for source in root.rglob('*'):
+            if source.is_dir() or source.suffix not in ('.cpp', '.hpp', '.h', '.c', '.txt', '.cmake', ''):
+                continue
+            text = source.read_text(errors='ignore')
+            for expected_absent in forbidden:
+                assert expected_absent not in text, (
+                    f'{expected_absent} still appears in {source.relative_to(ROOT)}')
+
+
 def assert_as_config_decode_status(result, out_dir, project_name):
     decode_log = out_dir / f'{project_name}_decode.log'
     assert decode_log.exists(), f'missing as_config decode log: {decode_log}'
@@ -239,7 +267,7 @@ def assert_driver_cmake_tree():
         'os',
         'pipe',
         'socket',
-        'transport',
+        'datalink',
     ]:
         assert (ROOT / 'drivers' / module / 'CMakeLists.txt').exists()
         assert not (ROOT / 'drivers' / module / 'src' / 'CMakeLists.txt').exists()
@@ -315,6 +343,7 @@ def exercise_kconfig_targets():
 def main():
     assert_modular_kconfig_tree()
     assert_driver_cmake_tree()
+    assert_datalink_driver_naming()
 
     if LINUX_BUILD_DIR.exists():
         shutil.rmtree(LINUX_BUILD_DIR)

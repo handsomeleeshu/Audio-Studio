@@ -27,10 +27,10 @@ public:
   using AsyncCallback = std::function<void(const framework::Status&, const TransportFrame&)>;
 
   TransportManager();
-  explicit TransportManager(drivers::transport::IDataLinkDevice& device);
+  explicit TransportManager(drivers::datalink::IDataLinkDevice& device);
   ~TransportManager();
 
-  framework::Status bindDataLinkDevice(drivers::transport::IDataLinkDevice& device,
+  framework::Status bindDataLinkDevice(drivers::datalink::IDataLinkDevice& device,
                                        DataLinkManagerConfig config = {});
   framework::Status openChannel(uint16_t id, std::string service);
   framework::Status closeChannel(uint16_t id);
@@ -64,7 +64,7 @@ private:
   mutable std::mutex io_mutex_;
   std::map<uint16_t, std::shared_ptr<ChannelRuntime>> channels_;
   std::unique_ptr<DataLinkManager> datalink_;
-  drivers::transport::IDataLinkDevice* device_ = nullptr;
+  drivers::datalink::IDataLinkDevice* device_ = nullptr;
   std::atomic<uint32_t> next_sequence_ {1};
 };
 

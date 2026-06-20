@@ -66,6 +66,8 @@ struct CliOptions {
   std::string datalink_rx;
   std::string datalink_tx;
   uint32_t datalink_mtu = 0;
+  std::string sof_logger;
+  std::string trace_ldc;
   bool blocking_write = true;
   bool nonblocking_write = false;
   bool raw_log = false;
@@ -116,6 +118,8 @@ Args argsFromOptions(const CliOptions& options) {
   addIfSet(values, "--datalink-rx", options.datalink_rx);
   addIfSet(values, "--datalink-tx", options.datalink_tx);
   if (options.datalink_mtu > 0) addValue(values, "--datalink-mtu", std::to_string(options.datalink_mtu));
+  addIfSet(values, "--sof-logger", options.sof_logger);
+  addIfSet(values, "--trace-ldc", options.trace_ldc);
   addValue(values, "--blocking-write", options.blocking_write && !options.nonblocking_write ? "true" : "false");
   if (options.raw_log) values.push_back("--raw");
   if (options.no_color) values.push_back("--no-color");
@@ -158,6 +162,8 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   app.add_option("--datalink-rx", options.datalink_rx, "Simulator data-link RX file");
   app.add_option("--datalink-tx", options.datalink_tx, "Simulator data-link TX file");
   app.add_option("--datalink-mtu", options.datalink_mtu, "Simulator data-link MTU");
+  app.add_option("--sof-logger", options.sof_logger, "SOF logger executable used to decode raw firmware trace");
+  app.add_option("--trace-ldc", options.trace_ldc, "SOF logger dictionary used to decode raw firmware trace");
   app.add_option("--blocking-write", options.blocking_write, "Whether playback stream writes use blocking semantics");
   app.add_flag("--nonblocking-write", options.nonblocking_write, "Request nonblocking playback stream writes");
   app.add_flag("--raw", options.raw_log, "Read raw log chunks instead of decoded entries");
@@ -247,6 +253,8 @@ bool takesValue(const std::string& flag) {
     "--datalink-rx",
     "--datalink-tx",
     "--datalink-mtu",
+    "--sof-logger",
+    "--trace-ldc",
     "--blocking-write",
     "--file",
     "--output",
@@ -637,6 +645,12 @@ rpc::JsonValue logSessionParamsFromArgs(const Args& args) {
   if (!args.valueAfter("--datalink-mtu").empty()) {
     params["datalink_mtu"] = static_cast<uint32_t>(std::stoul(args.valueAfter("--datalink-mtu")));
   }
+  if (!args.valueAfter("--sof-logger").empty()) {
+    params["sof_logger"] = args.valueAfter("--sof-logger");
+  }
+  if (!args.valueAfter("--trace-ldc").empty()) {
+    params["trace_ldc"] = args.valueAfter("--trace-ldc");
+  }
   return params;
 }
 
@@ -813,7 +827,7 @@ int runCliTool(const std::string& tool, const std::string& action, const Args& a
   driver_config.enable_filesystem = false;
   driver_config.enable_pipe = transport_name == "pipe";
   driver_config.enable_dynlib = false;
-  driver_config.enable_transport = false;
+  driver_config.enable_datalink = false;
   driver_config.enable_audio = false;
   driver_config.enable_control = false;
   driver_config.enable_log = false;

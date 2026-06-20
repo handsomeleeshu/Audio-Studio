@@ -1,5 +1,5 @@
 #include "log_device.hpp"
-#include "simulator_pipe_transport_driver.hpp"
+#include "simulator_pipe_datalink_device.hpp"
 #include "transport_manager.hpp"
 
 #include <fstream>
@@ -27,8 +27,8 @@ bool hasTransportEndpoint(const drivers::log::LogDeviceConfig& config) {
          !optionString(config, "tx_path").empty();
 }
 
-drivers::transport::TransportConfig transportConfigFromLogConfig(const drivers::log::LogDeviceConfig& config) {
-  drivers::transport::TransportConfig transport_config;
+drivers::datalink::DataLinkDeviceConfig transportConfigFromLogConfig(const drivers::log::LogDeviceConfig& config) {
+  drivers::datalink::DataLinkDeviceConfig transport_config;
   transport_config.name = "rv32qemu-log-datalink";
   transport_config.endpoint = optionString(config, "endpoint");
   transport_config.options = config.options;
@@ -79,7 +79,7 @@ public:
       return drivers::log::LogResult::success();
     }
 
-    datalink_ = std::make_unique<SimulatorPipeTransportDriver>();
+    datalink_ = std::make_unique<SimulatorPipeDataLinkDevice>();
     auto status = datalink_->open(transportConfigFromLogConfig(config_));
     if (!status.ok()) return status;
 
@@ -157,7 +157,7 @@ private:
   size_t chunks_written_ = 0;
   size_t chunks_read_ = 0;
   std::vector<drivers::log::LogRawChunk> chunks_;
-  std::unique_ptr<SimulatorPipeTransportDriver> datalink_;
+  std::unique_ptr<SimulatorPipeDataLinkDevice> datalink_;
   std::unique_ptr<framework::transport::TransportManager> manager_;
 };
 

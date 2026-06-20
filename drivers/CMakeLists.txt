@@ -28,8 +28,8 @@ if(CONFIG_DRIVER_DYNLIB)
   add_subdirectory(dynlib)
 endif()
 
-if(CONFIG_DRIVER_TRANSPORT)
-  add_subdirectory(transport)
+if(CONFIG_DRIVER_DATALINK)
+  add_subdirectory(datalink)
 endif()
 
 if(CONFIG_DRIVER_AUDIO)
@@ -63,7 +63,7 @@ if(CONFIG_DRIVERS_CORE)
     os/include
     pipe/include
     socket/include
-    transport/include
+    datalink/include
   )
   target_link_libraries(audio_studio_drivers_core PUBLIC
     audio_studio_config

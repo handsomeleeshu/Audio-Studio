@@ -1,5 +1,4 @@
 #include "audio_controller.h"
-#include "ac_rv32qemu_datalink.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -79,32 +78,6 @@ static size_t test_datalink_mtu(void* user)
     return 37u;
 }
 
-static void test_rv32qemu_datalink_ops(void)
-{
-    const char* rx_path;
-    const char* tx_path;
-    ac_rv32qemu_datalink_t datalink;
-    const audio_controller_datalink_device_ops_t* ops;
-    const unsigned char payload[3] = {1u, 2u, 3u};
-
-    rx_path = "ac_rv32qemu_test.rx";
-    tx_path = "ac_rv32qemu_test.tx";
-    remove(rx_path);
-    remove(tx_path);
-
-    ac_rv32qemu_datalink_init(&datalink, rx_path, tx_path, 91u);
-    ops = ac_rv32qemu_datalink_ops(&datalink);
-    assert(ops);
-    assert(ops->mtu(ops->user) == 91u);
-    assert(ops->open(ops->user) == 0);
-    assert(ops->write(ops->user, payload, sizeof(payload), 10u) == 0);
-    ops->close(ops->user);
-    assert(!datalink.open);
-
-    remove(rx_path);
-    remove(tx_path);
-}
-
 int main(void)
 {
     struct test_driver_state state;
@@ -143,6 +116,5 @@ int main(void)
 
     audio_controller_destroy(controller);
     assert(state.datalink_closed == 1);
-    test_rv32qemu_datalink_ops();
     return 0;
 }

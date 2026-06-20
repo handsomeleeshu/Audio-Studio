@@ -107,6 +107,9 @@ int audio_controller_install_all(audio_controller_t* controller,
 int audio_controller_get_summary(audio_controller_t* controller, audio_controller_topology_summary_t* summary);
 int audio_controller_get_transport_stats(audio_controller_t* controller,
                                          audio_controller_transport_stats_t* stats);
+int audio_controller_append_log_data(audio_controller_t* controller,
+                                     const void* data,
+                                     size_t size);
 const char* audio_controller_get_last_error(audio_controller_t* controller);
 
 #ifdef __cplusplus

@@ -15,7 +15,7 @@
 #include "os_driver.hpp"
 #include "pipe_driver.hpp"
 #include "socket_driver.hpp"
-#include "transport_driver.hpp"
+#include "datalink_device.hpp"
 
 namespace audio_studio::drivers {
 
@@ -43,12 +43,12 @@ struct DriverManagerConfig {
   std::string filesystem_factory = "macos";
   std::string pipe_factory = "macos";
   std::string dynlib_factory = "macos";
-  std::string transport_factory = "macos";
+  std::string datalink_factory = "macos";
 #else
   std::string filesystem_factory = "linux-host";
   std::string pipe_factory = "linux-host";
   std::string dynlib_factory = "linux-host";
-  std::string transport_factory = "linux-host";
+  std::string datalink_factory = "linux-host";
 #endif
 #if defined(_WIN32)
   std::string audio_factory = "wasapi";
@@ -71,7 +71,7 @@ struct DriverManagerConfig {
   bool enable_filesystem = true;
   bool enable_pipe = true;
   bool enable_dynlib = true;
-  bool enable_transport = true;
+  bool enable_datalink = true;
   bool enable_audio = true;
   bool enable_control = true;
   bool enable_log = true;
@@ -100,7 +100,7 @@ public:
   filesystem::FileSystemDriverRegistry& filesystemRegistry();
   pipe::PipeDriverRegistry& pipeRegistry();
   dynlib::DynlibDriverRegistry& dynlibRegistry();
-  transport::TransportDriverRegistry& transportRegistry();
+  datalink::DataLinkDeviceRegistry& datalinkRegistry();
   audio::AudioDeviceRegistry& audioRegistry();
   control::ControlDeviceRegistry& controlRegistry();
   log::LogDeviceRegistry& logRegistry();

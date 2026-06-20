@@ -6,7 +6,7 @@
 
 namespace audio_studio::framework::transport {
 
-DataLinkManager::DataLinkManager(drivers::transport::IDataLinkDevice& device, DataLinkManagerConfig config)
+DataLinkManager::DataLinkManager(drivers::datalink::IDataLinkDevice& device, DataLinkManagerConfig config)
   : device_(device), config_(config) {}
 
 framework::Status DataLinkManager::sendPacket(const std::vector<uint8_t>& payload, uint32_t timeout_ms) {

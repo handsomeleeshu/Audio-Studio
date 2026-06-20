@@ -31,7 +31,7 @@ struct TransportManager::ChannelRuntime {
 
 TransportManager::TransportManager() = default;
 
-TransportManager::TransportManager(drivers::transport::IDataLinkDevice& device) {
+TransportManager::TransportManager(drivers::datalink::IDataLinkDevice& device) {
   (void)bindDataLinkDevice(device);
 }
 
@@ -39,7 +39,7 @@ TransportManager::~TransportManager() {
   shutdown();
 }
 
-framework::Status TransportManager::bindDataLinkDevice(drivers::transport::IDataLinkDevice& device,
+framework::Status TransportManager::bindDataLinkDevice(drivers::datalink::IDataLinkDevice& device,
                                                        DataLinkManagerConfig config) {
   if (!device.isConnected()) return framework::Status::unavailable("data-link device is not connected");
   std::lock_guard<std::mutex> lock(io_mutex_);

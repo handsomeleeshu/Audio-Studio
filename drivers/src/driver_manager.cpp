@@ -109,8 +109,8 @@ dynlib::DynlibDriverRegistry& DriverManager::dynlibRegistry() {
   return dynlib::DynlibDriverRegistry::instance();
 }
 
-transport::TransportDriverRegistry& DriverManager::transportRegistry() {
-  return transport::TransportDriverRegistry::instance();
+datalink::DataLinkDeviceRegistry& DriverManager::datalinkRegistry() {
+  return datalink::DataLinkDeviceRegistry::instance();
 }
 
 audio::AudioDeviceRegistry& DriverManager::audioRegistry() {
@@ -176,8 +176,8 @@ framework::Status DriverManager::collectRegisteredFactories() {
   if (!status.ok()) return status;
 #endif
 
-#ifdef CONFIG_DRIVER_TRANSPORT
-  status = rememberFactoryNames("transport", transportRegistry().factoryNames(), "Registered transport driver");
+#ifdef CONFIG_DRIVER_DATALINK
+  status = rememberFactoryNames("datalink", datalinkRegistry().factoryNames(), "Registered data-link device");
   if (!status.ok()) return status;
 #endif
 
@@ -265,11 +265,11 @@ framework::Status DriverManager::createDefaultServices() {
   }
 #endif
 
-#ifdef CONFIG_DRIVER_TRANSPORT
-  if (config_.enable_transport) {
-    status = requireFactory(transportRegistry().hasFactory(config_.transport_factory), "transport", config_.transport_factory);
+#ifdef CONFIG_DRIVER_DATALINK
+  if (config_.enable_datalink) {
+    status = requireFactory(datalinkRegistry().hasFactory(config_.datalink_factory), "datalink", config_.datalink_factory);
     if (!status.ok()) return status;
-    status = activateDriver("transport", config_.transport_factory, "Configured transport driver");
+    status = activateDriver("datalink", config_.datalink_factory, "Configured data-link device");
     if (!status.ok()) return status;
   }
 #endif

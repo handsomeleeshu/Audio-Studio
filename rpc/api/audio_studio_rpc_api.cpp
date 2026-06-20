@@ -304,6 +304,18 @@ framework::log::LogSessionConfig logSessionConfigFromParams(const JsonValue& par
   if (object.has("datalink_mtu")) {
     config.options["mtu"] = std::to_string(optionalUInt32Param(object, "datalink_mtu", 512));
   }
+  if (object.has("sof_logger")) {
+    config.options["sof_logger"] = optionalStringParam(object, "sof_logger", "");
+  }
+  if (object.has("trace_ldc")) {
+    config.options["trace_ldc"] = optionalStringParam(object, "trace_ldc", "");
+  }
+  if (object.has("raw_trace_path")) {
+    config.options["raw_trace_path"] = optionalStringParam(object, "raw_trace_path", "");
+  }
+  if (object.has("decoded_trace_path")) {
+    config.options["decoded_trace_path"] = optionalStringParam(object, "decoded_trace_path", "");
+  }
   if (object.has("options")) {
     const auto& options = object.at("options");
     if (!options.isObject()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "param must be object: options");

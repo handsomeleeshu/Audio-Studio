@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
   driver_config.enable_dynlib = true;
   driver_config.enable_socket = false;
   driver_config.enable_pipe = false;
-  driver_config.enable_transport = false;
+  driver_config.enable_datalink = false;
   driver_config.enable_audio = false;
   driver_config.enable_control = false;
   driver_config.enable_log = false;

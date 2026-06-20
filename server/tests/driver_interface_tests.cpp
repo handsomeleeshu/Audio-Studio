@@ -29,7 +29,7 @@ bool runHostAudioBackendTests() {
   constexpr const char* kFilesystemDriverName = "macos";
   constexpr const char* kPipeDriverName = "macos";
   constexpr const char* kDynlibDriverName = "macos";
-  constexpr const char* kTransportDriverName = "macos";
+  constexpr const char* kDataLinkDeviceName = "macos";
   constexpr const char* kControlDriverName = "macos";
   constexpr const char* kLogDriverName = "macos";
   constexpr const char* kDumpDriverName = "macos";
@@ -42,7 +42,7 @@ bool runHostAudioBackendTests() {
   constexpr const char* kFilesystemDriverName = "linux-host";
   constexpr const char* kPipeDriverName = "linux-host";
   constexpr const char* kDynlibDriverName = "linux-host";
-  constexpr const char* kTransportDriverName = "linux-host";
+  constexpr const char* kDataLinkDeviceName = "linux-host";
   constexpr const char* kControlDriverName = "linux-host";
   constexpr const char* kLogDriverName = "linux-host";
   constexpr const char* kDumpDriverName = "linux-host";
@@ -271,16 +271,18 @@ int main() {
   }
 
   {
-    auto transport = manager.transportRegistry().create(kTransportDriverName, {"memory"});
-    assert(transport);
+    audio_studio::drivers::datalink::DataLinkDeviceConfig config;
+    config.name = "memory";
+    auto datalink = manager.datalinkRegistry().create(kDataLinkDeviceName, config);
+    assert(datalink);
     const uint8_t tx[] = {4, 5, 6, 7};
-    assert(transport->write(tx, sizeof(tx), 100).ok());
+    assert(datalink->writeBlock(tx, sizeof(tx), 100).ok());
     uint8_t rx[4] = {};
     size_t actual = 0;
-    assert(transport->read(rx, sizeof(rx), actual, 100).ok());
+    assert(datalink->readBlock(rx, sizeof(rx), actual, 100).ok());
     assert(actual == sizeof(rx));
-    assert(transport->isConnected());
-    assert(transport->name() == "memory");
+    assert(datalink->isConnected());
+    assert(datalink->name() == "memory");
   }
 
   if (runHostAudioBackendTests()) {

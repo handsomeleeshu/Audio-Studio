@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <cstdio>
+#include <fstream>
 #include <sstream>
 #include <utility>
 
@@ -26,6 +29,10 @@ std::string normalizeLevel(std::string level) {
   if (level == "warn") return "warning";
   if (level.empty()) return "info";
   return level;
+}
+
+bool containsToken(const std::string& line, const std::string& token) {
+  return line.find(token) != std::string::npos;
 }
 
 } // namespace
@@ -57,6 +64,15 @@ framework::Status LogService::createSession(LogSessionConfig config, LogSessionI
   Session session;
   session.config = std::move(config);
   session.config.min_level = normalizeLevel(session.config.min_level);
+  const auto safe_id = safePathToken(session.config.session_id);
+  session.raw_trace_path = optionString(session.config, "raw_trace_path");
+  if (session.raw_trace_path.empty()) session.raw_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.raw";
+  session.decoded_trace_path = optionString(session.config, "decoded_trace_path");
+  if (session.decoded_trace_path.empty()) session.decoded_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.log";
+  if (sofLoggerEnabled(session)) {
+    std::ofstream raw(session.raw_trace_path, std::ios::binary | std::ios::trunc);
+    std::ofstream decoded(session.decoded_trace_path, std::ios::binary | std::ios::trunc);
+  }
   session.device = std::move(device);
   auto inserted = sessions_.emplace(session.config.session_id, std::move(session));
   out = infoFor(inserted.first->second);
@@ -71,6 +87,17 @@ framework::Status LogService::configureSession(const std::string& id, const LogS
   session->config.min_level = normalizeLevel(config.min_level.empty() ? session->config.min_level : config.min_level);
   session->config.raw = config.raw;
   if (!config.options.empty()) session->config.options = config.options;
+  if (!config.options.empty()) {
+    session->raw_trace_path = optionString(session->config, "raw_trace_path");
+    if (session->raw_trace_path.empty()) {
+      session->raw_trace_path = "/tmp/audio_studio_" + safePathToken(session->config.session_id) + ".trace.raw";
+    }
+    session->decoded_trace_path = optionString(session->config, "decoded_trace_path");
+    if (session->decoded_trace_path.empty()) {
+      session->decoded_trace_path = "/tmp/audio_studio_" + safePathToken(session->config.session_id) + ".trace.log";
+    }
+    session->decoded_lines_read = 0;
+  }
   if ((!config.source.empty() && config.source != session->config.source) || !config.options.empty()) {
     if (!config.source.empty()) session->config.source = config.source;
     if (session->device) {
@@ -114,6 +141,10 @@ framework::Status LogService::closeSession(const std::string& id) {
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (session->device) session->device->close();
+  if (sofLoggerEnabled(*session)) {
+    if (!session->raw_trace_path.empty()) std::remove(session->raw_trace_path.c_str());
+    if (!session->decoded_trace_path.empty()) std::remove(session->decoded_trace_path.c_str());
+  }
   sessions_.erase(id);
   return framework::Status::success();
 }
@@ -175,16 +206,24 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
       break;
     }
     for (const auto& chunk : chunks) {
-      const std::string text(chunk.bytes.begin(), chunk.bytes.end());
-      std::istringstream lines(text);
-      std::string line;
-      while (entries.size() < max_entries && std::getline(lines, line)) {
-        if (line.empty()) continue;
-        auto entry = decodeLine(next_sequence_++, line);
-        if (!passesLevel(entry.level, session->config.min_level)) continue;
-        entries.push_back(entry);
-        entries_.push_back(entry);
-        ++session->entries_read;
+      if (sofLoggerEnabled(*session)) {
+        status = appendRawTrace(*session, chunks);
+        if (!status.ok()) return status;
+        status = decodeSofTrace(*session, max_entries, entries);
+        if (!status.ok()) return status;
+        break;
+      } else {
+        const std::string text(chunk.bytes.begin(), chunk.bytes.end());
+        std::istringstream lines(text);
+        std::string line;
+        while (entries.size() < max_entries && std::getline(lines, line)) {
+          if (line.empty()) continue;
+          auto entry = decodeLine(next_sequence_++, line);
+          if (!passesLevel(entry.level, session->config.min_level)) continue;
+          entries.push_back(entry);
+          entries_.push_back(entry);
+          ++session->entries_read;
+        }
       }
     }
   }
@@ -235,6 +274,90 @@ LogEntry LogService::decodeLine(int sequence, const std::string& line) {
   if (entry.tag.empty()) entry.tag = "FW";
   entry.text = entry.message;
   return entry;
+}
+
+bool LogService::sofLoggerEnabled(const Session& session) {
+  return !optionString(session.config, "sof_logger").empty() &&
+         !optionString(session.config, "trace_ldc").empty();
+}
+
+std::string LogService::optionString(const LogSessionConfig& config, const std::string& key) {
+  const auto it = config.options.find(key);
+  return it == config.options.end() ? std::string() : it->second;
+}
+
+std::string LogService::safePathToken(const std::string& value) {
+  std::string out;
+  out.reserve(value.size());
+  for (const auto ch : value) {
+    if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-') out.push_back(ch);
+    else out.push_back('_');
+  }
+  return out.empty() ? "log" : out;
+}
+
+std::string LogService::shellQuote(const std::string& value) {
+  std::string out = "'";
+  for (const auto ch : value) {
+    if (ch == '\'') out += "'\\''";
+    else out.push_back(ch);
+  }
+  out.push_back('\'');
+  return out;
+}
+
+LogEntry LogService::decodeSofLoggerLine(int sequence, const std::string& line) {
+  LogEntry entry;
+  entry.sequence = sequence;
+  entry.level = "info";
+  if (containsToken(line, " ERROR ") || containsToken(line, " ERR ")) entry.level = "error";
+  else if (containsToken(line, " WARNING ") || containsToken(line, " WARN ")) entry.level = "warning";
+  else if (containsToken(line, " DEBUG ")) entry.level = "debug";
+  else if (containsToken(line, " VERBOSE ")) entry.level = "verbose";
+  entry.tag = "SOF";
+  entry.message = line;
+  entry.text = line;
+  return entry;
+}
+
+framework::Status LogService::appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks) {
+  std::ofstream raw(session.raw_trace_path, std::ios::binary | std::ios::app);
+  if (!raw) return framework::Status::unavailable("failed to open SOF raw trace file: " + session.raw_trace_path);
+  for (const auto& chunk : chunks) {
+    if (!chunk.bytes.empty()) {
+      raw.write(reinterpret_cast<const char*>(chunk.bytes.data()),
+                static_cast<std::streamsize>(chunk.bytes.size()));
+    }
+  }
+  if (!raw) return framework::Status::unavailable("failed to append SOF raw trace file: " + session.raw_trace_path);
+  return framework::Status::success();
+}
+
+framework::Status LogService::decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries) {
+  const auto sof_logger = optionString(session.config, "sof_logger");
+  const auto trace_ldc = optionString(session.config, "trace_ldc");
+  const std::string command = shellQuote(sof_logger) + " -i " + shellQuote(session.raw_trace_path) +
+                              " -l " + shellQuote(trace_ldc) + " -n -o " +
+                              shellQuote(session.decoded_trace_path) + " >/dev/null 2>&1";
+  const int rc = std::system(command.c_str());
+  if (rc != 0) return framework::Status::unavailable("sof-logger failed to decode trace");
+
+  std::ifstream decoded(session.decoded_trace_path);
+  if (!decoded) return framework::Status::unavailable("failed to open SOF decoded trace file: " + session.decoded_trace_path);
+
+  std::string line;
+  size_t line_index = 0;
+  while (entries.size() < max_entries && std::getline(decoded, line)) {
+    if (line.empty()) continue;
+    if (line_index++ < session.decoded_lines_read) continue;
+    auto entry = decodeSofLoggerLine(next_sequence_++, line);
+    if (!passesLevel(entry.level, session.config.min_level)) continue;
+    entries.push_back(entry);
+    entries_.push_back(entry);
+    ++session.entries_read;
+  }
+  session.decoded_lines_read = line_index;
+  return framework::Status::success();
 }
 
 bool LogService::passesLevel(const std::string& level, const std::string& min_level) {
