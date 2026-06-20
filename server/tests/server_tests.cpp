@@ -363,8 +363,8 @@ int main() {
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"DSP_FILTER\"") != std::string::npos);
     assert(conf.find("data [") != std::string::npos);
     const std::string private_payload = readFileText(output.private_bin_path);
-    assert(private_payload.find("as-generic-runtime-json-v1") != std::string::npos);
-    assert(private_payload.find("as-generic-preset-json-v1") != std::string::npos);
+    assert(private_payload.find("as-builtin-gain-volume-runtime-json-v1") != std::string::npos);
+    assert(private_payload.find("as-builtin-gain-volume-preset-json-v1") != std::string::npos);
     assert(private_payload.find("\"pipelines\"") != std::string::npos);
     assert(private_payload.find("\"dai_id\":\"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
     assert(private_payload.find("\"tdm_slots\":2") != std::string::npos);

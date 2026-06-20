@@ -1644,9 +1644,9 @@ Audio-Studio/server/framework/config/
 
 `as_config` 的输入 JSON 是 Audio Studio 语义配置，不是 SOF topology `.conf` 的逐字段转写。`resource_catalog` 描述 host/DAI/计算资源，pipeline port 通过 `resource_ref` 绑定资源；module/node/pipeline 使用 Audio Studio 的 type、parameter、port、edge 语义表达链路。`A2.json` 当前覆盖 playback、capture 与 dsp_filter coverage 三条 FILE_IO pipeline，包含 `channel_remap`、`delay`、`fader_balance`、`dsp_filter` 等 SOF 基础 audio component；rv32qemu 仅声明 FILEIO0/FILEIO1，因此 dsp_filter coverage pipeline 绑定 FILEIO1。
 
-module 的 `parameters` 扩展方式保持在 Audio Studio schema 层：内置 `SofBasicModuleConfigHandler` 只负责把已知基础 component 的语义参数打包为 SOF IPC3 bytes，并生成 `SectionControlBytes`；第三方 module config handler 继续通过插件返回 binary payload；未知或通用参数仍进入 Audio Studio private payload。`framework/config` 不要求前端或产品 JSON 暴露 SOF widget name、buffer size、ALSA hw 字符串等低层字段，这些由 IR builder 和 topology generator 根据资源、端口和 module category 推导。
+module 的 `parameters` 扩展方式保持在 Audio Studio schema 层：`plugins/builtin_module_configs` 内置 `SofBasicModuleConfigHandler`，负责把 `channel_remap`、`delay.line`、`fader_balance`、`dsp_filter` 等 SOF 基础 component 的语义参数打包为 SOF IPC3 bytes，并生成标准 `SectionControlBytes`；第三方 module config handler 继续通过插件返回 binary payload；未知或通用参数仍进入 Audio Studio private payload。`framework/config` 只负责 IR、topology 和 plugin registry，不内置 SOF 基础 component 的参数 packer，也不要求前端或产品 JSON 暴露 SOF widget name、buffer size、ALSA hw 字符串等低层字段，这些由 IR builder 和 topology generator 根据资源、端口和 module category 推导。
 
-`as_config --build-tplg` 会同时输出 `.conf`、`.tplg`、private binary、controls csv、compile report 与可选 decode 结果。`alsatplg` decode 是环境能力：decode 成功时输出 `<project>_decode.conf`，decode 不可用或当前 topology 无法被 host decode 时编译仍然成功，并在 result warnings 与 `<project>_decode.log` 中记录原因。
+`as_config --build-tplg` 会同时输出 `.conf`、`.tplg`、private binary、controls csv、compile report 与可选 decode 结果。Linux 构建和 CI 不再源码编译 `third_party/alsa-lib` / `third_party/alsa-utils`，而是直接使用仓库内预编译的 `third_party/alsatplg/bin/alsatplg`。`alsatplg` decode 是环境能力：decode 成功时输出 `<project>_decode.conf`，decode 不可用或当前 topology 无法被 host decode 时编译仍然成功，并在 result warnings 与 `<project>_decode.log` 中记录原因。
 
 ### 4.6 server/framework/control
 
@@ -3231,7 +3231,7 @@ Windows 该用 Win32
    - 创建 ALSA KControl；
    - 提供 bool/int/enum、range/TLV 等用户空间可见控制能力。
 
-当前实现默认不生成标准 `SectionControlBytes`。SOF fork 的 alsa-lib decode 路径在 bytes control 多元素 block 上会把整个 block 剩余大小传入单元素检查，导致合法编译出的 tplg 在 `alsatplg -d` 阶段报 `bytes: unexpected element size`。因此 bytes 型 runtime parameter 先进入 `AS_PRIVATE`，由 A2 ASoC Codec 驱动按 private metadata 自动暴露自定义 KControl；标准 Linux + SOF 方案可忽略这些 A2 private bytes 控件，但仍能正确解析和创建 pipeline/PCM。
+SOF 基础 component 的 bytes 型 runtime parameter 由 `plugins/builtin_module_configs` 生成标准 `SectionControlBytes`，随 `.conf` 一起进入 `alsatplg` 编译出的 `.tplg`。未知或 Audio Studio 专用参数仍进入 `AS_PRIVATE`，由 A2 ASoC Codec 驱动按 private metadata 自动暴露自定义 KControl；标准 Linux + SOF 方案可忽略这些 A2 private bytes 控件，但仍能正确解析和创建 pipeline/PCM。
 
 2. **A2 ASoC Codec 驱动与 A2 Controller**
    - 从 topology private data 中解析 A2 pipeline graph；
@@ -5026,6 +5026,16 @@ public:
     virtual IOsClock& clock() = 0;
     virtual IOsProcess& process() = 0;
     virtual IOsSystem& system() = 0;
+};
+
+class IOsProcess {
+public:
+    virtual ~IOsProcess() = default;
+    virtual OsResult setEnv(std::string key, std::string value) = 0;
+    virtual OsResult getEnv(const std::string& key, std::string& out) const = 0;
+    virtual uint64_t processId() const = 0;
+    virtual std::string executablePath() const = 0;
+    virtual OsResult runCommand(const std::string& command, int& exit_code) = 0;
 };
 ```
 
@@ -7223,10 +7233,11 @@ A2.json
 5. framework/config 通过 drivers 层 filesystem、dynlib、os process abstraction 访问文件、动态库和进程执行；`alsatplg -c/-d` 仅在 Linux host 默认启用，非 Linux host 默认只生成 conf/private/header/csv/report 等 portable 产物。
 6. 当前 A2 输入中 `service.asrc` 已更名为 `rate.asrc`；`fx.virtualizer` 与 `vavs.*` module 使用 `module_class: MODULE_ADAPTER` 标记。
 7. 标准 DAPM graph 只连接实际生成的 widget，不把 `A2 Playback Main` 这类 PCM stream name 写入 route，避免 `undefined source/sink widget`。
-8. bytes 型 runtime parameter 默认不生成标准 `SectionControlBytes`，而是进入 `AS_PRIVATE`；A2 ASoC Codec 驱动可从 private metadata 暴露自定义 KControl。
+8. SOF 基础 component 的 bytes 型 runtime parameter 由 `plugins/builtin_module_configs` 生成标准 `SectionControlBytes`；未知或 Audio Studio 专用参数继续进入 `AS_PRIVATE`，A2 ASoC Codec 驱动可从 private metadata 暴露自定义 KControl。
 9. pipeline port 的 `alsa_hint` 与 `hw` 信息会写入 private block，包括 `pcm_id`、`dai_id`、`transport`、`hw_id`、`tdm_slots`、`slot_width`、`sample_bits`、`fsync_hz` 等，用于 A2 codec/audio_controller 建立端口和 DAI 映射。
-10. module config plugin SDK 独立放在 `plugins/module_config_sdk`，接口头为 `audio_studio/module_config_plugin.hpp`。三方算法只依赖该 SDK 和 C++ 标准库，通过 `audio_studio_register_module_config_handlers_v1` 注册 `IModuleConfigHandler`；Audio Studio framework/config 反向依赖 SDK，不要求三方插件包含主框架头文件。
-11. `plugins/module_config_sdk/examples/third_party_module` 是独立 CMake 示例，可单独生成合法动态库；`plugins/builtin_module_configs` 证明内置算法也能以同一 plugin 方式覆盖默认 generic handler。
+10. module config plugin SDK 独立放在 `plugins/module_config_sdk`，接口头为 `plugins/module_config_sdk/include/module_config_plugin.hpp`。三方算法只依赖该 SDK 和 C++ 标准库，通过 `audio_studio_register_module_config_handlers_v1` 注册 `IModuleConfigHandler`；Audio Studio framework/config 反向依赖 SDK，不要求三方插件包含主框架头文件。
+11. `plugins/module_config_sdk/examples/third_party_module` 是独立 CMake 示例，可单独生成合法动态库；`plugins/builtin_module_configs` 是 SOF 内置 audio component 参数解析插件，覆盖 `channel_remap`、`delay.line`、`fader_balance`、`dsp_filter` 等基础 component，并以同一 plugin 机制覆盖默认 generic handler。
+12. Linux CI 和本地 as_config 测试直接使用仓库内预编译 `third_party/alsatplg/bin/alsatplg`，不再 checkout 或源码编译 `third_party/alsa-lib`、`third_party/alsa-utils`。
 
 当前 Linux A2 smoke 输出：
 
@@ -7268,7 +7279,7 @@ as_config --input config/A2.json --out-dir out/as_config/a2 --project-name a2 --
    - 创建 ALSA KControl；
    - 提供 bool/int/enum、range/TLV 等用户空间可见控制能力。
 
-当前实现默认不生成标准 `SectionControlBytes`。SOF fork 的 alsa-lib decode 路径在 bytes control 多元素 block 上会把整个 block 剩余大小传入单元素检查，导致合法编译出的 tplg 在 `alsatplg -d` 阶段报 `bytes: unexpected element size`。因此 bytes 型 runtime parameter 先进入 `AS_PRIVATE`，由 A2 ASoC Codec 驱动按 private metadata 自动暴露自定义 KControl；标准 Linux + SOF 方案可忽略这些 A2 private bytes 控件，但仍能正确解析和创建 pipeline/PCM。
+SOF 基础 component 的 bytes 型 runtime parameter 由 `plugins/builtin_module_configs` 生成标准 `SectionControlBytes`，随 `.conf` 一起进入 `alsatplg` 编译出的 `.tplg`。未知或 Audio Studio 专用参数仍进入 `AS_PRIVATE`，由 A2 ASoC Codec 驱动按 private metadata 自动暴露自定义 KControl；标准 Linux + SOF 方案可忽略这些 A2 private bytes 控件，但仍能正确解析和创建 pipeline/PCM。
 
 2. **A2 ASoC Codec 驱动与 A2 Controller**
    - 从 topology private data 中解析 A2 pipeline graph；

@@ -39,6 +39,9 @@ if(CONFIG_FRAMEWORK_CONFIG)
     audio_studio_driver_dynlib
   )
   target_compile_features(as_config PRIVATE cxx_std_17)
+  if(TARGET audio_studio_builtin_module_configs)
+    add_dependencies(as_config audio_studio_builtin_module_configs)
+  endif()
 endif()
 
 if(CONFIG_BUILD_TESTS)

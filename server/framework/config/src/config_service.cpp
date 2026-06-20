@@ -14,6 +14,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "json_value.hpp"
 
@@ -488,29 +489,54 @@ bool regularFileExists(const std::filesystem::path& path) {
   return std::filesystem::is_regular_file(path, ec) && !ec;
 }
 
-std::string discoverAlsaTplgExecutable() {
+std::string executableDirectory(drivers::os::IOsDriver* os) {
+  if (os == nullptr) return {};
+  const auto executable = os->process().executablePath();
+  if (executable.empty()) return {};
+  return std::filesystem::path(executable).parent_path().string();
+}
+
+std::string findFileFromRoots(const std::vector<std::filesystem::path>& roots,
+                              const std::filesystem::path& relative_path) {
+  for (auto root : roots) {
+    if (root.empty()) continue;
+    std::error_code ec;
+    root = std::filesystem::absolute(root, ec);
+    if (ec) continue;
+    while (true) {
+      const auto candidate = root / relative_path;
+      if (regularFileExists(candidate)) return candidate.string();
+
+      const auto parent = root.parent_path();
+      if (parent == root || parent.empty()) break;
+      root = parent;
+    }
+  }
+  return {};
+}
+
+std::string discoverAlsaTplgExecutable(drivers::os::IOsDriver* os) {
   if (const char* path = std::getenv("AUDIO_STUDIO_ALSATPLG"); path != nullptr && path[0] != '\0') {
     return path;
   }
 
   std::error_code ec;
   auto current = std::filesystem::current_path(ec);
-  if (ec) return "alsatplg";
+  std::vector<std::filesystem::path> roots;
+  if (!ec) roots.push_back(current);
+  const auto exe_dir = executableDirectory(os);
+  if (!exe_dir.empty()) roots.emplace_back(exe_dir);
 
-  while (true) {
-    const auto candidate = current / "build_alsatplg" / "bin" / "alsatplg";
-    if (regularFileExists(candidate)) return candidate.string();
-
-    const auto parent = current.parent_path();
-    if (parent == current || parent.empty()) break;
-    current = parent;
+  const auto bundled = findFileFromRoots(roots, std::filesystem::path("third_party") / "alsatplg" / "bin" / "alsatplg");
+  if (!bundled.empty()) {
+    return bundled;
   }
 
   return "alsatplg";
 }
 
-std::string resolveAlsaTplgExecutable(const std::string& requested) {
-  if (requested.empty() || requested == "alsatplg") return discoverAlsaTplgExecutable();
+std::string resolveAlsaTplgExecutable(const std::string& requested, drivers::os::IOsDriver* os) {
+  if (requested.empty() || requested == "alsatplg") return discoverAlsaTplgExecutable(os);
   return requested;
 }
 
@@ -2333,6 +2359,9 @@ Status loadPlugins(drivers::dynlib::IDynlibDriver* dynlib,
   if (paths.empty()) return Status::success();
   if (dynlib == nullptr) return Status::unavailable("dynamic library driver is not configured");
   for (const auto& path : paths) {
+    const auto already_loaded = std::any_of(libraries.begin(), libraries.end(),
+                                            [&](const auto& library) { return library && library->path() == path; });
+    if (already_loaded) continue;
     if (!dynlib->isValidLibraryFile(path)) return Status::invalidArgument("invalid plugin library file: " + path);
     auto library = dynlib->createLibrary();
     if (!library) return Status::internal("failed to create dynamic library handle");
@@ -2348,342 +2377,29 @@ Status loadPlugins(drivers::dynlib::IDynlibDriver* dynlib,
   return Status::success();
 }
 
-class SofBasicModuleConfigHandler final : public module_config::IModuleConfigHandler {
-public:
-  explicit SofBasicModuleConfigHandler(std::string module_type) : module_type_(std::move(module_type)) {}
+std::string defaultBuiltinModuleConfigPluginPath(drivers::dynlib::IDynlibDriver* dynlib,
+                                                 drivers::os::IOsDriver* os) {
+  if (dynlib == nullptr) return {};
 
-  std::string id() const override { return "as.sof-basic-module-config-v1." + macroToken(module_type_); }
-  std::string moduleType() const override { return module_type_; }
+  const auto exe_dir = executableDirectory(os);
+  if (exe_dir.empty()) return {};
 
-  module_config::Status validatePreset(const module_config::ModuleConfigRequest& request) const override {
-    if (request.module_type != module_type_) {
-      return module_config::Status::invalidArgument("unexpected module_type for SOF basic handler: " + request.module_type);
-    }
-    if (request.values_json.empty()) return module_config::Status::invalidArgument("module config request values_json is empty");
-    return module_config::Status::success();
-  }
+  const auto relative_path =
+      std::filesystem::path("plugins") / "builtin_module_configs" /
+      ("libaudio_studio_builtin_module_configs" + dynlib->platformLibraryExtension());
+  return findFileFromRoots({std::filesystem::path(exe_dir)}, relative_path);
+}
 
-  module_config::Status packPreset(const module_config::ModuleConfigRequest& request,
-                                   module_config::ModuleConfigBlob& out) const override {
-    auto status = validatePreset(request);
-    if (!status.ok()) return status;
-    out.format = "as-sof-basic-preset-json-v1";
-    out.data.assign(request.values_json.begin(), request.values_json.end());
-    return module_config::Status::success();
-  }
-
-  module_config::Status packInstallConfig(const module_config::ModuleConfigRequest& request,
-                                          module_config::ModuleConfigBlob& out) const override {
-    return packRuntimeParam(request, out);
-  }
-
-  module_config::Status packRuntimeParam(const module_config::ModuleConfigRequest& request,
-                                         module_config::ModuleConfigBlob& out) const override {
-    try {
-      auto status = validatePreset(request);
-      if (!status.ok()) return status;
-      const auto values = audio_studio::rpc::parseJson(request.values_json);
-      if (!values.isObject() || !values.has(request.parameter_id)) {
-        return module_config::Status::invalidArgument("parameter value missing: " + request.parameter_id);
-      }
-
-      const auto& value = values.at(request.parameter_id);
-      std::vector<uint8_t> payload;
-      if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
-        payload = packChannelRemap(value);
-      } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
-        payload = packDelayLine(value);
-      } else if (module_type_ == "mix.fader_balance") {
-        payload = packFaderBalance(value);
-      } else if (module_type_ == "filter.dsp_filter") {
-        payload = packDspFilter(value);
-      } else {
-        return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
-      }
-
-      out.format = "sof-ipc3-bytes-v1";
-      out.data = wrapSofAbi(payload);
-      return module_config::Status::success();
-    } catch (const std::exception& error) {
-      return module_config::Status::invalidArgument(
-          "failed to pack " + module_type_ + " parameter " + request.parameter_id + ": " + error.what());
-    }
-  }
-
-private:
-  std::string module_type_;
-
-  static void align4(std::vector<uint8_t>& out) {
-    while ((out.size() & 3u) != 0) out.push_back(0);
-  }
-
-  static void appendLe32Signed(std::vector<uint8_t>& out, int32_t value) {
-    appendLe32(out, static_cast<uint32_t>(value));
-  }
-
-  static std::vector<uint8_t> wrapSofAbi(const std::vector<uint8_t>& data) {
-    constexpr uint32_t kSofAbiMagic = 0x00464f53u;
-    constexpr uint32_t kSofAbiVersion = 0x0301d001u;
-    std::vector<uint8_t> out;
-    appendLe32(out, kSofAbiMagic);
-    appendLe32(out, 0);
-    appendLe32(out, static_cast<uint32_t>(data.size()));
-    appendLe32(out, kSofAbiVersion);
-    appendLe32(out, 0);
-    appendLe32(out, 0);
-    appendLe32(out, 0);
-    appendLe32(out, 0);
-    out.insert(out.end(), data.begin(), data.end());
-    return out;
-  }
-
-  static std::vector<uint16_t> channelList(const JsonValue& object, const std::string& key) {
-    std::vector<uint16_t> channels;
-    for (const auto& item : requiredArray(object, key).asArray()) {
-      if (!item.isString()) throw std::runtime_error(key + " entries must be channel names");
-      channels.push_back(channelMap(item.asString()));
-    }
-    return channels;
-  }
-
-  static uint16_t channelMap(const std::string& name) {
-    const auto token = macroToken(name);
-    static const std::map<std::string, uint16_t> values = {
-      {"UNKNOWN", 0}, {"NA", 1}, {"MONO", 2}, {"FL", 3}, {"FR", 4}, {"RL", 5}, {"RR", 6},
-      {"FC", 7}, {"LFE", 8}, {"SL", 9}, {"SR", 10}, {"RC", 11}, {"FLC", 12}, {"FRC", 13},
-      {"RLC", 14}, {"RRC", 15}, {"FLW", 16}, {"FRW", 17}, {"FLH", 18}, {"FCH", 19},
-      {"FRH", 20}, {"TC", 21}, {"TFL", 22}, {"TFR", 23}, {"TFC", 24}, {"TRL", 25},
-      {"TRR", 26}, {"TRC", 27}, {"TFLC", 28}, {"TFRC", 29}, {"TSL", 30}, {"TSR", 31},
-      {"LLFE", 32}, {"RLFE", 33}, {"BC", 34}, {"BLC", 35}, {"BRC", 36},
-    };
-    const auto it = values.find(token);
-    if (it == values.end()) throw std::runtime_error("unknown channel name: " + name);
-    return it->second;
-  }
-
-  static int32_t q5_27(double value) {
-    constexpr double scale = 134217728.0;
-    value = std::max(-16.0, std::min(15.999999, value));
-    return static_cast<int32_t>(std::llround(value * scale));
-  }
-
-  static int16_t q1_15(double value) {
-    value = std::max(-1.0, std::min(1.0, value));
-    if (value >= 1.0) return 32767;
-    return static_cast<int16_t>(std::llround(value * 32768.0));
-  }
-
-  static int32_t scaledWeight(double value, int32_t scale) {
-    value = std::max(-1.0, std::min(1.0, value));
-    return static_cast<int32_t>(std::llround(value * scale));
-  }
-
-  static double doubleAny(const JsonValue& object,
-                          const std::vector<std::string>& keys,
-                          double fallback) {
-    for (const auto& key : keys) {
-      if (object.isObject() && object.has(key) && !object.at(key).isNull()) {
-        if (!object.at(key).isNumber()) throw std::runtime_error("JSON field must be number: " + key);
-        return object.at(key).asDouble();
-      }
-    }
-    return fallback;
-  }
-
-  static int32_t int32Any(const JsonValue& object,
-                          const std::vector<std::string>& keys,
-                          int32_t fallback) {
-    for (const auto& key : keys) {
-      if (object.isObject() && object.has(key) && !object.at(key).isNull()) {
-        if (!object.at(key).isNumber()) throw std::runtime_error("JSON field must be number: " + key);
-        return static_cast<int32_t>(object.at(key).asInt64());
-      }
-    }
-    return fallback;
-  }
-
-  static std::vector<uint8_t> packChannelRemapConfig(const JsonValue& mapping, uint32_t fallback_idx) {
-    const auto inputs = channelList(mapping, "input");
-    const auto outputs = channelList(mapping, "output");
-    const auto& matrix = requiredArray(mapping, "matrix");
-    if (matrix.asArray().size() != outputs.size()) throw std::runtime_error("channel_remap matrix row count must match output channels");
-
-    std::vector<uint8_t> out;
-    appendLe32(out, uintValue(mapping, "config_idx", fallback_idx));
-    appendLe32(out, static_cast<uint32_t>(inputs.size()));
-    appendLe32(out, static_cast<uint32_t>(outputs.size()));
-    for (int i = 0; i < 5; ++i) appendLe32(out, 0);
-    for (const auto channel : inputs) appendLe16(out, channel);
-    for (const auto channel : outputs) appendLe16(out, channel);
-    align4(out);
-    for (size_t row = 0; row < outputs.size(); ++row) {
-      const auto& row_value = matrix.asArray()[row];
-      if (!row_value.isArray() || row_value.asArray().size() != inputs.size()) {
-        throw std::runtime_error("channel_remap matrix column count must match input channels");
-      }
-      for (const auto& coef : row_value.asArray()) {
-        if (!coef.isNumber()) throw std::runtime_error("channel_remap matrix values must be numbers");
-        appendLe32Signed(out, q5_27(coef.asDouble()));
-      }
-    }
-    return out;
-  }
-
-  static std::vector<uint8_t> packChannelRemap(const JsonValue& value) {
-    const auto& mappings = requiredArray(value, "mappings");
-    std::vector<uint8_t> payload;
-    for (size_t i = 0; i < mappings.asArray().size(); ++i) {
-      auto config = packChannelRemapConfig(mappings.asArray()[i], static_cast<uint32_t>(i));
-      payload.insert(payload.end(), config.begin(), config.end());
-    }
-    return payload;
-  }
-
-  static std::vector<int32_t> delayValues(const JsonValue& value, int32_t channels) {
-    std::vector<int32_t> delays;
-    if (value.has("per_channel_ms")) {
-      const auto& items = requiredArray(value, "per_channel_ms").asArray();
-      for (const auto& item : items) {
-        if (!item.isNumber()) throw std::runtime_error("per_channel_ms entries must be numbers");
-        delays.push_back(static_cast<int32_t>(std::llround(item.asDouble())));
-      }
-    } else {
-      const int32_t delay = int32Any(value, {"delay_ms"}, 0);
-      delays.assign(static_cast<size_t>(std::max<int32_t>(1, channels)), delay);
-    }
-    if (channels == 0) channels = static_cast<int32_t>(delays.size());
-    if (static_cast<int32_t>(delays.size()) != channels) throw std::runtime_error("delay_line channel count does not match delay values");
-    return delays;
-  }
-
-  static std::vector<uint8_t> packDelayLine(const JsonValue& value) {
-    int32_t channels = int32Any(value, {"channels"}, 0);
-    auto delays = delayValues(value, channels);
-    channels = static_cast<int32_t>(delays.size());
-    std::vector<uint8_t> payload;
-    appendLe32Signed(payload, int32Any(value, {"max_delay_ms"}, 250));
-    appendLe32Signed(payload, int32Any(value, {"ramp_ms", "ramp_time_ms"}, 50));
-    appendLe32Signed(payload, channels);
-    for (const auto delay : delays) appendLe32Signed(payload, delay);
-    return payload;
-  }
-
-  static std::vector<uint8_t> packFaderBalance(const JsonValue& value) {
-    const std::string ramp = lowerAscii(stringValue(value, "ramp", "linear"));
-    const uint32_t ramp_type = ramp == "windows_fade" || ramp == "windows" ? 1u : 0u;
-    std::vector<uint8_t> payload;
-    appendLe32(payload, ramp_type);
-    appendLe32Signed(payload, int32Any(value, {"ramp_ms", "ramp_time_ms"}, 50));
-    appendLe32Signed(payload, scaledWeight(doubleAny(value, {"front_back_weight", "fader_weight"}, 0.0), 256));
-    appendLe32Signed(payload, scaledWeight(doubleAny(value, {"left_right_weight", "balance_weight"}, 0.0), 256));
-    return payload;
-  }
-
-  static std::vector<uint8_t> packDspFilterHeader(const JsonValue& filter, uint16_t fallback_idx) {
-    const std::string type = lowerAscii(stringValue(filter, "type", "fir"));
-    const uint16_t idx = static_cast<uint16_t>(uintValue(filter, "index", fallback_idx));
-    std::vector<int16_t> coefficients;
-    uint16_t filter_type = 0;
-    if (type == "fir") {
-      filter_type = 1;
-      const auto& items = requiredArray(filter, "coefficients").asArray();
-      for (const auto& item : items) {
-        if (!item.isNumber()) throw std::runtime_error("dsp_filter coefficients must be numbers");
-        coefficients.push_back(q1_15(item.asDouble()));
-      }
-      if (coefficients.empty()) throw std::runtime_error("dsp_filter FIR must have at least one coefficient");
-    } else if (type == "bypass") {
-      filter_type = 0;
-    } else {
-      throw std::runtime_error("unsupported dsp_filter type: " + type);
-    }
-
-    std::vector<uint8_t> out;
-    appendLe16(out, idx);
-    appendLe16(out, filter_type);
-    appendLe16(out, 0);
-    appendLe16(out, static_cast<uint16_t>(coefficients.size()));
-    appendLe16(out, 0);
-    appendLe16(out, static_cast<uint16_t>(coefficients.size() * sizeof(int16_t)));
-    for (const auto coef : coefficients) appendLe16(out, static_cast<uint16_t>(coef));
-    align4(out);
-    return out;
-  }
-
-  static int16_t filterMatrixEntry(const JsonValue& entry, const std::map<std::string, int16_t>& filter_ids) {
-    if (entry.isNull()) return -1;
-    if (entry.isNumber()) return static_cast<int16_t>(entry.asInt64());
-    if (entry.isString()) {
-      const auto text = entry.asString();
-      if (text.empty() || text == "off" || text == "none" || text == "null") return -1;
-      const auto it = filter_ids.find(text);
-      if (it == filter_ids.end()) throw std::runtime_error("dsp_filter matrix references unknown filter: " + text);
-      return it->second;
-    }
-    if (entry.isObject()) {
-      return filterMatrixEntry(entry.has("filter") ? entry.at("filter") : entry.at("filter_id"), filter_ids);
-    }
-    throw std::runtime_error("dsp_filter matrix entry must be filter id, number, or null");
-  }
-
-  static std::vector<uint8_t> packDspFilterChannelConfig(const JsonValue& route,
-                                                         uint32_t fallback_idx,
-                                                         const std::map<std::string, int16_t>& filter_ids) {
-    const auto inputs = channelList(route, "input");
-    const auto outputs = channelList(route, "output");
-    const auto& matrix = requiredArray(route, "matrix");
-    if (matrix.asArray().size() != outputs.size()) throw std::runtime_error("dsp_filter matrix row count must match output channels");
-
-    std::vector<uint8_t> data;
-    for (const auto channel : inputs) appendLe16(data, channel);
-    for (const auto channel : outputs) appendLe16(data, channel);
-    for (size_t row = 0; row < outputs.size(); ++row) {
-      const auto& row_value = matrix.asArray()[row];
-      if (!row_value.isArray() || row_value.asArray().size() != inputs.size()) {
-        throw std::runtime_error("dsp_filter matrix column count must match input channels");
-      }
-      for (const auto& entry : row_value.asArray()) {
-        appendLe16(data, static_cast<uint16_t>(filterMatrixEntry(entry, filter_ids)));
-      }
-    }
-    align4(data);
-
-    std::vector<uint8_t> out;
-    appendLe32(out, uintValue(route, "config_idx", fallback_idx));
-    appendLe32(out, static_cast<uint32_t>(inputs.size()));
-    appendLe32(out, static_cast<uint32_t>(outputs.size()));
-    appendLe32(out, static_cast<uint32_t>(data.size()));
-    out.insert(out.end(), data.begin(), data.end());
-    align4(out);
-    return out;
-  }
-
-  static std::vector<uint8_t> packDspFilter(const JsonValue& value) {
-    const auto& filters = requiredArray(value, "filters");
-    const auto& routes = requiredArray(value, "routes");
-    std::vector<uint8_t> data;
-    std::map<std::string, int16_t> filter_ids;
-    for (size_t i = 0; i < filters.asArray().size(); ++i) {
-      const auto& filter = filters.asArray()[i];
-      const uint16_t index = static_cast<uint16_t>(uintValue(filter, "index", static_cast<uint32_t>(i)));
-      const std::string filter_id = stringValue(filter, "filter_id", stringValue(filter, "id"));
-      if (!filter_id.empty()) filter_ids[filter_id] = static_cast<int16_t>(index);
-      auto packed = packDspFilterHeader(filter, static_cast<uint16_t>(i));
-      data.insert(data.end(), packed.begin(), packed.end());
-    }
-    for (size_t i = 0; i < routes.asArray().size(); ++i) {
-      auto packed = packDspFilterChannelConfig(routes.asArray()[i], static_cast<uint32_t>(i), filter_ids);
-      data.insert(data.end(), packed.begin(), packed.end());
-    }
-
-    std::vector<uint8_t> payload;
-    appendLe32(payload, static_cast<uint32_t>(filters.asArray().size()));
-    appendLe32(payload, static_cast<uint32_t>(routes.asArray().size()));
-    appendLe32(payload, static_cast<uint32_t>(data.size()));
-    payload.insert(payload.end(), data.begin(), data.end());
-    return payload;
-  }
-};
+Status loadDefaultBuiltinModuleConfigPlugin(
+    drivers::dynlib::IDynlibDriver* dynlib,
+    drivers::os::IOsDriver* os,
+    ModuleConfigRegistry& registry,
+    std::vector<std::unique_ptr<drivers::dynlib::IDynlib>>& libraries) {
+  if (registry.findExact("filter.channel_remap") != nullptr) return Status::success();
+  const auto builtin_plugin = defaultBuiltinModuleConfigPluginPath(dynlib, os);
+  if (builtin_plugin.empty()) return Status::success();
+  return loadPlugins(dynlib, {builtin_plugin}, registry, libraries);
+}
 
 } // namespace
 
@@ -2728,10 +2444,6 @@ size_t ModuleConfigRegistry::size() const {
 }
 
 ConfigService::ConfigService() {
-  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("filter.channel_remap"));
-  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("delay.line"));
-  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("mix.fader_balance"));
-  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("filter.dsp_filter"));
   (void)module_configs_.registerHandler(std::make_unique<GenericModuleConfigHandler>());
 }
 
@@ -2767,8 +2479,11 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
     return Status::unavailable("alsatplg compile/decode validation is supported on Linux hosts only; set build_tplg=false");
   }
 
+  auto status = loadDefaultBuiltinModuleConfigPlugin(dynlib_, os_, module_configs_, plugin_libraries_);
+  if (!status.ok()) return status;
+
   const size_t plugins_before = plugin_libraries_.size();
-  auto status = loadPlugins(dynlib_, request.plugin_paths, module_configs_, plugin_libraries_);
+  status = loadPlugins(dynlib_, request.plugin_paths, module_configs_, plugin_libraries_);
   if (!status.ok()) return status;
 
   status = filesystem_->createDirectory(request.output_dir, true);
@@ -2833,7 +2548,7 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
 
   if (request.build_tplg) {
     if (os_ == nullptr) return Status::unavailable("OS driver is not configured");
-    const std::string alsatplg = resolveAlsaTplgExecutable(request.alsatplg);
+    const std::string alsatplg = resolveAlsaTplgExecutable(request.alsatplg, os_);
     const std::string command = shellQuote(alsatplg) + " -c " + shellQuote(output.conf_path) +
                                 " -o " + shellQuote(output.tplg_path) + " > " + shellQuote(output.alsatplg_log_path) + " 2>&1";
     int exit_code = -1;

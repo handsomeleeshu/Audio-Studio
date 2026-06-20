@@ -1,5 +1,6 @@
 #include "macos_os_driver.hpp"
 
+#include <mach-o/dyld.h>
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
@@ -8,10 +9,12 @@
 
 #include <cstdlib>
 #include <condition_variable>
+#include <filesystem>
 #include <limits>
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace audio_studio::drivers::os {
 
@@ -315,6 +318,21 @@ OsResult MacOsOsDriver::getEnv(const std::string& key, std::string& out) const {
 
 uint64_t MacOsOsDriver::processId() const {
   return static_cast<uint64_t>(::getpid());
+}
+
+std::string MacOsOsDriver::executablePath() const {
+  uint32_t size = 0;
+  (void)_NSGetExecutablePath(nullptr, &size);
+  std::vector<char> buffer(static_cast<size_t>(size) + 1);
+  if (_NSGetExecutablePath(buffer.data(), &size) != 0) return {};
+
+  std::error_code ec;
+  auto resolved = std::filesystem::weakly_canonical(buffer.data(), ec);
+  if (ec) {
+    resolved = std::filesystem::absolute(buffer.data(), ec);
+    if (ec) return {};
+  }
+  return resolved.string();
 }
 
 OsResult MacOsOsDriver::runCommand(const std::string& command, int& exit_code) {

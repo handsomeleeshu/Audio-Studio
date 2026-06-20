@@ -19,6 +19,7 @@ AS_CONFIG_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'as_config' / 'Debug'
 AUDIO_CONTROLLER_BUILD_DIR = ROOT / 'out' / 'audio_controller'
 AUDIO_CONTROLLER_PROFILE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'audio_controller' / 'Debug'
 MODULE_CONFIG_EXAMPLE_BUILD_DIR = ROOT / 'out' / 'module-config-sdk-example'
+PREBUILT_ALSATPLG = ROOT / 'third_party' / 'alsatplg' / 'bin' / 'alsatplg'
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
@@ -371,6 +372,7 @@ def main():
 
     if AS_CONFIG_BUILD_DIR.exists():
         shutil.rmtree(AS_CONFIG_BUILD_DIR)
+    assert os.access(PREBUILT_ALSATPLG, os.X_OK), f'missing executable prebuilt alsatplg: {PREBUILT_ALSATPLG}'
     run([str(BUILD_ALL), '--profile', 'as_config', 'linux', 'a2'])
     as_config_config = read_text(AS_CONFIG_BUILD_DIR / 'generated' / '.config')
     require_contains(as_config_config, 'CONFIG_FRAMEWORK_CONFIG=y')
@@ -442,8 +444,8 @@ def main():
     require_contains(ids_header, '#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu')
     require_contains(ids_header, 'AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOL_DB')
     private_payload = (as_config_out / 'a2_test_private.bin').read_bytes()
-    assert b'as-generic-runtime-json-v1' in private_payload
-    assert b'as-generic-preset-json-v1' in private_payload
+    assert b'as-builtin-gain-volume-runtime-json-v1' in private_payload
+    assert b'as-builtin-gain-volume-preset-json-v1' in private_payload
     assert b'"pipelines"' in private_payload
     assert b'"dai_id":"FILE_IO_PLAYBACK_DAI0"' in private_payload
     assert b'"tdm_slots":2' in private_payload

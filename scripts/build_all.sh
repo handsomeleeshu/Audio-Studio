@@ -195,7 +195,7 @@ check_tools() {
   return 0
 }
 
-build_alsatplg_tool() {
+check_alsatplg_tool() {
   if [[ "$BUILD_OS" != linux ]]; then
     return 0
   fi
@@ -208,15 +208,12 @@ build_alsatplg_tool() {
       ;;
   esac
 
-  local tplg_build_dir="${ROOT}/build_alsatplg"
-  local tplg_exe="${tplg_build_dir}/bin/alsatplg"
+  local tplg_exe="${ROOT}/third_party/alsatplg/bin/alsatplg"
+  if [[ ! -x "$tplg_exe" ]]; then
+    die 'missing prebuilt alsatplg executable: %s\n' "$tplg_exe"
+  fi
 
-  printf '[build] vendored alsatplg -> %s\n' "$tplg_exe"
-  (
-    set -x
-    cmake -S "${ROOT}/third_party/alsatplg" -B "$tplg_build_dir"
-    cmake --build "$tplg_build_dir" --parallel "$BUILD_JOBS"
-  )
+  printf '[build] using prebuilt alsatplg -> %s\n' "$tplg_exe"
 }
 
 create_initial_config() {
@@ -384,7 +381,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
   fi
 
   check_tools || continue
-  build_alsatplg_tool
+  check_alsatplg_tool
 
   if [[ "$PROFILE" == audio_controller ]]; then
     rm -rf "$BUILD_DIR"
