@@ -4,4 +4,5 @@ add_library(audio_studio_builtin_module_configs SHARED
   src/builtin_module_configs.cpp
 )
 target_link_libraries(audio_studio_builtin_module_configs PRIVATE AudioStudio::ModuleConfigSdk)
+target_link_libraries(audio_studio_builtin_module_configs PRIVATE audio_studio_json)
 target_compile_features(audio_studio_builtin_module_configs PRIVATE cxx_std_17)

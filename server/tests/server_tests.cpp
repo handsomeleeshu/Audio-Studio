@@ -311,12 +311,12 @@ int main() {
     audio_studio::framework::config::ConfigCompileOutput output;
     assert(config_service.compile(request, output).ok());
     assert(output.ok);
-    assert(output.module_type_count == 26);
-    assert(output.module_instance_count == 19);
-    assert(output.pipeline_count == 4);
-    assert(output.runtime_control_count == 29);
-    assert(output.install_param_count == 9);
-    assert(output.preset_count == 3);
+    assert(output.module_type_count == 7);
+    assert(output.module_instance_count == 8);
+    assert(output.pipeline_count == 3);
+    assert(output.runtime_control_count == 7);
+    assert(output.install_param_count == 0);
+    assert(output.preset_count == 2);
     assert(output.plugin_count == 1);
 
     audio_studio::drivers::filesystem::FileInfo info;
@@ -325,7 +325,13 @@ int main() {
     assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
       assert(drivers.filesystem().stat(output.tplg_path, info).ok() && info.size > 0);
-      assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+      assert(drivers.filesystem().stat(output.tplg_decode_log_path, info).ok());
+      if (output.tplg_decoded) {
+        assert(drivers.filesystem().stat(output.tplg_decode_conf_path, info).ok() && info.size > 0);
+        assert(output.warnings.empty());
+      } else {
+        assert(!output.warnings.empty());
+      }
     } else {
       bool path_exists = true;
       assert(drivers.filesystem().exists(output.tplg_path, path_exists).ok() && !path_exists);
@@ -335,26 +341,39 @@ int main() {
     }
 
     const std::string ids = readFileText(output.ids_header_path);
-    assert(ids.find("AS_MODULE_TYPE_RATE_ASRC") != std::string::npos);
+    assert(ids.find("AS_MODULE_TYPE_RATE_SRC") != std::string::npos);
     assert(ids.find("AS_MODULE_TYPE_SERVICE_ASRC") == std::string::npos);
     assert(ids.find("#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu") != std::string::npos);
-    assert(ids.find("#define AS_CONTROL_PLAY_MAIN_VOL_VOL_DB 0xCD13BD21u") != std::string::npos);
+    assert(ids.find("AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOL_DB") != std::string::npos);
     const std::string presets = readFileText(output.preset_header_path);
     assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
+    const std::string conf = readFileText(output.conf_path);
+    assert(conf.find("SectionVendorTokens.\"sof_sched_tokens\"") != std::string::npos);
+    assert(conf.find("SectionVendorTokens.\"sof_comp_tokens\"") != std::string::npos);
+    assert(conf.find("SectionVendorTokens.\"sof_dai_tokens\"") != std::string::npos);
+    assert(conf.find("type \"scheduler\"") != std::string::npos);
+    assert(conf.find("SectionDAI.") != std::string::npos);
+    assert(conf.find("SectionBE.") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_TYPE \"FILE_IO\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_TYPE \"VSI_TDM\"") == std::string::npos);
+    assert(conf.find("SectionControlBytes.") != std::string::npos);
+    assert(conf.find("SOF_TKN_PROCESS_TYPE \"CHAN_REMAP\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_PROCESS_TYPE \"DELAY_LINE\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_PROCESS_TYPE \"FADER_BALANCE\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_PROCESS_TYPE \"DSP_FILTER\"") != std::string::npos);
+    assert(conf.find("data [") != std::string::npos);
     const std::string private_payload = readFileText(output.private_bin_path);
-    assert(private_payload.find("as-generic-runtime-json-v1") != std::string::npos);
-    assert(private_payload.find("as-generic-install-json-v1") != std::string::npos);
-    assert(private_payload.find("as-generic-preset-json-v1") != std::string::npos);
+    assert(private_payload.find("as-builtin-gain-volume-runtime-json-v1") != std::string::npos);
+    assert(private_payload.find("as-builtin-gain-volume-preset-json-v1") != std::string::npos);
     assert(private_payload.find("\"pipelines\"") != std::string::npos);
-    assert(private_payload.find("\"dai_id\":\"CODEC_OUT_DAI0\"") != std::string::npos);
-    assert(private_payload.find("\"tdm_slots\":8") != std::string::npos);
+    assert(private_payload.find("\"dai_id\":\"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
+    assert(private_payload.find("\"tdm_slots\":2") != std::string::npos);
+    assert(private_payload.find("\"config_format\":\"sof-ipc3-bytes-v1\"") != std::string::npos);
     assert(private_payload.find("\"codec_format\"") == std::string::npos);
     assert(private_payload.find("\"config_format\"") != std::string::npos);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
       const std::string alsatplg_log = readFileText(output.alsatplg_log_path);
-      const std::string decode_log = readFileText(output.tplg_decode_log_path);
       assert(alsatplg_log.find("ALSA lib") == std::string::npos);
-      assert(decode_log.find("ALSA lib") == std::string::npos);
     }
   }
 #endif

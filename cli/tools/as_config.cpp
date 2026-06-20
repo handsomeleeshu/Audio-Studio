@@ -57,6 +57,7 @@ void printCompileOutput(const audio_studio::framework::config::ConfigCompileOutp
   std::cout << "{"
             << "\"ok\":" << (output.ok ? "true" : "false") << ","
             << "\"tplg_built\":" << (output.tplg_built ? "true" : "false") << ","
+            << "\"tplg_decoded\":" << (output.tplg_decoded ? "true" : "false") << ","
             << jsonField("tool", "as_config") << ","
             << jsonField("conf_path", output.conf_path) << ","
             << jsonField("tplg_path", output.tplg_path) << ","
@@ -75,7 +76,14 @@ void printCompileOutput(const audio_studio::framework::config::ConfigCompileOutp
             << "\"runtime_control_count\":" << output.runtime_control_count << ","
             << "\"install_param_count\":" << output.install_param_count << ","
             << "\"preset_count\":" << output.preset_count << ","
-            << "\"plugin_count\":" << output.plugin_count
+            << "\"plugin_count\":" << output.plugin_count << ","
+            << "\"warnings\":[";
+  for (size_t i = 0; i < output.warnings.size(); ++i) {
+    if (i != 0) std::cout << ",";
+    std::cout << "\"" << audio_studio::cli::jsonEscape(output.warnings[i]) << "\"";
+  }
+  std::cout
+            << "]"
             << "}\n";
 }
 

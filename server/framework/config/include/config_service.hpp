@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "audio_studio/module_config_plugin.hpp"
+#include "module_config_plugin.hpp"
 #include "dynlib_driver.hpp"
 #include "filesystem_driver.hpp"
 #include "os_driver.hpp"
@@ -33,6 +33,7 @@ struct ConfigCompileRequest {
 struct ConfigCompileOutput {
   bool ok = false;
   bool tplg_built = false;
+  bool tplg_decoded = false;
   std::string conf_path;
   std::string tplg_path;
   std::string private_bin_path;

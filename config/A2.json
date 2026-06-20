@@ -1,9 +1,9 @@
 {
   "meta": {
     "schema_id": "com.vsi.a2.audio_config",
-    "schema_version": "1.3.0",
+    "schema_version": "1.4.0",
     "compiler_compat": {
-      "min": "1.5.0",
+      "min": "1.6.0",
       "max": "1.x"
     },
     "firmware_abi": {
@@ -12,8 +12,8 @@
       "module_abi_max": 3
     },
     "build": {
-      "config_name": "A2_Automotive_Full_Feature_Example_Node_Presets",
-      "created_utc": "2026-01-20T00:00:00Z"
+      "config_name": "A2_AS_Config_RV32QEMU_FileIO_Play_Record",
+      "created_utc": "2026-06-20T00:00:00Z"
     }
   },
   "naming": {
@@ -22,910 +22,144 @@
       "name_template_pipeline": "{pipe_name} {node_name} {param_name}"
     }
   },
-  "hardware_hints": {
-    "cores": {
-      "core0": {
-        "role": "vass_master"
-      },
-      "core1": {
-        "role": "vass_worker"
-      },
-      "core2": {
-        "role": "vass_worker"
-      },
-      "core3": {
-        "role": "service_core",
-        "services": [
-          "asrc",
-          "anc_filter"
-        ]
+  "resource_catalog": {
+    "compute": [
+      {
+        "id": "audio_core0",
+        "role": "primary_audio",
+        "index": 0
       }
-    },
-    "audio_ios": {
-      "tdm_ports": [
-        {
-          "id": "TDM0",
-          "use": "7870_audio",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000,
-            96000
-          ]
-        },
-        {
-          "id": "TDM1",
-          "use": "7870_audio",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM2",
-          "use": "7870_audio",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM3",
-          "use": "7870_audio",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM4",
-          "use": "a2b_external",
-          "dir": "bidir",
-          "max_ch": 32,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM5",
-          "use": "a2b_external",
-          "dir": "bidir",
-          "max_ch": 32,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM6",
-          "use": "radio_dab",
-          "dir": "in",
-          "max_ch": 2,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM7",
-          "use": "radio_am",
-          "dir": "in",
-          "max_ch": 2,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM8",
-          "use": "radio_fm",
-          "dir": "in",
-          "max_ch": 2,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM9",
-          "use": "reserved",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM10",
-          "use": "reserved",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "TDM11",
-          "use": "reserved",
-          "dir": "bidir",
-          "max_ch": 16,
-          "rates": [
+    ],
+    "audio_endpoints": [
+      {
+        "id": "host_playback0",
+        "kind": "host",
+        "stream_id": "as_config_playback",
+        "direction": "playback",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
             48000
           ]
         }
-      ],
-      "i2s_fusa": [
-        {
-          "id": "I2S_FS0",
-          "use": "fusa_audio_out",
-          "dir": "out",
-          "max_ch": 2,
-          "rates": [
-            48000
-          ]
-        },
-        {
-          "id": "I2S_FS1",
-          "use": "fusa_audio_out",
-          "dir": "out",
-          "max_ch": 2,
-          "rates": [
+      },
+      {
+        "id": "fileio_playback0",
+        "kind": "file_io",
+        "stream_id": "as_config_playback",
+        "link_name": "FILE_IO_PLAYBACK_DAI0",
+        "device_id": "FILEIO0",
+        "direction": "playback",
+        "data_flow": "out",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
             48000
           ]
         }
-      ],
-      "pcie": [
-        {
-          "id": "PCIE0",
-          "use": "alt_audio_or_dump",
-          "dir": "bidir"
+      },
+      {
+        "id": "fileio_capture0",
+        "kind": "file_io",
+        "stream_id": "as_config_capture",
+        "link_name": "FILE_IO_CAPTURE_DAI0",
+        "device_id": "FILEIO0",
+        "direction": "capture",
+        "data_flow": "in",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
         }
-      ]
-    }
+      },
+      {
+        "id": "host_capture0",
+        "kind": "host",
+        "stream_id": "as_config_capture",
+        "direction": "capture",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "host_dsp_filter0",
+        "kind": "host",
+        "stream_id": "as_config_dsp_filter",
+        "direction": "playback",
+        "capabilities": {
+          "channels": {
+            "min": 2,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "fileio_dsp_filter1",
+        "kind": "file_io",
+        "stream_id": "as_config_dsp_filter",
+        "link_name": "FILE_IO_DSP_FILTER_DAI1",
+        "device_id": "FILEIO1",
+        "direction": "playback",
+        "data_flow": "out",
+        "capabilities": {
+          "channels": {
+            "min": 2,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      }
+    ]
   },
   "module_types": [
     {
-      "type_id": "graph.copier",
-      "category": "graph/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 32
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 32
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "enable",
-          "param_name": "Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "mix.mixer",
-      "category": "graph/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in0",
-            "max_ch": 16
-          },
-          {
-            "name": "in1",
-            "max_ch": 16
-          },
-          {
-            "name": "in2",
-            "max_ch": 16
-          },
-          {
-            "name": "in3",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "num_inputs",
-          "param_name": "Num Inputs",
-          "value_type": "uint8",
-          "default": 2,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "saturation",
-          "param_name": "Saturation",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "gain_db",
-          "param_name": "Gain",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -60,
-            "max": 12,
-            "step": 1
-          },
-          "default": 0,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "route.mux",
-      "category": "graph/routing",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "a",
-            "max_ch": 16
-          },
-          {
-            "name": "b",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "sel",
-          "param_name": "Select",
-          "value_type": "enum",
-          "default": "A",
-          "enum": [
-            "A",
-            "B"
-          ],
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "immediate",
-            "requires": {
-              "graph_update": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "route.selector",
-      "category": "graph/routing",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in0",
-            "max_ch": 16
-          },
-          {
-            "name": "in1",
-            "max_ch": 16
-          },
-          {
-            "name": "in2",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "index",
-          "param_name": "Select",
-          "value_type": "enum",
-          "range": {
-            "min": 0,
-            "max": 2,
-            "step": 1
-          },
-          "default": 0,
-          "enum": [
-            {
-              "label": "Path0",
-              "value": 0
-            },
-            {
-              "label": "Path1",
-              "value": 1
-            },
-            {
-              "label": "Path2",
-              "value": 2
-            }
-          ],
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "immediate",
-            "requires": {
-              "graph_update": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "gain.volume",
-      "category": "playback/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "vol_db",
-          "param_name": "Volume",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -90,
-            "max": 12,
-            "step": 1
-          },
-          "default": 0,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        },
-        {
-          "param_id": "mute",
-          "param_name": "Mute",
-          "value_type": "bool",
-          "default": false,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "immediate"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "filter.dcblock",
-      "category": "common/filter",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "enable",
-          "param_name": "Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "eq.iir",
-      "category": "playback/eq",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "num_biquads",
-          "param_name": "Num Biquads",
-          "value_type": "uint16",
-          "default": 10,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "layout",
-          "param_name": "Layout",
-          "value_type": "enum",
-          "default": "per_ch",
-          "enum": [
-            "per_ch",
-            "shared"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "enable",
-          "param_name": "EQ Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        },
-        {
-          "param_id": "coef_blob",
-          "param_name": "EQ Coeff",
-          "value_type": "bytes",
-          "bytes": {
-            "max_len": 4096
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "quiesce": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "eq.fir",
-      "category": "playback/eq",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "taps",
-          "param_name": "Taps",
-          "value_type": "uint16",
-          "default": 256,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "block",
-          "param_name": "Block",
-          "value_type": "uint16",
-          "default": 64,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "coef_blob",
-          "param_name": "FIR Coeff",
-          "value_type": "bytes",
-          "bytes": {
-            "max_len": 8192
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "quiesce": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "dyn.drc",
-      "category": "playback/dynamics",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "knee",
-          "param_name": "Knee",
-          "value_type": "enum",
-          "default": "soft",
-          "enum": [
-            "soft",
-            "hard"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "enable",
-          "param_name": "DRC Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        },
-        {
-          "param_id": "threshold_db",
-          "param_name": "Threshold",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -60,
-            "max": 0,
-            "step": 1
-          },
-          "default": -18,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "dyn.multiband_drc",
-      "category": "playback/dynamics",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "bands",
-          "param_name": "Bands",
-          "value_type": "uint8",
-          "default": 3,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "enable",
-          "param_name": "MBDRC Switch",
-          "value_type": "bool",
-          "default": false,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        },
-        {
-          "param_id": "band_cfg",
-          "param_name": "Band Config",
-          "value_type": "bytes",
-          "bytes": {
-            "max_len": 2048
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "quiesce": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "filter.crossover",
-      "category": "playback/filter",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "low",
-            "max_ch": 16
-          },
-          {
-            "name": "high",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "freq_hz",
-          "param_name": "Xover Freq",
-          "value_type": "uint16",
-          "unit": "Hz",
-          "range": {
-            "min": 50,
-            "max": 5000,
-            "step": 10
-          },
-          "default": 120,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "mix.up_down_mixer",
-      "category": "playback/spatial",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "mode",
-          "param_name": "UpDownMix Mode",
-          "value_type": "enum",
-          "default": "passthrough",
-          "enum": [
-            "stereo_to_5_1",
-            "stereo_to_7_1",
-            "5_1_to_stereo",
-            "7_1_to_stereo",
-            "passthrough"
-          ],
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "graph_update": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "fx.virtual_bass",
-      "category": "playback/fx",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "harmonics_mode",
-          "param_name": "Harmonics Mode",
-          "value_type": "enum",
-          "default": "mild",
-          "enum": [
-            "off",
-            "mild",
-            "strong"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "enable",
-          "param_name": "VBass Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        },
-        {
-          "param_id": "gain_db",
-          "param_name": "VBass Gain",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -12,
-            "max": 12,
-            "step": 1
-          },
-          "default": 0,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "fx.surround_decoder",
-      "category": "playback/spatial",
+      "type_id": "filter.channel_remap",
+      "category": "audio/basic",
       "abi_version": 3,
       "io": {
         "in_ports": [
@@ -937,171 +171,303 @@
         "out_ports": [
           {
             "name": "out",
-            "max_ch": 8
+            "max_ch": 2
           }
         ]
       },
       "parameters": [
         {
-          "param_id": "mode",
-          "param_name": "Surround Mode",
-          "value_type": "enum",
-          "default": "movie",
-          "enum": [
-            "off",
-            "movie",
-            "music"
-          ],
+          "param_id": "config",
+          "param_name": "Channel Remap",
+          "value_type": "channel_mix_matrix",
+          "default": {
+            "mappings": [
+              {
+                "name": "mono_passthrough",
+                "config_idx": 0,
+                "input": [
+                  "MONO"
+                ],
+                "output": [
+                  "MONO"
+                ],
+                "matrix": [
+                  [
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "name": "mono_to_stereo",
+                "config_idx": 1,
+                "input": [
+                  "MONO"
+                ],
+                "output": [
+                  "FL",
+                  "FR"
+                ],
+                "matrix": [
+                  [
+                    1.0
+                  ],
+                  [
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "name": "stereo_to_mono",
+                "config_idx": 2,
+                "input": [
+                  "FL",
+                  "FR"
+                ],
+                "output": [
+                  "MONO"
+                ],
+                "matrix": [
+                  [
+                    0.5,
+                    0.5
+                  ]
+                ]
+              },
+              {
+                "name": "stereo_passthrough",
+                "config_idx": 3,
+                "input": [
+                  "FL",
+                  "FR"
+                ],
+                "output": [
+                  "FL",
+                  "FR"
+                ],
+                "matrix": [
+                  [
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0
+                  ]
+                ]
+              }
+            ]
+          },
           "apply": {
             "settable_states": [
               "PIPE_LOADED",
               "RUNNING"
             ],
-            "mode": "safe_point",
-            "requires": {
-              "graph_update": true
-            }
+            "mode": "safe_point"
           }
         }
       ]
     },
     {
-      "type_id": "fx.virtualizer",
-      "category": "playback/spatial",
+      "type_id": "mix.mixer",
+      "category": "audio/basic",
+      "abi_version": 2,
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "parameters": []
+    },
+    {
+      "type_id": "delay.line",
+      "category": "audio/basic",
       "abi_version": 3,
       "io": {
         "in_ports": [
           {
             "name": "in",
-            "max_ch": 8
+            "max_ch": 2
           }
         ],
         "out_ports": [
           {
             "name": "out",
-            "max_ch": 8
+            "max_ch": 2
           }
         ]
       },
       "parameters": [
         {
-          "param_id": "target",
-          "param_name": "Virtualizer Target",
-          "value_type": "enum",
-          "default": "speaker",
-          "enum": [
-            "speaker",
-            "headphone"
-          ],
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "graph_update": true
-            }
-          }
-        },
-        {
-          "param_id": "strength",
-          "param_name": "Virtualizer Strength",
-          "value_type": "uint8",
-          "range": {
-            "min": 0,
-            "max": 100,
-            "step": 1
+          "param_id": "config",
+          "param_name": "Delay Line",
+          "value_type": "delay_line",
+          "unit": "ms",
+          "default": {
+            "max_delay_ms": 250,
+            "ramp_ms": 50,
+            "channels": 2,
+            "per_channel_ms": [
+              0,
+              0
+            ]
           },
-          "default": 50,
           "apply": {
             "settable_states": [
               "PIPE_LOADED",
               "RUNNING"
             ],
-            "mode": "next_frame"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
-    },
-    {
-      "type_id": "fx.loudness",
-      "category": "playback/fx",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "enable",
-          "param_name": "Loudness Switch",
-          "value_type": "bool",
-          "default": false,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
+            "mode": "safe_point"
           }
         }
       ]
     },
     {
-      "type_id": "protect.speaker",
-      "category": "playback/protect",
-      "abi_version": 2,
+      "type_id": "mix.fader_balance",
+      "category": "audio/basic",
+      "abi_version": 3,
       "io": {
         "in_ports": [
           {
             "name": "in",
-            "max_ch": 16
+            "max_ch": 2
           }
         ],
         "out_ports": [
           {
             "name": "out",
-            "max_ch": 16
+            "max_ch": 2
           }
         ]
       },
       "parameters": [
         {
-          "param_id": "enable",
-          "param_name": "SPK Protect Switch",
-          "value_type": "bool",
-          "default": true,
+          "param_id": "config",
+          "param_name": "Fader Balance",
+          "value_type": "fader_balance",
+          "default": {
+            "front_back_weight": 0.0,
+            "left_right_weight": 0.0,
+            "ramp": "linear",
+            "ramp_ms": 50
+          },
           "apply": {
             "settable_states": [
               "PIPE_LOADED",
               "RUNNING"
             ],
-            "mode": "next_frame"
+            "mode": "safe_point"
           }
-        },
+        }
+      ]
+    },
+    {
+      "type_id": "filter.dsp_filter",
+      "category": "audio/basic",
+      "abi_version": 3,
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "parameters": [
         {
-          "param_id": "limiter_threshold_db",
-          "param_name": "Limiter Thresh",
+          "param_id": "config",
+          "param_name": "DSP Filter",
+          "value_type": "dsp_filter",
+          "default": {
+            "filters": [
+              {
+                "filter_id": "identity_fir",
+                "index": 0,
+                "type": "fir",
+                "coefficients": [
+                  1.0
+                ]
+              }
+            ],
+            "routes": [
+              {
+                "name": "stereo_passthrough",
+                "config_idx": 0,
+                "input": [
+                  "FL",
+                  "FR"
+                ],
+                "output": [
+                  "FL",
+                  "FR"
+                ],
+                "matrix": [
+                  [
+                    "identity_fir",
+                    null
+                  ],
+                  [
+                    null,
+                    "identity_fir"
+                  ]
+                ]
+              }
+            ]
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ]
+    },
+    {
+      "type_id": "gain.volume",
+      "category": "audio/basic",
+      "abi_version": 2,
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "param_id": "vol_db",
+          "param_name": "Volume",
           "value_type": "int16",
           "unit": "dB",
           "range": {
-            "min": -30,
+            "min": -64,
             "max": 0,
             "step": 1
           },
-          "default": -6,
+          "default": 0,
           "apply": {
             "settable_states": [
               "PIPE_LOADED",
@@ -1114,366 +480,7 @@
     },
     {
       "type_id": "rate.src",
-      "category": "common/rate",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "quality",
-          "param_name": "Quality",
-          "value_type": "enum",
-          "default": "mid",
-          "enum": [
-            "low",
-            "mid",
-            "high"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "rate.asrc",
-      "category": "service/core3",
-      "abi_version": 1,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 16
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 16
-          }
-        ]
-      },
-      "service_binding": {
-        "preferred_core": "core3"
-      },
-      "parameters": [
-        {
-          "param_id": "enable",
-          "param_name": "ASRC Switch",
-          "value_type": "bool",
-          "default": true,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "service.anc_filter",
-      "category": "service/core3",
-      "abi_version": 1,
-      "io": {
-        "in_ports": [
-          {
-            "name": "mic",
-            "max_ch": 4
-          },
-          {
-            "name": "ref",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "anti",
-            "max_ch": 2
-          }
-        ]
-      },
-      "service_binding": {
-        "preferred_core": "core3"
-      },
-      "parameters": [
-        {
-          "param_id": "enable",
-          "param_name": "ANC Switch",
-          "value_type": "bool",
-          "default": false,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        },
-        {
-          "param_id": "filter_coef",
-          "param_name": "ANC Coeff",
-          "value_type": "bytes",
-          "bytes": {
-            "max_len": 4096
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point",
-            "requires": {
-              "quiesce": true
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "vavs.aec",
-      "category": "capture/vavs",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "mic",
-            "max_ch": 8
-          },
-          {
-            "name": "ref",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 8
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "tail_ms",
-          "param_name": "Tail Ms",
-          "value_type": "uint16",
-          "default": 256,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "nlp",
-          "param_name": "NLP",
-          "value_type": "enum",
-          "default": "mid",
-          "enum": [
-            "low",
-            "mid",
-            "high"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "echo_suppress_db",
-          "param_name": "Echo Suppress",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -60,
-            "max": 0,
-            "step": 1
-          },
-          "default": -20,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
-    },
-    {
-      "type_id": "vavs.ns",
-      "category": "capture/vavs",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 8
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 8
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "level",
-          "param_name": "NS Level",
-          "value_type": "enum",
-          "default": "mid",
-          "enum": [
-            "off",
-            "low",
-            "mid",
-            "high"
-          ],
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
-    },
-    {
-      "type_id": "vavs.agc",
-      "category": "capture/vavs",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 8
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 8
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "target_dbfs",
-          "param_name": "AGC Target",
-          "value_type": "int16",
-          "unit": "dBFS",
-          "range": {
-            "min": -30,
-            "max": -3,
-            "step": 1
-          },
-          "default": -12,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
-    },
-    {
-      "type_id": "vavs.beamformer",
-      "category": "capture/vavs",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "mic",
-            "max_ch": 8
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "array",
-          "param_name": "Array",
-          "value_type": "enum",
-          "default": "linear",
-          "enum": [
-            "linear",
-            "circular"
-          ],
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "mics",
-          "param_name": "Mics",
-          "value_type": "uint8",
-          "default": 4,
-          "apply": {
-            "settable_states": [
-              "IDLE"
-            ],
-            "mode": "on_install"
-          }
-        },
-        {
-          "param_id": "direction_deg",
-          "param_name": "BF Direction",
-          "value_type": "int16",
-          "unit": "deg",
-          "range": {
-            "min": -180,
-            "max": 180,
-            "step": 1
-          },
-          "default": 0,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
-    },
-    {
-      "type_id": "vavs.dereverb",
-      "category": "capture/vavs",
+      "category": "audio/basic",
       "abi_version": 2,
       "io": {
         "in_ports": [
@@ -1489,59 +496,253 @@
           }
         ]
       },
-      "parameters": [
-        {
-          "param_id": "strength",
-          "param_name": "DeReverb Strength",
-          "value_type": "uint8",
-          "range": {
-            "min": 0,
-            "max": 100,
-            "step": 1
-          },
-          "default": 50,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ],
-      "module_class": "MODULE_ADAPTER"
+      "parameters": []
+    }
+  ],
+  "module_instances": [
+    {
+      "inst_id": "PLAY_CHREMAP0",
+      "name": "Playback Channel Remap",
+      "module_type": "filter.channel_remap"
     },
     {
-      "type_id": "voice.kpb",
-      "category": "capture/voice",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
+      "inst_id": "PLAY_DELAY0",
+      "name": "Playback Delay",
+      "module_type": "delay.line"
+    },
+    {
+      "inst_id": "PLAY_FADER0",
+      "name": "Playback Fader Balance",
+      "module_type": "mix.fader_balance"
+    },
+    {
+      "inst_id": "PLAY_DSP_FILTER0",
+      "name": "Playback DSP Filter",
+      "module_type": "filter.dsp_filter"
+    },
+    {
+      "inst_id": "PLAY_VOLUME0",
+      "name": "Playback Volume",
+      "module_type": "gain.volume"
+    },
+    {
+      "inst_id": "CAP_SRC0",
+      "name": "Capture SRC",
+      "module_type": "rate.src"
+    },
+    {
+      "inst_id": "CAP_CHREMAP0",
+      "name": "Capture Channel Remap",
+      "module_type": "filter.channel_remap"
+    },
+    {
+      "inst_id": "CAP_VOLUME0",
+      "name": "Capture Volume",
+      "module_type": "gain.volume"
+    }
+  ],
+  "pipelines": [
+    {
+      "pipe_id": "PLAYBACK_MAIN",
+      "name": "AS Config Playback",
+      "domain": "playback",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
       },
-      "parameters": [
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
         {
-          "param_id": "enable",
-          "param_name": "KPB Switch",
-          "value_type": "bool",
-          "default": false,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
+          "port_id": "PLAY_HOST",
+          "role": "source",
+          "resource_ref": "host_playback0"
+        },
+        {
+          "port_id": "PLAY_FILEIO",
+          "role": "sink",
+          "resource_ref": "fileio_playback0"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "HOST_IN",
+          "kind": "port",
+          "port_ref": "PLAY_HOST"
+        },
+        {
+          "node_id": "CHREMAP",
+          "kind": "module",
+          "inst_ref": "PLAY_CHREMAP0"
+        },
+        {
+          "node_id": "DELAY",
+          "kind": "module",
+          "inst_ref": "PLAY_DELAY0"
+        },
+        {
+          "node_id": "FADER",
+          "kind": "module",
+          "inst_ref": "PLAY_FADER0"
+        },
+        {
+          "node_id": "VOLUME",
+          "kind": "module",
+          "inst_ref": "PLAY_VOLUME0"
+        },
+        {
+          "node_id": "DAI_OUT",
+          "kind": "port",
+          "port_ref": "PLAY_FILEIO"
+        }
+      ],
+      "edges": [
+        {
+          "from": "HOST_IN:out",
+          "to": "CHREMAP:in"
+        },
+        {
+          "from": "CHREMAP:out",
+          "to": "DELAY:in"
+        },
+        {
+          "from": "DELAY:out",
+          "to": "FADER:in"
+        },
+        {
+          "from": "FADER:out",
+          "to": "VOLUME:in"
+        },
+        {
+          "from": "VOLUME:out",
+          "to": "DAI_OUT:in"
+        }
+      ]
+    },
+    {
+      "pipe_id": "CAPTURE_MAIN",
+      "name": "AS Config Capture",
+      "domain": "capture",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
+      },
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
+        {
+          "port_id": "CAP_FILEIO",
+          "role": "source",
+          "resource_ref": "fileio_capture0"
+        },
+        {
+          "port_id": "CAP_HOST",
+          "role": "sink",
+          "resource_ref": "host_capture0"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "DAI_IN",
+          "kind": "port",
+          "port_ref": "CAP_FILEIO"
+        },
+        {
+          "node_id": "VOLUME",
+          "kind": "module",
+          "inst_ref": "CAP_VOLUME0"
+        },
+        {
+          "node_id": "SRC",
+          "kind": "module",
+          "inst_ref": "CAP_SRC0"
+        },
+        {
+          "node_id": "CHREMAP",
+          "kind": "module",
+          "inst_ref": "CAP_CHREMAP0"
+        },
+        {
+          "node_id": "HOST_OUT",
+          "kind": "port",
+          "port_ref": "CAP_HOST"
+        }
+      ],
+      "edges": [
+        {
+          "from": "DAI_IN:out",
+          "to": "VOLUME:in"
+        },
+        {
+          "from": "VOLUME:out",
+          "to": "SRC:in"
+        },
+        {
+          "from": "SRC:out",
+          "to": "CHREMAP:in"
+        },
+        {
+          "from": "CHREMAP:out",
+          "to": "HOST_OUT:in"
+        }
+      ]
+    },
+    {
+      "pipe_id": "DSP_FILTER_COVERAGE",
+      "name": "AS Config DSP Filter Coverage",
+      "domain": "playback",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
+      },
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
+        {
+          "port_id": "DSP_HOST",
+          "role": "source",
+          "resource_ref": "host_dsp_filter0"
+        },
+        {
+          "port_id": "DSP_FILEIO",
+          "role": "sink",
+          "resource_ref": "fileio_dsp_filter1"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "HOST_IN",
+          "kind": "port",
+          "port_ref": "DSP_HOST"
+        },
+        {
+          "node_id": "DSP_FILTER",
+          "kind": "module",
+          "inst_ref": "PLAY_DSP_FILTER0"
+        },
+        {
+          "node_id": "DAI_OUT",
+          "kind": "port",
+          "port_ref": "DSP_FILEIO"
+        }
+      ],
+      "edges": [
+        {
+          "from": "HOST_IN:out",
+          "to": "DSP_FILTER:in"
+        },
+        {
+          "from": "DSP_FILTER:out",
+          "to": "DAI_OUT:in"
         }
       ]
     }
@@ -1549,717 +750,30 @@
   "presets": [
     {
       "preset_id": "playback.music",
-      "description": "Music scene node-level parameter preset",
+      "description": "Nominal playback gain for as_config FILE_IO validation.",
       "load_mode": "bulk",
       "node_values": [
         {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "EQ",
+          "pipeline_id": "PLAYBACK_MAIN",
+          "node_id": "VOLUME",
           "values": {
-            "num_biquads": 10,
-            "layout": "per_ch"
-          }
-        },
-        {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "DRC",
-          "values": {
-            "knee": "soft"
-          }
-        },
-        {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "VB",
-          "values": {
-            "harmonics_mode": "mild"
+            "vol_db": 0
           }
         }
-      ],
-      "transaction": {
-        "validate_all_before_apply": true,
-        "apply_order": "as_listed",
-        "rollback_on_error": true
-      }
+      ]
     },
     {
-      "preset_id": "playback.movie",
-      "description": "Movie scene node-level parameter preset",
+      "preset_id": "capture.default",
+      "description": "Nominal capture gain for as_config FILE_IO validation.",
       "load_mode": "bulk",
       "node_values": [
         {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "EQ",
+          "pipeline_id": "CAPTURE_MAIN",
+          "node_id": "VOLUME",
           "values": {
-            "num_biquads": 14,
-            "layout": "per_ch"
-          }
-        },
-        {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "MBDRC",
-          "values": {
-            "bands": 3
-          }
-        },
-        {
-          "pipeline_id": "PLAY_MAIN",
-          "node_id": "VB",
-          "values": {
-            "harmonics_mode": "strong"
+            "vol_db": 0
           }
         }
-      ],
-      "transaction": {
-        "validate_all_before_apply": true,
-        "apply_order": "as_listed",
-        "rollback_on_error": true
-      }
-    },
-    {
-      "preset_id": "capture.call",
-      "description": "Call scene node-level parameter preset",
-      "load_mode": "bulk",
-      "node_values": [
-        {
-          "pipeline_id": "CAPTURE_VOICE",
-          "node_id": "AEC",
-          "values": {
-            "tail_ms": 256,
-            "nlp": "high"
-          }
-        },
-        {
-          "pipeline_id": "CAPTURE_VOICE",
-          "node_id": "BF",
-          "values": {
-            "array": "linear",
-            "mics": 4
-          }
-        }
-      ],
-      "transaction": {
-        "validate_all_before_apply": true,
-        "apply_order": "as_listed",
-        "rollback_on_error": true
-      }
-    }
-  ],
-  "module_instances": [
-    {
-      "inst_id": "VOL_MAIN",
-      "name": "Main",
-      "module_type": "gain.volume"
-    },
-    {
-      "inst_id": "EQ_PLAY",
-      "name": "EQ",
-      "module_type": "eq.iir"
-    },
-    {
-      "inst_id": "DRC_PLAY",
-      "name": "DRC",
-      "module_type": "dyn.drc"
-    },
-    {
-      "inst_id": "MBDRC_PLAY",
-      "name": "MBDRC",
-      "module_type": "dyn.multiband_drc"
-    },
-    {
-      "inst_id": "VBASS",
-      "name": "VBass",
-      "module_type": "fx.virtual_bass"
-    },
-    {
-      "inst_id": "SURR_DEC",
-      "name": "Surround",
-      "module_type": "fx.surround_decoder"
-    },
-    {
-      "inst_id": "VIRT",
-      "name": "Virtualizer",
-      "module_type": "fx.virtualizer"
-    },
-    {
-      "inst_id": "UDMIX",
-      "name": "UpDownMix",
-      "module_type": "mix.up_down_mixer"
-    },
-    {
-      "inst_id": "LOUD",
-      "name": "Loudness",
-      "module_type": "fx.loudness"
-    },
-    {
-      "inst_id": "SPK_PROT",
-      "name": "SpeakerProtect",
-      "module_type": "protect.speaker"
-    },
-    {
-      "inst_id": "DCB_PB",
-      "name": "DCBlock",
-      "module_type": "filter.dcblock"
-    },
-    {
-      "inst_id": "AEC",
-      "name": "AEC",
-      "module_type": "vavs.aec"
-    },
-    {
-      "inst_id": "NS",
-      "name": "NS",
-      "module_type": "vavs.ns"
-    },
-    {
-      "inst_id": "AGC",
-      "name": "AGC",
-      "module_type": "vavs.agc"
-    },
-    {
-      "inst_id": "BF",
-      "name": "Beamformer",
-      "module_type": "vavs.beamformer"
-    },
-    {
-      "inst_id": "DEREV",
-      "name": "DeReverb",
-      "module_type": "vavs.dereverb"
-    },
-    {
-      "inst_id": "KPB",
-      "name": "KPB",
-      "module_type": "voice.kpb"
-    },
-    {
-      "inst_id": "ASRC_SVC",
-      "name": "ASRC",
-      "module_type": "rate.asrc"
-    },
-    {
-      "inst_id": "ANC_SVC",
-      "name": "ANC",
-      "module_type": "service.anc_filter"
-    }
-  ],
-  "pipelines": [
-    {
-      "pipe_id": "PLAY_MAIN",
-      "name": "Playback Main",
-      "domain": "playback",
-      "frame": {
-        "block_ms": 10,
-        "rate": 48000
-      },
-      "ports": [
-        {
-          "port_id": "P_IN",
-          "role": "source",
-          "alsa_hint": {
-            "dai_id": "CODEC_IN_DAI0",
-            "pcm_id": "PCM_PLAY_0",
-            "aif_role": "aif_in"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM0",
-            "dir": "in",
-            "max_ch": 8,
-            "tdm_slots": 8,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "P_OUT",
-          "role": "sink",
-          "alsa_hint": {
-            "dai_id": "CODEC_OUT_DAI0",
-            "pcm_id": "PCM_PLAY_0",
-            "aif_role": "aif_out"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM0",
-            "dir": "out",
-            "max_ch": 8,
-            "tdm_slots": 8,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        }
-      ],
-      "nodes": [
-        {
-          "node_id": "IN",
-          "kind": "port",
-          "port_ref": "P_IN"
-        },
-        {
-          "node_id": "DCB",
-          "kind": "module",
-          "inst_ref": "DCB_PB"
-        },
-        {
-          "node_id": "VOL",
-          "kind": "module",
-          "inst_ref": "VOL_MAIN"
-        },
-        {
-          "node_id": "EQ",
-          "kind": "module",
-          "inst_ref": "EQ_PLAY"
-        },
-        {
-          "node_id": "DYN_SEL",
-          "kind": "module_inline",
-          "inline": {
-            "module_type": "route.mux",
-            "name": "DynMux"
-          }
-        },
-        {
-          "node_id": "DRC",
-          "kind": "module",
-          "inst_ref": "DRC_PLAY"
-        },
-        {
-          "node_id": "MBDRC",
-          "kind": "module",
-          "inst_ref": "MBDRC_PLAY"
-        },
-        {
-          "node_id": "SURR",
-          "kind": "module",
-          "inst_ref": "SURR_DEC"
-        },
-        {
-          "node_id": "UDM",
-          "kind": "module",
-          "inst_ref": "UDMIX"
-        },
-        {
-          "node_id": "VIRT",
-          "kind": "module",
-          "inst_ref": "VIRT"
-        },
-        {
-          "node_id": "VB",
-          "kind": "module",
-          "inst_ref": "VBASS"
-        },
-        {
-          "node_id": "LOUD",
-          "kind": "module",
-          "inst_ref": "LOUD"
-        },
-        {
-          "node_id": "PROT",
-          "kind": "module",
-          "inst_ref": "SPK_PROT"
-        },
-        {
-          "node_id": "OUT",
-          "kind": "port",
-          "port_ref": "P_OUT"
-        }
-      ],
-      "edges": [
-        {
-          "from": "IN:out",
-          "to": "DCB:in"
-        },
-        {
-          "from": "DCB:out",
-          "to": "VOL:in"
-        },
-        {
-          "from": "VOL:out",
-          "to": "EQ:in"
-        },
-        {
-          "from": "EQ:out",
-          "to": "DYN_SEL:a"
-        },
-        {
-          "from": "DRC:out",
-          "to": "DYN_SEL:b"
-        },
-        {
-          "from": "EQ:out",
-          "to": "DRC:in"
-        },
-        {
-          "from": "EQ:out",
-          "to": "MBDRC:in"
-        },
-        {
-          "from": "MBDRC:out",
-          "to": "SURR:in"
-        },
-        {
-          "from": "DYN_SEL:out",
-          "to": "SURR:in"
-        },
-        {
-          "from": "SURR:out",
-          "to": "UDM:in"
-        },
-        {
-          "from": "UDM:out",
-          "to": "VIRT:in"
-        },
-        {
-          "from": "VIRT:out",
-          "to": "VB:in"
-        },
-        {
-          "from": "VB:out",
-          "to": "LOUD:in"
-        },
-        {
-          "from": "LOUD:out",
-          "to": "PROT:in"
-        },
-        {
-          "from": "PROT:out",
-          "to": "OUT:in"
-        }
-      ],
-      "derive": {
-        "dapm": "auto"
-      }
-    },
-    {
-      "pipe_id": "CAPTURE_VOICE",
-      "name": "Capture Voice",
-      "domain": "capture",
-      "frame": {
-        "block_ms": 10,
-        "rate": 48000
-      },
-      "ports": [
-        {
-          "port_id": "C_MIC",
-          "role": "source",
-          "alsa_hint": {
-            "dai_id": "CODEC_IN_DAI1",
-            "pcm_id": "PCM_CAP_0",
-            "aif_role": "aif_in"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM1",
-            "dir": "in",
-            "max_ch": 8,
-            "tdm_slots": 8,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "C_REF",
-          "role": "source",
-          "alsa_hint": {
-            "dai_id": "CODEC_IN_DAI2",
-            "pcm_id": "PCM_CAP_0",
-            "aif_role": "aif_in"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM2",
-            "dir": "in",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "C_OUT",
-          "role": "sink",
-          "alsa_hint": {
-            "dai_id": "CODEC_OUT_DAI1",
-            "pcm_id": "PCM_CAP_0",
-            "aif_role": "aif_out"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM1",
-            "dir": "out",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        }
-      ],
-      "nodes": [
-        {
-          "node_id": "MIC",
-          "kind": "port",
-          "port_ref": "C_MIC"
-        },
-        {
-          "node_id": "REF",
-          "kind": "port",
-          "port_ref": "C_REF"
-        },
-        {
-          "node_id": "BF",
-          "kind": "module",
-          "inst_ref": "BF"
-        },
-        {
-          "node_id": "AEC",
-          "kind": "module",
-          "inst_ref": "AEC"
-        },
-        {
-          "node_id": "NS",
-          "kind": "module",
-          "inst_ref": "NS"
-        },
-        {
-          "node_id": "AGC",
-          "kind": "module",
-          "inst_ref": "AGC"
-        },
-        {
-          "node_id": "DEREV",
-          "kind": "module",
-          "inst_ref": "DEREV"
-        },
-        {
-          "node_id": "KPB",
-          "kind": "module",
-          "inst_ref": "KPB"
-        },
-        {
-          "node_id": "OUT",
-          "kind": "port",
-          "port_ref": "C_OUT"
-        }
-      ],
-      "edges": [
-        {
-          "from": "MIC:out",
-          "to": "BF:mic"
-        },
-        {
-          "from": "BF:out",
-          "to": "AEC:mic"
-        },
-        {
-          "from": "REF:out",
-          "to": "AEC:ref"
-        },
-        {
-          "from": "AEC:out",
-          "to": "NS:in"
-        },
-        {
-          "from": "NS:out",
-          "to": "AGC:in"
-        },
-        {
-          "from": "AGC:out",
-          "to": "DEREV:in"
-        },
-        {
-          "from": "DEREV:out",
-          "to": "KPB:in"
-        },
-        {
-          "from": "KPB:out",
-          "to": "OUT:in"
-        }
-      ],
-      "derive": {
-        "dapm": "auto"
-      }
-    },
-    {
-      "pipe_id": "RADIO_IN",
-      "name": "Radio Input (DAB/AM/FM)",
-      "domain": "playback",
-      "frame": {
-        "block_ms": 10,
-        "rate": 48000
-      },
-      "ports": [
-        {
-          "port_id": "R_DAB",
-          "role": "source",
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM6",
-            "dir": "in",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "R_AM",
-          "role": "source",
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM7",
-            "dir": "in",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "R_FM",
-          "role": "source",
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM8",
-            "dir": "in",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        },
-        {
-          "port_id": "R_OUT",
-          "role": "sink",
-          "alsa_hint": {
-            "dai_id": "CODEC_OUT_DAI0",
-            "pcm_id": "PCM_RADIO_0",
-            "aif_role": "aif_out"
-          },
-          "hw": {
-            "transport": "tdm",
-            "id": "TDM0",
-            "dir": "out",
-            "max_ch": 2,
-            "tdm_slots": 2,
-            "slot_width": 32,
-            "sample_bits": 32,
-            "fsync_hz": 48000
-          }
-        }
-      ],
-      "nodes": [
-        {
-          "node_id": "DAB",
-          "kind": "port",
-          "port_ref": "R_DAB"
-        },
-        {
-          "node_id": "AM",
-          "kind": "port",
-          "port_ref": "R_AM"
-        },
-        {
-          "node_id": "FM",
-          "kind": "port",
-          "port_ref": "R_FM"
-        },
-        {
-          "node_id": "SRC_SEL",
-          "kind": "module_inline",
-          "inline": {
-            "module_type": "route.selector",
-            "name": "RadioSelect"
-          }
-        },
-        {
-          "node_id": "OUT",
-          "kind": "port",
-          "port_ref": "R_OUT"
-        }
-      ],
-      "edges": [
-        {
-          "from": "DAB:out",
-          "to": "SRC_SEL:in0"
-        },
-        {
-          "from": "AM:out",
-          "to": "SRC_SEL:in1"
-        },
-        {
-          "from": "FM:out",
-          "to": "SRC_SEL:in2"
-        },
-        {
-          "from": "SRC_SEL:out",
-          "to": "OUT:in"
-        }
-      ],
-      "derive": {
-        "dapm": "auto"
-      }
-    },
-    {
-      "pipe_id": "SERVICE_CORE3",
-      "name": "Core3 Services (ASRC/ANC)",
-      "domain": "service",
-      "frame": {
-        "block_ms": 10,
-        "rate": 48000
-      },
-      "nodes": [
-        {
-          "node_id": "ASRC",
-          "kind": "module",
-          "inst_ref": "ASRC_SVC"
-        },
-        {
-          "node_id": "ANC",
-          "kind": "module",
-          "inst_ref": "ANC_SVC"
-        }
-      ]
-    }
-  ],
-  "scenes": [
-    {
-      "scene_id": "MUSIC",
-      "active_pipelines": [
-        "PLAY_MAIN"
-      ],
-      "preset_sequence": [
-        "playback.music"
-      ]
-    },
-    {
-      "scene_id": "MOVIE",
-      "active_pipelines": [
-        "PLAY_MAIN"
-      ],
-      "preset_sequence": [
-        "playback.movie"
-      ]
-    },
-    {
-      "scene_id": "CALL",
-      "active_pipelines": [
-        "CAPTURE_VOICE"
-      ],
-      "preset_sequence": [
-        "capture.call"
-      ]
-    },
-    {
-      "scene_id": "RADIO",
-      "active_pipelines": [
-        "RADIO_IN"
       ]
     }
   ]

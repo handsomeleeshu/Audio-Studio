@@ -16,12 +16,19 @@ assert.equal(registry.moduleTypes.get('virtual.mic_input').category, 'INPUT / OU
 assert.equal(registry.moduleTypes.get('virtual.audio_output').category, 'INPUT / OUTPUT');
 
 assert.equal(registry.instances.size, cfg.module_instances.length);
-const playback = convertPipeline(cfg, 'PLAY_MAIN');
+const playback = convertPipeline(cfg, 'PLAYBACK_MAIN');
 assert.ok(playback.nodes.length > 4);
 assert.ok(playback.edges.length > 4);
-const aec = convertPipeline(cfg, 'CAPTURE_VOICE').nodes.find(n => n.id === 'AEC');
-assert.deepEqual(aec.inputs.map(p => p.name), ['mic', 'ref']);
-assert.deepEqual(aec.outputs.map(p => p.name), ['out']);
-assert.ok(Object.prototype.hasOwnProperty.call(aec.staticParams, 'tail_ms'));
-assert.ok(Object.prototype.hasOwnProperty.call(aec.runtimeParams, 'echo_suppress_db'));
+const chremap = playback.nodes.find(n => n.id === 'CHREMAP');
+assert.deepEqual(chremap.inputs.map(p => p.name), ['in']);
+assert.deepEqual(chremap.outputs.map(p => p.name), ['out']);
+assert.ok(Object.prototype.hasOwnProperty.call(chremap.runtimeParams, 'config'));
+assert.equal(chremap.runtimeParams.config.mappings.length, 4);
+const fader = playback.nodes.find(n => n.id === 'FADER');
+assert.ok(Object.prototype.hasOwnProperty.call(fader.runtimeParams, 'config'));
+assert.equal(fader.runtimeParams.config.ramp, 'linear');
+const dspFilter = convertPipeline(cfg, 'DSP_FILTER_COVERAGE').nodes.find(n => n.id === 'DSP_FILTER');
+assert.deepEqual(dspFilter.inputs.map(p => p.name), ['in']);
+assert.deepEqual(dspFilter.outputs.map(p => p.name), ['out']);
+assert.equal(dspFilter.runtimeParams.config.filters[0].filter_id, 'identity_fir');
 console.log('config-parser.test passed');

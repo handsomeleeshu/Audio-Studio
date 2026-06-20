@@ -1,7 +1,7 @@
 #include <memory>
 #include <utility>
 
-#include "audio_studio/module_config_plugin.hpp"
+#include "module_config_plugin.hpp"
 
 namespace {
 

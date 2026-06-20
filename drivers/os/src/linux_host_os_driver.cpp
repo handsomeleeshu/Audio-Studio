@@ -12,6 +12,7 @@
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace audio_studio::drivers::os {
 
@@ -279,6 +280,14 @@ OsResult LinuxHostOsDriver::getEnv(const std::string& key, std::string& out) con
 
 uint64_t LinuxHostOsDriver::processId() const {
   return static_cast<uint64_t>(::getpid());
+}
+
+std::string LinuxHostOsDriver::executablePath() const {
+  std::vector<char> buffer(4096);
+  const auto size = ::readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+  if (size <= 0) return {};
+  buffer[static_cast<size_t>(size)] = '\0';
+  return std::string(buffer.data());
 }
 
 OsResult LinuxHostOsDriver::runCommand(const std::string& command, int& exit_code) {
