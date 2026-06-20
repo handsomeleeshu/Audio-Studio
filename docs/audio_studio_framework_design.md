@@ -1642,6 +1642,12 @@ Audio-Studio/server/framework/config/
 
 > `alsa_port/` 用于承载从 Linux ALSA lib、Linux kernel ALSA topology、Sound Open Firmware tools/tplg_parser 相关代码阅读后必要 porting 的内容。该部分只能形成 Audio Studio 自己的 topology pack/parse 适配层，不能让 `as_config` 直接散落依赖第三方工具源码结构。
 
+`as_config` 的输入 JSON 是 Audio Studio 语义配置，不是 SOF topology `.conf` 的逐字段转写。`resource_catalog` 描述 host/DAI/计算资源，pipeline port 通过 `resource_ref` 绑定资源；module/node/pipeline 使用 Audio Studio 的 type、parameter、port、edge 语义表达链路。`A2.json` 当前覆盖 playback、capture 与 dsp_filter coverage 三条 FILE_IO pipeline，包含 `channel_remap`、`delay`、`fader_balance`、`dsp_filter` 等 SOF 基础 audio component；rv32qemu 仅声明 FILEIO0/FILEIO1，因此 dsp_filter coverage pipeline 绑定 FILEIO1。
+
+module 的 `parameters` 扩展方式保持在 Audio Studio schema 层：内置 `SofBasicModuleConfigHandler` 只负责把已知基础 component 的语义参数打包为 SOF IPC3 bytes，并生成 `SectionControlBytes`；第三方 module config handler 继续通过插件返回 binary payload；未知或通用参数仍进入 Audio Studio private payload。`framework/config` 不要求前端或产品 JSON 暴露 SOF widget name、buffer size、ALSA hw 字符串等低层字段，这些由 IR builder 和 topology generator 根据资源、端口和 module category 推导。
+
+`as_config --build-tplg` 会同时输出 `.conf`、`.tplg`、private binary、controls csv、compile report 与可选 decode 结果。`alsatplg` decode 是环境能力：decode 成功时输出 `<project>_decode.conf`，decode 不可用或当前 topology 无法被 host decode 时编译仍然成功，并在 result warnings 与 `<project>_decode.log` 中记录原因。
+
 ### 4.6 server/framework/control
 
 ```text
@@ -2514,6 +2520,14 @@ sequenceDiagram
   Server-->>RPC: compile result
   RPC-->>CLI: write output/report
 ```
+
+当前 rv32qemu 验证路径使用同一个 `A2.json` 生成 `as-config-a2-fileio.tplg`，再由 `audio_controller` 的 pipeinstall 安装指定 pipeline。验证点包括：
+
+- playback pipeline：FILEIO0 -> channel_remap -> delay -> fader_balance -> host，使用生成的 stereo 1 kHz tone，验证 play 链路有非零输出。
+- capture pipeline：host -> channel_remap -> FILEIO0，使用 file input，验证 srecord 链路有非零 capture WAV。
+- dsp_filter coverage pipeline：FILEIO1 -> dsp_filter -> host，使用 rv32qemu generic C dsp_filter，验证 DAI1 输出 WAV 的频率与 THD+N 指标。
+
+这条链路要求 as_config 输出的 tplg 与传统 m4 FILE_IO topology 在 audio_controller 安装和 splay/srecord 行为上等价；差异只应来自 Audio Studio private payload、control bytes 以及项目命名。
 
 ---
 

@@ -4238,7 +4238,11 @@
     }
     function componentFromPipelinePort(pipe, portRef) {
       const p = (pipe.ports || []).find(x => x.port_id === portRef) || { port_id: portRef, role: 'source', hw: { max_ch: 2 } };
-      const maxCh = Number(p.hw?.max_ch || 2);
+      const catalog = currentProjectConfig?.resource_catalog || currentProjectConfig?.hardware_hints || {};
+      const endpoints = catalog.audio_endpoints || catalog.audio_ios || [];
+      const endpoint = p.resource_ref ? endpoints.find(x => (x.id || x.endpoint_id) === p.resource_ref) : null;
+      const caps = endpoint?.capabilities || {};
+      const maxCh = Number(caps.channels?.max || caps.max_ch || caps.channels_max || p.hw?.max_ch || 2);
       const isSource = p.role !== 'sink';
       return {
         cat: 'PIPELINE PORTS',
@@ -4501,7 +4505,7 @@
         return [...new Set(values.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0))].sort((a, b) => a - b);
       }
       function dspFrequencySpecV73() {
-        const hints = currentProjectConfig?.hardware_hints || {};
+        const hints = currentProjectConfig?.resource_catalog || currentProjectConfig?.hardware_hints || {};
         return hints.dsp_frequency_mhz || hints.dsp_frequencies_mhz || hints.dsp_frequency_options_mhz || null;
       }
       function dspFrequencyOptionsForTargetV73(target = $('#dspSelect')?.value || 'HiFi5s') {

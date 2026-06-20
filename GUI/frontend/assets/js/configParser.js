@@ -54,6 +54,23 @@ function defaultPortForRole(role) {
   return { inputs: [{ name: 'in', max_ch: 32 }], outputs: [{ name: 'out', max_ch: 32 }] };
 }
 
+function audioResourceMap(productConfig) {
+  const catalog = productConfig.resource_catalog || productConfig.hardware_hints || {};
+  const endpoints = catalog.audio_endpoints || catalog.audio_ios || [];
+  return new Map(endpoints.map(e => [e.id || e.endpoint_id, e]));
+}
+
+function endpointMaxChannels(port, endpoint) {
+  const caps = endpoint && endpoint.capabilities || {};
+  return Number(
+    caps.channels && caps.channels.max ||
+    caps.max_ch ||
+    caps.channels_max ||
+    port && port.hw && port.hw.max_ch ||
+    2
+  );
+}
+
 function buildParamDefaults(moduleType, presetValues = {}) {
   const staticParams = {};
   const runtimeParams = {};
@@ -131,6 +148,7 @@ export function convertPipeline(productConfig, pipeId) {
   const pipe = pipelines.find(p => p.pipe_id === pipeId) || pipelines[0];
   if (!pipe) throw new Error('No pipeline in product config');
   const portMap = new Map((pipe.ports || []).map(p => [p.port_id, p]));
+  const resources = audioResourceMap(productConfig);
   const nodes = [];
   for (const raw of pipe.nodes || []) {
     const { inst, moduleType, displayName, presetValues } = resolveModuleForNode(productConfig, registry, raw);
@@ -141,13 +159,17 @@ export function convertPipeline(productConfig, pipeId) {
     let subtitle = 'pipeline port';
     if (raw.kind === 'port') {
       const port = portMap.get(raw.port_ref);
+      const endpoint = port && port.resource_ref ? resources.get(port.resource_ref) : null;
       const portRole = port && port.role;
       const ports = defaultPortForRole(portRole);
+      const maxCh = endpointMaxChannels(port, endpoint);
       inputs = ports.inputs;
       outputs = ports.outputs;
       category = `port/${portRole || 'io'}`;
       moduleTypeId = `port.${portRole || 'io'}`;
-      subtitle = `${portRole || 'port'} · ${port && port.hw && port.hw.id || raw.port_ref || ''}`;
+      subtitle = `${portRole || 'port'} · ${endpoint && (endpoint.id || endpoint.endpoint_id) || port && port.resource_ref || port && port.hw && port.hw.id || raw.port_ref || ''}`;
+      inputs = inputs.map(p => ({ ...p, max_ch: maxCh }));
+      outputs = outputs.map(p => ({ ...p, max_ch: maxCh }));
     } else {
       inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
       outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];

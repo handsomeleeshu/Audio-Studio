@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -81,6 +82,7 @@ struct EdgeInfo {
 struct PortInfo {
   std::string port_id;
   std::string role;
+  std::string resource_ref;
   std::string pcm_id;
   std::string dai_id;
   std::string aif_role;
@@ -92,6 +94,16 @@ struct PortInfo {
   uint32_t slot_width = 0;
   uint32_t sample_bits = 0;
   uint32_t fsync_hz = 0;
+};
+
+struct CoreResourceInfo {
+  std::string resource_id;
+  uint32_t core = 0;
+};
+
+struct ResourceCatalogInfo {
+  std::map<std::string, CoreResourceInfo> cores;
+  std::map<std::string, PortInfo> audio_endpoints;
 };
 
 struct SofSchedulingInfo {
@@ -111,6 +123,7 @@ struct PipelineInfo {
   uint32_t sample_rate = 48000;
   uint32_t channels_min = 1;
   uint32_t channels_max = 2;
+  uint32_t sample_bits = 32;
   SofSchedulingInfo scheduling;
   std::vector<PortInfo> ports;
   std::vector<NodeInfo> nodes;
@@ -139,6 +152,14 @@ struct ControlInfo {
 struct WidgetControlRefs {
   std::vector<std::string> mixer;
   std::vector<std::string> enumerated;
+  std::vector<std::string> bytes;
+};
+
+struct InferredBufferInfo {
+  size_t edge_index = 0;
+  std::string widget_name;
+  uint32_t size_bytes = 0;
+  uint32_t caps = 0;
 };
 
 struct InstallParamInfo {
@@ -208,10 +229,69 @@ public:
 
   module_config::Status packRuntimeParam(const module_config::ModuleConfigRequest& request,
                                          module_config::ModuleConfigBlob& out) const override {
+    if (isBytesParameter(request.parameter_json)) {
+      try {
+        const auto values = audio_studio::rpc::parseJson(request.values_json);
+        if (!values.isObject() || !values.has(request.parameter_id)) {
+          return module_config::Status::invalidArgument("bytes parameter value missing: " + request.parameter_id);
+        }
+        out.format = "sof-ipc3-bytes-v1";
+        out.data = parseRawBytes(values.at(request.parameter_id));
+        return module_config::Status::success();
+      } catch (const std::exception& error) {
+        return module_config::Status::invalidArgument(
+            "invalid bytes parameter payload for " + request.parameter_id + ": " + error.what());
+      }
+    }
     return packJson(request, out, "as-generic-runtime-json-v1");
   }
 
 private:
+  static bool isBytesParameter(const std::string& parameter_json) {
+    if (parameter_json.empty()) return false;
+    const auto parameter = audio_studio::rpc::parseJson(parameter_json);
+    return parameter.isObject() && parameter.has("value_type") &&
+           parameter.at("value_type").isString() &&
+           parameter.at("value_type").asString() == "bytes";
+  }
+
+  static std::vector<uint8_t> parseRawByteArray(const JsonValue& value) {
+    std::vector<uint8_t> bytes;
+    bytes.reserve(value.asArray().size());
+    for (const auto& item : value.asArray()) {
+      if (!item.isNumber()) throw std::runtime_error("byte array items must be numbers");
+      const auto byte = item.asUInt64();
+      if (byte > 0xffu) throw std::runtime_error("byte value is larger than 255");
+      bytes.push_back(static_cast<uint8_t>(byte));
+    }
+    return bytes;
+  }
+
+  static std::vector<uint8_t> parseRawByteString(std::string text) {
+    for (auto& ch : text) {
+      if (ch == ',' || ch == ':' || std::isspace(static_cast<unsigned char>(ch))) ch = ' ';
+    }
+
+    std::istringstream input(text);
+    std::string token;
+    std::vector<uint8_t> bytes;
+    while (input >> token) {
+      size_t parsed = 0;
+      const unsigned long value = std::stoul(token, &parsed, 0);
+      if (parsed != token.size()) throw std::runtime_error("invalid byte token: " + token);
+      if (value > 0xfful) throw std::runtime_error("byte value is larger than 255: " + token);
+      bytes.push_back(static_cast<uint8_t>(value));
+    }
+    return bytes;
+  }
+
+  static std::vector<uint8_t> parseRawBytes(const JsonValue& value) {
+    if (value.isArray()) return parseRawByteArray(value);
+    if (value.isString()) return parseRawByteString(value.asString());
+    if (value.isObject() && value.has("bytes")) return parseRawBytes(value.at("bytes"));
+    throw std::runtime_error("bytes value must be an array, string, or object with a bytes field");
+  }
+
   module_config::Status packJson(const module_config::ModuleConfigRequest& request,
                                  module_config::ModuleConfigBlob& out,
                                  std::string format) const {
@@ -301,6 +381,12 @@ bool boolValue(const JsonValue& object, const std::string& key, bool fallback) {
   if (!object.isObject() || !object.has(key) || object.at(key).isNull()) return fallback;
   if (!object.at(key).isBool()) throw std::runtime_error("JSON field must be bool: " + key);
   return object.at(key).asBool();
+}
+
+const JsonValue* optionalObject(const JsonValue& object, const std::string& key) {
+  if (!object.isObject() || !object.has(key) || object.at(key).isNull()) return nullptr;
+  if (!object.at(key).isObject()) throw std::runtime_error("JSON field must be object: " + key);
+  return &object.at(key);
 }
 
 const JsonValue& requiredArray(const JsonValue& object, const std::string& key) {
@@ -438,6 +524,16 @@ std::string hexBytes(const std::vector<uint8_t>& bytes) {
   return out.str();
 }
 
+std::string colonHexBytes(const std::vector<uint8_t>& bytes) {
+  std::ostringstream out;
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    if (i != 0) out << ":";
+    out << std::hex << std::nouppercase << std::setw(2) << std::setfill('0')
+        << static_cast<unsigned>(bytes[i]);
+  }
+  return out.str();
+}
+
 std::string compactHex(const std::vector<uint8_t>& bytes) {
   std::ostringstream out;
   for (const auto byte : bytes) {
@@ -471,6 +567,14 @@ std::vector<uint8_t> uuidBytes(const std::string& uuid) {
     const uint8_t lo = hexNibble(hex[i + 1], uuid);
     bytes.push_back(static_cast<uint8_t>((hi << 4) | lo));
   }
+  return bytes;
+}
+
+std::vector<uint8_t> sofUuidTokenBytes(const std::string& uuid) {
+  auto bytes = uuidBytes(uuid);
+  std::reverse(bytes.begin(), bytes.begin() + 4);
+  std::reverse(bytes.begin() + 4, bytes.begin() + 6);
+  std::reverse(bytes.begin() + 6, bytes.begin() + 8);
   return bytes;
 }
 
@@ -542,12 +646,17 @@ std::map<std::string, std::string> loadSofUuidRegistry() {
 const std::map<std::string, std::string>& builtinSofUuidRegistry() {
   static const std::map<std::string, std::string> registry = {
     {"asrc", "c8ec72f6-8526-4faf-9d39a23d0b541de2"},
+    {"chremap", "74e4d7a4-c015-46b8-aa38a3b38cfab0d8"},
     {"crossover", "948c9ad1-806a-4131-ad6cb2bda9e35a9f"},
     {"dai", "c2b00d27-ffbc-4150-a51a245c79c5e54b"},
     {"dcblock", "b809efaf-5681-42b1-9ed604bb012dd384"},
+    {"delay_line", "71ae339d-d0fe-4995-8705e7bc44efd974"},
+    {"dsp_filter", "6a010917-29dd-4cd8-950e6bc077e5476a"},
     {"drc", "b36ee4da-006f-47f9-a06dfecbe2d8b6ce"},
     {"eq_fir", "43a90ce7-f3a5-41df-ac06ba98651ae6a3"},
     {"eq_iir", "5150c0e6-27f9-4ec8-8351c705b642d12f"},
+    {"fader_balance", "5c057768-21f0-4782-8056bacecf20e9fc"},
+    {"file_io_dai", "6bd5a21f-2445-7917-5183c36b8bf39368"},
     {"host", "8b9d100c-6d78-418f-90a3e0e805d0852b"},
     {"kpb", "d8218443-5ff3-4a4c-b3886cfe07b9562e"},
     {"mixer", "bc06c037-12aa-417c-9a9789282e321a76"},
@@ -692,21 +801,121 @@ std::string directionForPipeline(const JsonValue& pipeline) {
   return "playback";
 }
 
-uint32_t maxChannelsFromPorts(const JsonValue& pipeline) {
+uint32_t maxChannelsFromPortInfos(const std::vector<PortInfo>& ports) {
   uint32_t max_channels = 2;
-  if (!pipeline.isObject() || !pipeline.has("ports") || !pipeline.at("ports").isArray()) return max_channels;
-  for (const auto& port : pipeline.at("ports").asArray()) {
-    if (!port.isObject() || !port.has("hw") || !port.at("hw").isObject()) continue;
-    max_channels = std::max(max_channels, uintValue(port.at("hw"), "max_ch", max_channels));
+  for (const auto& port : ports) {
+    if (port.max_ch != 0) max_channels = std::max(max_channels, port.max_ch);
   }
   return max_channels;
 }
 
-PortInfo parsePort(const JsonValue& port_json, uint32_t default_rate) {
+uint32_t sampleBitsFromPortInfos(const std::vector<PortInfo>& ports) {
+  uint32_t sample_bits = 0;
+  for (const auto& port : ports) {
+    if (port.sample_bits != 0) sample_bits = std::max(sample_bits, port.sample_bits);
+  }
+  return sample_bits == 0 ? 32 : sample_bits;
+}
+
+uint32_t firstNumericArrayItem(const JsonValue& object, const std::string& key, uint32_t fallback) {
+  if (!object.isObject() || !object.has(key) || object.at(key).isNull()) return fallback;
+  const auto& value = object.at(key);
+  if (value.isNumber()) return static_cast<uint32_t>(value.asUInt64());
+  if (!value.isArray() || value.asArray().empty()) throw std::runtime_error("JSON field must be number or non-empty array: " + key);
+  if (!value.asArray().front().isNumber()) throw std::runtime_error("JSON array first item must be number: " + key);
+  return static_cast<uint32_t>(value.asArray().front().asUInt64());
+}
+
+void applyCapabilitiesToPort(PortInfo& port, const JsonValue& object, uint32_t default_rate) {
+  const JsonValue* caps = optionalObject(object, "capabilities");
+  if (caps == nullptr) caps = &object;
+  if (caps->has("channels") && caps->at("channels").isObject()) {
+    port.max_ch = uintValue(caps->at("channels"), "max", port.max_ch);
+  }
+  port.max_ch = uintValueAny(*caps, {"max_ch", "channels_max"}, port.max_ch);
+  port.tdm_slots = uintValue(*caps, "tdm_slots", port.tdm_slots == 0 ? port.max_ch : port.tdm_slots);
+  port.slot_width = uintValue(*caps, "slot_width", port.slot_width == 0 ? 32 : port.slot_width);
+  port.sample_bits = firstNumericArrayItem(*caps, "sample_bits", port.sample_bits == 0 ? 32 : port.sample_bits);
+  port.fsync_hz = firstNumericArrayItem(*caps, "sample_rates", port.fsync_hz == 0 ? default_rate : port.fsync_hz);
+  port.fsync_hz = uintValueAny(*caps, {"fsync_hz", "sample_rate"}, port.fsync_hz == 0 ? default_rate : port.fsync_hz);
+}
+
+PortInfo parseAudioEndpointResource(const JsonValue& endpoint_json, uint32_t default_rate) {
+  PortInfo endpoint;
+  endpoint.resource_ref = stringValue(endpoint_json, "id", stringValue(endpoint_json, "endpoint_id"));
+  if (endpoint.resource_ref.empty()) throw std::runtime_error("resource_catalog audio endpoint missing id");
+  endpoint.pcm_id = stringValue(endpoint_json, "stream_id", stringValue(endpoint_json, "pcm_id"));
+  endpoint.dai_id = stringValue(endpoint_json, "link_name", stringValue(endpoint_json, "dai_id"));
+  endpoint.aif_role = stringValue(endpoint_json, "role_label", stringValue(endpoint_json, "aif_role"));
+  endpoint.transport = stringValue(endpoint_json, "kind", stringValue(endpoint_json, "transport"));
+  endpoint.hw_id = stringValue(endpoint_json, "device_id", stringValue(endpoint_json, "id"));
+  endpoint.hw_dir = stringValue(endpoint_json, "data_flow", stringValue(endpoint_json, "dir"));
+  const std::string direction = stringValue(endpoint_json, "direction");
+  if (endpoint.hw_dir.empty() && direction == "playback") endpoint.hw_dir = "out";
+  if (endpoint.hw_dir.empty() && direction == "capture") endpoint.hw_dir = "in";
+  applyCapabilitiesToPort(endpoint, endpoint_json, default_rate);
+  return endpoint;
+}
+
+ResourceCatalogInfo parseResourceCatalog(const JsonValue& root) {
+  ResourceCatalogInfo catalog;
+  if (!root.isObject()) return catalog;
+  const JsonValue* catalog_json = optionalObject(root, "resource_catalog");
+  if (catalog_json == nullptr) catalog_json = optionalObject(root, "hardware_hints");
+  if (catalog_json == nullptr) return catalog;
+
+  if (catalog_json->has("compute") && catalog_json->at("compute").isArray()) {
+    for (const auto& item : catalog_json->at("compute").asArray()) {
+      CoreResourceInfo core;
+      core.resource_id = stringValue(item, "id", stringValue(item, "core_id"));
+      if (core.resource_id.empty()) throw std::runtime_error("resource_catalog compute item missing id");
+      core.core = uintValueAny(item, {"index", "core"}, 0);
+      catalog.cores.emplace(core.resource_id, std::move(core));
+    }
+  }
+  if (catalog_json->has("cores") && catalog_json->at("cores").isArray()) {
+    for (const auto& item : catalog_json->at("cores").asArray()) {
+      CoreResourceInfo core;
+      core.resource_id = stringValue(item, "id", stringValue(item, "core_id"));
+      if (core.resource_id.empty()) throw std::runtime_error("resource_catalog core item missing id");
+      core.core = uintValueAny(item, {"index", "core"}, 0);
+      catalog.cores.emplace(core.resource_id, std::move(core));
+    }
+  }
+  if (catalog_json->has("audio_endpoints") && catalog_json->at("audio_endpoints").isArray()) {
+    for (const auto& item : catalog_json->at("audio_endpoints").asArray()) {
+      auto endpoint = parseAudioEndpointResource(item, 48000);
+      catalog.audio_endpoints.emplace(endpoint.resource_ref, std::move(endpoint));
+    }
+  }
+  if (catalog_json->has("audio_ios") && catalog_json->at("audio_ios").isArray()) {
+    for (const auto& item : catalog_json->at("audio_ios").asArray()) {
+      auto endpoint = parseAudioEndpointResource(item, 48000);
+      catalog.audio_endpoints.emplace(endpoint.resource_ref, std::move(endpoint));
+    }
+  }
+  return catalog;
+}
+
+PortInfo parsePort(const JsonValue& port_json, const ResourceCatalogInfo& catalog, uint32_t default_rate) {
   PortInfo port;
   port.port_id = stringValue(port_json, "port_id");
   port.role = stringValue(port_json, "role");
+  port.resource_ref = stringValue(port_json, "resource_ref");
   if (port.port_id.empty()) throw std::runtime_error("pipeline port missing port_id");
+  if (!port.resource_ref.empty()) {
+    const auto endpoint_it = catalog.audio_endpoints.find(port.resource_ref);
+    if (endpoint_it == catalog.audio_endpoints.end()) {
+      throw std::runtime_error("pipeline port references unknown resource_ref: " + port.resource_ref);
+    }
+    const auto port_id = port.port_id;
+    const auto role = port.role;
+    const auto resource_ref = port.resource_ref;
+    port = endpoint_it->second;
+    port.port_id = port_id;
+    port.role = role;
+    port.resource_ref = resource_ref;
+  }
   if (port_json.has("alsa_hint") && port_json.at("alsa_hint").isObject()) {
     const auto& hint = port_json.at("alsa_hint");
     port.pcm_id = stringValue(hint, "pcm_id");
@@ -724,10 +933,16 @@ PortInfo parsePort(const JsonValue& port_json, uint32_t default_rate) {
     port.sample_bits = uintValue(hw, "sample_bits", 32);
     port.fsync_hz = uintValue(hw, "fsync_hz", default_rate);
   }
+  if (port_json.has("stream") && port_json.at("stream").isObject()) {
+    const auto& stream = port_json.at("stream");
+    port.pcm_id = stringValue(stream, "stream_id", port.pcm_id);
+    port.aif_role = stringValue(stream, "role_label", port.aif_role);
+  }
+  applyCapabilitiesToPort(port, port_json, default_rate);
   return port;
 }
 
-SofSchedulingInfo parseScheduling(const JsonValue& pipeline_json) {
+SofSchedulingInfo parseScheduling(const JsonValue& pipeline_json, const ResourceCatalogInfo& catalog) {
   SofSchedulingInfo scheduling;
   if (pipeline_json.has("frame") && pipeline_json.at("frame").isObject()) {
     const auto& frame = pipeline_json.at("frame");
@@ -740,6 +955,21 @@ SofSchedulingInfo parseScheduling(const JsonValue& pipeline_json) {
     scheduling.priority = uintValueAny(sof, {"priority", "sched_priority"}, scheduling.priority);
     scheduling.core = uintValueAny(sof, {"core", "core_id", "sched_core"}, scheduling.core);
     scheduling.time_domain = uintValueAny(sof, {"time_domain", "sched_time_domain"}, scheduling.time_domain);
+  }
+  if (pipeline_json.has("runtime") && pipeline_json.at("runtime").isObject()) {
+    const auto& runtime = pipeline_json.at("runtime");
+    scheduling.period_us = uintValueAny(runtime, {"period_us", "schedule_period_us"}, scheduling.period_us);
+    scheduling.priority = uintValueAny(runtime, {"priority", "schedule_priority"}, scheduling.priority);
+    const std::string core_ref = stringValue(runtime, "core_ref");
+    if (!core_ref.empty()) {
+      const auto core_it = catalog.cores.find(core_ref);
+      if (core_it == catalog.cores.end()) throw std::runtime_error("pipeline runtime references unknown core_ref: " + core_ref);
+      scheduling.core = core_it->second.core;
+    }
+    scheduling.core = uintValueAny(runtime, {"core_index", "core"}, scheduling.core);
+    const std::string clock = lowerAscii(stringValue(runtime, "clock", stringValue(runtime, "schedule_clock")));
+    if (clock == "timer" || clock == "wall") scheduling.time_domain = 1;
+    if (clock == "dma" || clock == "dai") scheduling.time_domain = 0;
   }
   return scheduling;
 }
@@ -792,6 +1022,7 @@ ModuleTypeInfo parseModuleType(const JsonValue& object) {
 ProjectIr parseProject(const JsonValue& root, const std::string& project_name) {
   ProjectIr ir;
   ir.project_name = project_name.empty() ? "a2" : project_name;
+  const auto resource_catalog = parseResourceCatalog(root);
 
   for (const auto& item : requiredArray(root, "module_types").asArray()) {
     auto type = parseModuleType(item);
@@ -824,15 +1055,16 @@ ProjectIr parseProject(const JsonValue& root, const std::string& project_name) {
     pipe.direction = directionForPipeline(item);
     pipe.source_json = item.dump();
     pipe.pcm_index = pcm_index++;
-    pipe.channels_max = maxChannelsFromPorts(item);
     if (item.has("frame") && item.at("frame").isObject()) pipe.sample_rate = uintValue(item.at("frame"), "rate", 48000);
-    pipe.scheduling = parseScheduling(item);
+    pipe.scheduling = parseScheduling(item, resource_catalog);
 
     if (item.has("ports") && item.at("ports").isArray()) {
       for (const auto& port_json : item.at("ports").asArray()) {
-        pipe.ports.push_back(parsePort(port_json, pipe.sample_rate));
+        pipe.ports.push_back(parsePort(port_json, resource_catalog, pipe.sample_rate));
       }
     }
+    pipe.channels_max = maxChannelsFromPortInfos(pipe.ports);
+    pipe.sample_bits = sampleBitsFromPortInfos(pipe.ports);
 
     for (const auto& node_json : requiredArray(item, "nodes").asArray()) {
       NodeInfo node;
@@ -1105,6 +1337,7 @@ std::vector<uint8_t> buildPrivatePayload(const ProjectIr& ir) {
       json << "{";
       json << "\"port_id\":" << quote(port.port_id) << ",";
       json << "\"role\":" << quote(port.role) << ",";
+      json << "\"resource_ref\":" << quote(port.resource_ref) << ",";
       json << "\"pcm_id\":" << quote(port.pcm_id) << ",";
       json << "\"dai_id\":" << quote(port.dai_id) << ",";
       json << "\"aif_role\":" << quote(port.aif_role) << ",";
@@ -1199,6 +1432,24 @@ std::vector<uint8_t> buildPrivatePayload(const ProjectIr& ir) {
 std::string controlConf(const ControlInfo& control) {
   std::ostringstream out;
   const std::string name = topologyQuote(control.control_name);
+  if (control.config_format == "sof-ipc3-bytes-v1") {
+    const std::string data_name = control.control_name + " Data";
+    out << "SectionData." << topologyQuote(data_name) << " {\n";
+    out << "  bytes " << topologyQuote(hexBytes(control.default_payload)) << "\n";
+    out << "}\n";
+    out << "SectionControlBytes." << name << " {\n";
+    out << "  index \"1\"\n";
+    out << "  ops.\"ctl\" { info \"bytes\" }\n";
+    out << "  extops.\"extctl\" { get \"258\" put \"258\" }\n";
+    out << "  base \"0x00\"\n";
+    out << "  num_regs \"0x00\"\n";
+    out << "  mask \"0x00\"\n";
+    out << "  max " << topologyQuote(std::to_string(std::max<size_t>(1, control.default_payload.size()))) << "\n";
+    out << "  access [ tlv_write tlv_read tlv_callback ]\n";
+    out << "  data [ " << topologyQuote(data_name) << " ]\n";
+    out << "}\n\n";
+    return out.str();
+  }
   if (control.value_type == "bytes") {
     out << "# " << control.control_name << " is described in AS_PRIVATE; no SectionControlBytes is emitted.\n\n";
     return out.str();
@@ -1344,7 +1595,11 @@ std::string sofRegistryNameForNode(const NodeInfo& node, const PipelineInfo& pip
   if (node.module_type == "route.selector") return "selector";
   if (node.module_type == "rate.src") return "src";
   if (node.module_type == "rate.asrc") return "asrc";
+  if (node.module_type == "filter.channel_remap" || node.module_type == "filter.chremap") return "chremap";
   if (node.module_type == "filter.dcblock") return "dcblock";
+  if (node.module_type == "delay.line" || node.module_type == "delay.delay_line") return "delay_line";
+  if (node.module_type == "mix.fader_balance") return "fader_balance";
+  if (node.module_type == "filter.dsp_filter") return "dsp_filter";
   if (node.module_type == "eq.iir") return "eq_iir";
   if (node.module_type == "eq.fir") return "eq_fir";
   if (node.module_type == "dyn.drc") return "drc";
@@ -1370,6 +1625,10 @@ std::string processTypeForNode(const NodeInfo& node) {
   if (node.module_type == "filter.dcblock") return "DCBLOCK";
   if (node.module_type == "route.mux") return "MUX";
   if (node.module_type == "route.selector") return "CHAN_SELECTOR";
+  if (node.module_type == "filter.channel_remap" || node.module_type == "filter.chremap") return "CHAN_REMAP";
+  if (node.module_type == "delay.line" || node.module_type == "delay.delay_line") return "DELAY_LINE";
+  if (node.module_type == "mix.fader_balance") return "FADER_BALANCE";
+  if (node.module_type == "filter.dsp_filter") return "DSP_FILTER";
   if (node.module_type == "eq.iir") return "EQIIR";
   if (node.module_type == "eq.fir") return "EQFIR";
   if (node.module_type == "dyn.drc") return "DRC";
@@ -1382,24 +1641,98 @@ std::string processTypeForNode(const NodeInfo& node) {
 WidgetControlRefs controlsForNode(const ProjectIr& ir, const PipelineInfo& pipeline, const NodeInfo& node) {
   WidgetControlRefs refs;
   for (const auto& control : ir.controls) {
-    if (control.pipe_id == pipeline.pipe_id && control.node_id == node.node_id && control.value_type != "bytes") {
-      if (control.value_type == "enum") refs.enumerated.push_back(control.control_name);
-      else refs.mixer.push_back(control.control_name);
+    if (control.pipe_id == pipeline.pipe_id && control.node_id == node.node_id) {
+      if (control.config_format == "sof-ipc3-bytes-v1") {
+        refs.bytes.push_back(control.control_name);
+      } else if (control.value_type == "enum") {
+        refs.enumerated.push_back(control.control_name);
+      } else {
+        refs.mixer.push_back(control.control_name);
+      }
     }
   }
   return refs;
 }
 
 uint32_t periodsSinkForNode(const NodeInfo& node, const PipelineInfo& pipeline) {
-  if (node.kind == "port" && isHostPortWidget(node, pipeline) && pipeline.direction == "playback") return 4;
-  if (node.kind == "port" && isDaiPortWidget(node, pipeline) && pipeline.direction == "capture") return 0;
+  if (node.kind == "port" && isHostPortWidget(node, pipeline)) {
+    return pipeline.direction == "playback" ? 4 : 0;
+  }
+  if (node.kind == "port" && isDaiPortWidget(node, pipeline)) {
+    return pipeline.direction == "playback" ? 0 : 2;
+  }
   return 2;
 }
 
 uint32_t periodsSourceForNode(const NodeInfo& node, const PipelineInfo& pipeline) {
-  if (node.kind == "port" && isHostPortWidget(node, pipeline) && pipeline.direction == "capture") return 4;
-  if (node.kind == "port" && isDaiPortWidget(node, pipeline) && pipeline.direction == "playback") return 0;
+  if (node.kind == "port" && isHostPortWidget(node, pipeline)) {
+    return pipeline.direction == "capture" ? 2 : 0;
+  }
+  if (node.kind == "port" && isDaiPortWidget(node, pipeline)) {
+    return pipeline.direction == "playback" ? 2 : 0;
+  }
+  if (node.module_type == "filter.channel_remap" || node.module_type == "filter.chremap" ||
+      node.module_type == "delay.line" || node.module_type == "delay.delay_line" ||
+      node.module_type == "filter.dsp_filter") {
+    return 3;
+  }
   return 2;
+}
+
+uint32_t pipelinePeriodFrames(const PipelineInfo& pipeline) {
+  const uint64_t product = static_cast<uint64_t>(pipeline.sample_rate) * pipeline.scheduling.period_us;
+  return static_cast<uint32_t>((product + 1000000ull - 1ull) / 1000000ull);
+}
+
+uint32_t sampleBytesForSampleBits(uint32_t sample_bits) {
+  return sample_bits <= 16 ? 2u : 4u;
+}
+
+uint32_t edgeBufferPeriods(const NodeInfo& from, const NodeInfo& to, const PipelineInfo& pipeline) {
+  uint32_t periods = periodsSourceForNode(from, pipeline);
+  if (periods == 0) periods = periodsSinkForNode(from, pipeline);
+  if (periods == 0) periods = periodsSinkForNode(to, pipeline);
+  return periods == 0 ? 2u : periods;
+}
+
+uint32_t edgeBufferCaps(const NodeInfo& from, const NodeInfo& to, const PipelineInfo& pipeline) {
+  constexpr uint32_t kComponentCaps = 65; // SOF_MEM_CAPS_RAM | SOF_MEM_CAPS_CACHE
+  constexpr uint32_t kEndpointCaps = 97;  // SOF_MEM_CAPS_RAM | SOF_MEM_CAPS_DMA | SOF_MEM_CAPS_CACHE
+  if (isHostPortWidget(from, pipeline) || isHostPortWidget(to, pipeline) ||
+      isDaiPortWidget(from, pipeline) || isDaiPortWidget(to, pipeline)) {
+    return kEndpointCaps;
+  }
+  return kComponentCaps;
+}
+
+std::string inferredBufferName(const PipelineInfo& pipeline, size_t edge_index) {
+  return pipeline.pipe_id + ".BUF" + std::to_string(edge_index);
+}
+
+std::string inferredBufferBase(const PipelineInfo& pipeline, size_t edge_index) {
+  return sanitizeName(pipeline.pipe_id + "_BUF" + std::to_string(edge_index));
+}
+
+InferredBufferInfo inferBufferForEdge(const PipelineInfo& pipeline,
+                                      const NodeInfo& from,
+                                      const NodeInfo& to,
+                                      size_t edge_index) {
+  const uint32_t periods = edgeBufferPeriods(from, to, pipeline);
+  const uint32_t channels = std::max<uint32_t>(1u, pipeline.channels_max);
+  const uint32_t period_frames = std::max<uint32_t>(1u, pipelinePeriodFrames(pipeline));
+  const uint32_t sample_bytes = sampleBytesForSampleBits(pipeline.sample_bits);
+  InferredBufferInfo buffer;
+  buffer.edge_index = edge_index;
+  buffer.widget_name = inferredBufferName(pipeline, edge_index);
+  buffer.size_bytes = periods * sample_bytes * channels * period_frames;
+  buffer.caps = edgeBufferCaps(from, to, pipeline);
+  return buffer;
+}
+
+std::string pcmFormatForSampleBits(uint32_t sample_bits) {
+  if (sample_bits <= 16) return "S16_LE";
+  if (sample_bits <= 24) return "S24_LE";
+  return "S32_LE";
 }
 
 void emitSofVendorTokens(std::ostringstream& out) {
@@ -1489,7 +1822,7 @@ void emitUuidTuples(std::ostringstream& out, const std::string& tuple_name, cons
   out << "SectionVendorTuples." << topologyQuote(tuple_name) << " {\n";
   out << "  tokens \"sof_comp_tokens\"\n";
   out << "  tuples.\"uuid\" {\n";
-  out << "    SOF_TKN_COMP_UUID " << topologyQuote(hexBytes(uuidBytes(uuid))) << "\n";
+  out << "    SOF_TKN_COMP_UUID " << topologyQuote(colonHexBytes(sofUuidTokenBytes(uuid))) << "\n";
   out << "  }\n";
   out << "}\n";
 }
@@ -1501,7 +1834,7 @@ void emitPipelineScheduler(std::ostringstream& out, const PipelineInfo& pipeline
   emitWordTuples(out, tuples, "sof_sched_tokens", {
     {"SOF_TKN_SCHED_PERIOD", pipeline.scheduling.period_us},
     {"SOF_TKN_SCHED_PRIORITY", pipeline.scheduling.priority},
-    {"SOF_TKN_SCHED_MIPS", 0},
+    {"SOF_TKN_SCHED_MIPS", 50000},
     {"SOF_TKN_SCHED_CORE", pipeline.scheduling.core},
     {"SOF_TKN_SCHED_FRAMES", 0},
     {"SOF_TKN_SCHED_TIME_DOMAIN", pipeline.scheduling.time_domain},
@@ -1515,6 +1848,76 @@ void emitPipelineScheduler(std::ostringstream& out, const PipelineInfo& pipeline
   out << "  stream_name " << topologyQuote(pipeline.name) << "\n";
   out << "  data [ " << topologyQuote(data) << " ]\n";
   out << "}\n\n";
+}
+
+void emitDaiScheduler(std::ostringstream& out, const PipelineInfo& pipeline, const NodeInfo& node) {
+  const auto base = sofSectionBase(pipeline, node) + "_SCHED";
+  const auto tuples = base + "_tuples";
+  const auto data = base + "_data";
+  emitWordTuples(out, tuples, "sof_sched_tokens", {
+    {"SOF_TKN_SCHED_PERIOD", pipeline.scheduling.period_us},
+    {"SOF_TKN_SCHED_PRIORITY", pipeline.scheduling.priority},
+    {"SOF_TKN_SCHED_MIPS", 5000},
+    {"SOF_TKN_SCHED_CORE", pipeline.scheduling.core},
+    {"SOF_TKN_SCHED_FRAMES", 0},
+    {"SOF_TKN_SCHED_TIME_DOMAIN", 0},
+    {"SOF_TKN_SCHED_DYNAMIC_PIPELINE", 0},
+  });
+  emitTupleData(out, data, tuples);
+  out << "SectionWidget." << topologyQuote(node.widget_name + ".SCHED") << " {\n";
+  out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
+  out << "  type \"scheduler\"\n";
+  out << "  no_pm \"true\"\n";
+  out << "  stream_name " << topologyQuote(node.widget_name) << "\n";
+  out << "  data [ " << topologyQuote(data) << " ]\n";
+  out << "}\n\n";
+}
+
+void emitInferredBuffer(std::ostringstream& out,
+                        const PipelineInfo& pipeline,
+                        const InferredBufferInfo& buffer) {
+  const std::string base = inferredBufferBase(pipeline, buffer.edge_index);
+  const std::string buffer_tuple = base + "_tuples";
+  const std::string buffer_data = base + "_data";
+  const std::string comp_tuple = base + "_comp_tuples";
+  const std::string comp_data = base + "_comp_data";
+
+  emitWordTuples(out, buffer_tuple, "sof_buffer_tokens", {
+    {"SOF_TKN_BUF_SIZE", buffer.size_bytes},
+    {"SOF_TKN_BUF_CAPS", buffer.caps},
+  });
+  emitTupleData(out, buffer_data, buffer_tuple);
+  emitWordTuples(out, comp_tuple, "sof_comp_tokens", {
+    {"SOF_TKN_COMP_CORE_ID", pipeline.scheduling.core},
+  });
+  emitTupleData(out, comp_data, comp_tuple);
+
+  out << "SectionWidget." << topologyQuote(buffer.widget_name) << " {\n";
+  out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
+  out << "  type \"buffer\"\n";
+  out << "  no_pm \"true\"\n";
+  out << "  data [\n";
+  out << "    " << topologyQuote(buffer_data) << "\n";
+  out << "    " << topologyQuote(comp_data) << "\n";
+  out << "  ]\n";
+  out << "}\n\n";
+}
+
+void emitInferredBuffers(std::ostringstream& out, const PipelineInfo& pipeline) {
+  for (size_t i = 0; i < pipeline.edges.size(); ++i) {
+    const auto* from = findNode(pipeline, pipeline.edges[i].from_node);
+    const auto* to = findNode(pipeline, pipeline.edges[i].to_node);
+    if (from == nullptr || to == nullptr) continue;
+    emitInferredBuffer(out, pipeline, inferBufferForEdge(pipeline, *from, *to, i));
+  }
+}
+
+void emitDaiSchedulers(std::ostringstream& out, const PipelineInfo& pipeline) {
+  for (const auto& node : pipeline.nodes) {
+    if (node.kind == "port" && isDaiPortWidget(node, pipeline)) {
+      emitDaiScheduler(out, pipeline, node);
+    }
+  }
 }
 
 void emitSofWidgetData(std::ostringstream& out, const ProjectIr& ir, const PipelineInfo& pipeline, const NodeInfo& node) {
@@ -1534,7 +1937,7 @@ void emitSofWidgetData(std::ostringstream& out, const ProjectIr& ir, const Pipel
   });
   emitTupleData(out, word_data, word_tuple);
   emitStringTuples(out, string_tuple, "sof_comp_tokens", {
-    {"SOF_TKN_COMP_FORMAT", "S32_LE"},
+    {"SOF_TKN_COMP_FORMAT", pcmFormatForSampleBits(pipeline.sample_bits)},
   });
   emitTupleData(out, string_data, string_tuple);
 
@@ -1601,7 +2004,12 @@ void emitSofWidgetData(std::ostringstream& out, const ProjectIr& ir, const Pipel
   out << "  no_pm \"true\"\n";
   if (node.kind == "port") {
     const auto* port = findPort(pipeline, node);
-    const std::string stream_name = port != nullptr && !port->pcm_id.empty() ? port->pcm_id : pipeline.name;
+    std::string stream_name = pipeline.name;
+    if (port != nullptr && isDaiPortWidget(node, pipeline) && !port->dai_id.empty()) {
+      stream_name = port->dai_id;
+    } else if (port != nullptr && !port->pcm_id.empty()) {
+      stream_name = port->pcm_id;
+    }
     out << "  stream_name " << topologyQuote(stream_name) << "\n";
   }
   out << "  data [\n";
@@ -1616,6 +2024,11 @@ void emitSofWidgetData(std::ostringstream& out, const ProjectIr& ir, const Pipel
   if (!control_names.enumerated.empty()) {
     out << "  enum [\n";
     for (const auto& control_name : control_names.enumerated) out << "    " << topologyQuote(control_name) << "\n";
+    out << "  ]\n";
+  }
+  if (!control_names.bytes.empty()) {
+    out << "  bytes [\n";
+    for (const auto& control_name : control_names.bytes) out << "    " << topologyQuote(control_name) << "\n";
     out << "  ]\n";
   }
   out << "}\n\n";
@@ -1699,6 +2112,8 @@ std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& pr
     for (const auto& node : pipeline.nodes) {
       emitSofWidgetData(out, ir, pipeline, node);
     }
+    emitInferredBuffers(out, pipeline);
+    emitDaiSchedulers(out, pipeline);
     emitDaiObjects(out, pipeline);
   }
 
@@ -1706,7 +2121,7 @@ std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& pr
     const std::string pcm_name = "A2 " + pipeline.name;
     const std::string caps_name = pcm_name + " Capabilities";
     out << "SectionPCMCapabilities." << topologyQuote(caps_name) << " {\n";
-    out << "  formats \"S16_LE,S24_LE,S32_LE\"\n";
+    out << "  formats " << topologyQuote(pcmFormatForSampleBits(pipeline.sample_bits)) << "\n";
     out << "  rate_min \"8000\"\n";
     out << "  rate_max " << topologyQuote(std::to_string(std::max<uint32_t>(pipeline.sample_rate, 192000))) << "\n";
     out << "  channels_min " << topologyQuote(std::to_string(pipeline.channels_min)) << "\n";
@@ -1719,7 +2134,7 @@ std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& pr
     out << "  buffer_size_max \"65536\"\n";
     out << "}\n\n";
     out << "SectionPCM." << topologyQuote(pcm_name) << " {\n";
-    out << "  index \"1\"\n";
+    out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
     out << "  id " << topologyQuote(std::to_string(pipeline.pcm_index)) << "\n";
     out << "  dai." << topologyQuote(pcm_name + " Pin") << " { id "
         << topologyQuote(std::to_string(pipeline.pcm_index)) << " }\n";
@@ -1727,19 +2142,49 @@ std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& pr
     out << "}\n\n";
   }
 
-  out << "SectionGraph.\"a2\" {\n";
-  out << "  index \"1\"\n";
-  out << "  lines [\n";
   for (const auto& pipeline : ir.pipelines) {
-    for (const auto& edge : pipeline.edges) {
+    std::vector<std::string> main_lines;
+    std::vector<std::pair<std::string, std::vector<std::string>>> dai_graphs;
+
+    for (size_t edge_index = 0; edge_index < pipeline.edges.size(); ++edge_index) {
+      const auto& edge = pipeline.edges[edge_index];
       const auto* from = findNode(pipeline, edge.from_node);
       const auto* to = findNode(pipeline, edge.to_node);
       if (from == nullptr || to == nullptr) continue;
-      out << "    " << topologyQuote(to->widget_name + ", , " + from->widget_name) << "\n";
+      const std::string buffer_name = inferredBufferName(pipeline, edge_index);
+
+      if (isDaiPortWidget(*from, pipeline)) {
+        dai_graphs.push_back({from->widget_name + ".DAI", {buffer_name + ", , " + from->widget_name}});
+        main_lines.push_back(to->widget_name + ", , " + buffer_name);
+      } else if (isDaiPortWidget(*to, pipeline)) {
+        main_lines.push_back(buffer_name + ", , " + from->widget_name);
+        dai_graphs.push_back({to->widget_name + ".DAI", {to->widget_name + ", , " + buffer_name}});
+      } else {
+        main_lines.push_back(buffer_name + ", , " + from->widget_name);
+        main_lines.push_back(to->widget_name + ", , " + buffer_name);
+      }
+    }
+
+    out << "SectionGraph." << topologyQuote(pipeline.pipe_id) << " {\n";
+    out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
+    out << "  lines [\n";
+    for (const auto& line : main_lines) {
+      out << "    " << topologyQuote(line) << "\n";
+    }
+    out << "  ]\n";
+    out << "}\n\n";
+
+    for (const auto& dai_graph : dai_graphs) {
+      out << "SectionGraph." << topologyQuote(dai_graph.first) << " {\n";
+      out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
+      out << "  lines [\n";
+      for (const auto& line : dai_graph.second) {
+        out << "    " << topologyQuote(line) << "\n";
+      }
+      out << "  ]\n";
+      out << "}\n\n";
     }
   }
-  out << "  ]\n";
-  out << "}\n";
   return out.str();
 }
 
@@ -1903,6 +2348,343 @@ Status loadPlugins(drivers::dynlib::IDynlibDriver* dynlib,
   return Status::success();
 }
 
+class SofBasicModuleConfigHandler final : public module_config::IModuleConfigHandler {
+public:
+  explicit SofBasicModuleConfigHandler(std::string module_type) : module_type_(std::move(module_type)) {}
+
+  std::string id() const override { return "as.sof-basic-module-config-v1." + macroToken(module_type_); }
+  std::string moduleType() const override { return module_type_; }
+
+  module_config::Status validatePreset(const module_config::ModuleConfigRequest& request) const override {
+    if (request.module_type != module_type_) {
+      return module_config::Status::invalidArgument("unexpected module_type for SOF basic handler: " + request.module_type);
+    }
+    if (request.values_json.empty()) return module_config::Status::invalidArgument("module config request values_json is empty");
+    return module_config::Status::success();
+  }
+
+  module_config::Status packPreset(const module_config::ModuleConfigRequest& request,
+                                   module_config::ModuleConfigBlob& out) const override {
+    auto status = validatePreset(request);
+    if (!status.ok()) return status;
+    out.format = "as-sof-basic-preset-json-v1";
+    out.data.assign(request.values_json.begin(), request.values_json.end());
+    return module_config::Status::success();
+  }
+
+  module_config::Status packInstallConfig(const module_config::ModuleConfigRequest& request,
+                                          module_config::ModuleConfigBlob& out) const override {
+    return packRuntimeParam(request, out);
+  }
+
+  module_config::Status packRuntimeParam(const module_config::ModuleConfigRequest& request,
+                                         module_config::ModuleConfigBlob& out) const override {
+    try {
+      auto status = validatePreset(request);
+      if (!status.ok()) return status;
+      const auto values = audio_studio::rpc::parseJson(request.values_json);
+      if (!values.isObject() || !values.has(request.parameter_id)) {
+        return module_config::Status::invalidArgument("parameter value missing: " + request.parameter_id);
+      }
+
+      const auto& value = values.at(request.parameter_id);
+      std::vector<uint8_t> payload;
+      if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
+        payload = packChannelRemap(value);
+      } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
+        payload = packDelayLine(value);
+      } else if (module_type_ == "mix.fader_balance") {
+        payload = packFaderBalance(value);
+      } else if (module_type_ == "filter.dsp_filter") {
+        payload = packDspFilter(value);
+      } else {
+        return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
+      }
+
+      out.format = "sof-ipc3-bytes-v1";
+      out.data = wrapSofAbi(payload);
+      return module_config::Status::success();
+    } catch (const std::exception& error) {
+      return module_config::Status::invalidArgument(
+          "failed to pack " + module_type_ + " parameter " + request.parameter_id + ": " + error.what());
+    }
+  }
+
+private:
+  std::string module_type_;
+
+  static void align4(std::vector<uint8_t>& out) {
+    while ((out.size() & 3u) != 0) out.push_back(0);
+  }
+
+  static void appendLe32Signed(std::vector<uint8_t>& out, int32_t value) {
+    appendLe32(out, static_cast<uint32_t>(value));
+  }
+
+  static std::vector<uint8_t> wrapSofAbi(const std::vector<uint8_t>& data) {
+    constexpr uint32_t kSofAbiMagic = 0x00464f53u;
+    constexpr uint32_t kSofAbiVersion = 0x0301d001u;
+    std::vector<uint8_t> out;
+    appendLe32(out, kSofAbiMagic);
+    appendLe32(out, 0);
+    appendLe32(out, static_cast<uint32_t>(data.size()));
+    appendLe32(out, kSofAbiVersion);
+    appendLe32(out, 0);
+    appendLe32(out, 0);
+    appendLe32(out, 0);
+    appendLe32(out, 0);
+    out.insert(out.end(), data.begin(), data.end());
+    return out;
+  }
+
+  static std::vector<uint16_t> channelList(const JsonValue& object, const std::string& key) {
+    std::vector<uint16_t> channels;
+    for (const auto& item : requiredArray(object, key).asArray()) {
+      if (!item.isString()) throw std::runtime_error(key + " entries must be channel names");
+      channels.push_back(channelMap(item.asString()));
+    }
+    return channels;
+  }
+
+  static uint16_t channelMap(const std::string& name) {
+    const auto token = macroToken(name);
+    static const std::map<std::string, uint16_t> values = {
+      {"UNKNOWN", 0}, {"NA", 1}, {"MONO", 2}, {"FL", 3}, {"FR", 4}, {"RL", 5}, {"RR", 6},
+      {"FC", 7}, {"LFE", 8}, {"SL", 9}, {"SR", 10}, {"RC", 11}, {"FLC", 12}, {"FRC", 13},
+      {"RLC", 14}, {"RRC", 15}, {"FLW", 16}, {"FRW", 17}, {"FLH", 18}, {"FCH", 19},
+      {"FRH", 20}, {"TC", 21}, {"TFL", 22}, {"TFR", 23}, {"TFC", 24}, {"TRL", 25},
+      {"TRR", 26}, {"TRC", 27}, {"TFLC", 28}, {"TFRC", 29}, {"TSL", 30}, {"TSR", 31},
+      {"LLFE", 32}, {"RLFE", 33}, {"BC", 34}, {"BLC", 35}, {"BRC", 36},
+    };
+    const auto it = values.find(token);
+    if (it == values.end()) throw std::runtime_error("unknown channel name: " + name);
+    return it->second;
+  }
+
+  static int32_t q5_27(double value) {
+    constexpr double scale = 134217728.0;
+    value = std::max(-16.0, std::min(15.999999, value));
+    return static_cast<int32_t>(std::llround(value * scale));
+  }
+
+  static int16_t q1_15(double value) {
+    value = std::max(-1.0, std::min(1.0, value));
+    if (value >= 1.0) return 32767;
+    return static_cast<int16_t>(std::llround(value * 32768.0));
+  }
+
+  static int32_t scaledWeight(double value, int32_t scale) {
+    value = std::max(-1.0, std::min(1.0, value));
+    return static_cast<int32_t>(std::llround(value * scale));
+  }
+
+  static double doubleAny(const JsonValue& object,
+                          const std::vector<std::string>& keys,
+                          double fallback) {
+    for (const auto& key : keys) {
+      if (object.isObject() && object.has(key) && !object.at(key).isNull()) {
+        if (!object.at(key).isNumber()) throw std::runtime_error("JSON field must be number: " + key);
+        return object.at(key).asDouble();
+      }
+    }
+    return fallback;
+  }
+
+  static int32_t int32Any(const JsonValue& object,
+                          const std::vector<std::string>& keys,
+                          int32_t fallback) {
+    for (const auto& key : keys) {
+      if (object.isObject() && object.has(key) && !object.at(key).isNull()) {
+        if (!object.at(key).isNumber()) throw std::runtime_error("JSON field must be number: " + key);
+        return static_cast<int32_t>(object.at(key).asInt64());
+      }
+    }
+    return fallback;
+  }
+
+  static std::vector<uint8_t> packChannelRemapConfig(const JsonValue& mapping, uint32_t fallback_idx) {
+    const auto inputs = channelList(mapping, "input");
+    const auto outputs = channelList(mapping, "output");
+    const auto& matrix = requiredArray(mapping, "matrix");
+    if (matrix.asArray().size() != outputs.size()) throw std::runtime_error("channel_remap matrix row count must match output channels");
+
+    std::vector<uint8_t> out;
+    appendLe32(out, uintValue(mapping, "config_idx", fallback_idx));
+    appendLe32(out, static_cast<uint32_t>(inputs.size()));
+    appendLe32(out, static_cast<uint32_t>(outputs.size()));
+    for (int i = 0; i < 5; ++i) appendLe32(out, 0);
+    for (const auto channel : inputs) appendLe16(out, channel);
+    for (const auto channel : outputs) appendLe16(out, channel);
+    align4(out);
+    for (size_t row = 0; row < outputs.size(); ++row) {
+      const auto& row_value = matrix.asArray()[row];
+      if (!row_value.isArray() || row_value.asArray().size() != inputs.size()) {
+        throw std::runtime_error("channel_remap matrix column count must match input channels");
+      }
+      for (const auto& coef : row_value.asArray()) {
+        if (!coef.isNumber()) throw std::runtime_error("channel_remap matrix values must be numbers");
+        appendLe32Signed(out, q5_27(coef.asDouble()));
+      }
+    }
+    return out;
+  }
+
+  static std::vector<uint8_t> packChannelRemap(const JsonValue& value) {
+    const auto& mappings = requiredArray(value, "mappings");
+    std::vector<uint8_t> payload;
+    for (size_t i = 0; i < mappings.asArray().size(); ++i) {
+      auto config = packChannelRemapConfig(mappings.asArray()[i], static_cast<uint32_t>(i));
+      payload.insert(payload.end(), config.begin(), config.end());
+    }
+    return payload;
+  }
+
+  static std::vector<int32_t> delayValues(const JsonValue& value, int32_t channels) {
+    std::vector<int32_t> delays;
+    if (value.has("per_channel_ms")) {
+      const auto& items = requiredArray(value, "per_channel_ms").asArray();
+      for (const auto& item : items) {
+        if (!item.isNumber()) throw std::runtime_error("per_channel_ms entries must be numbers");
+        delays.push_back(static_cast<int32_t>(std::llround(item.asDouble())));
+      }
+    } else {
+      const int32_t delay = int32Any(value, {"delay_ms"}, 0);
+      delays.assign(static_cast<size_t>(std::max<int32_t>(1, channels)), delay);
+    }
+    if (channels == 0) channels = static_cast<int32_t>(delays.size());
+    if (static_cast<int32_t>(delays.size()) != channels) throw std::runtime_error("delay_line channel count does not match delay values");
+    return delays;
+  }
+
+  static std::vector<uint8_t> packDelayLine(const JsonValue& value) {
+    int32_t channels = int32Any(value, {"channels"}, 0);
+    auto delays = delayValues(value, channels);
+    channels = static_cast<int32_t>(delays.size());
+    std::vector<uint8_t> payload;
+    appendLe32Signed(payload, int32Any(value, {"max_delay_ms"}, 250));
+    appendLe32Signed(payload, int32Any(value, {"ramp_ms", "ramp_time_ms"}, 50));
+    appendLe32Signed(payload, channels);
+    for (const auto delay : delays) appendLe32Signed(payload, delay);
+    return payload;
+  }
+
+  static std::vector<uint8_t> packFaderBalance(const JsonValue& value) {
+    const std::string ramp = lowerAscii(stringValue(value, "ramp", "linear"));
+    const uint32_t ramp_type = ramp == "windows_fade" || ramp == "windows" ? 1u : 0u;
+    std::vector<uint8_t> payload;
+    appendLe32(payload, ramp_type);
+    appendLe32Signed(payload, int32Any(value, {"ramp_ms", "ramp_time_ms"}, 50));
+    appendLe32Signed(payload, scaledWeight(doubleAny(value, {"front_back_weight", "fader_weight"}, 0.0), 256));
+    appendLe32Signed(payload, scaledWeight(doubleAny(value, {"left_right_weight", "balance_weight"}, 0.0), 256));
+    return payload;
+  }
+
+  static std::vector<uint8_t> packDspFilterHeader(const JsonValue& filter, uint16_t fallback_idx) {
+    const std::string type = lowerAscii(stringValue(filter, "type", "fir"));
+    const uint16_t idx = static_cast<uint16_t>(uintValue(filter, "index", fallback_idx));
+    std::vector<int16_t> coefficients;
+    uint16_t filter_type = 0;
+    if (type == "fir") {
+      filter_type = 1;
+      const auto& items = requiredArray(filter, "coefficients").asArray();
+      for (const auto& item : items) {
+        if (!item.isNumber()) throw std::runtime_error("dsp_filter coefficients must be numbers");
+        coefficients.push_back(q1_15(item.asDouble()));
+      }
+      if (coefficients.empty()) throw std::runtime_error("dsp_filter FIR must have at least one coefficient");
+    } else if (type == "bypass") {
+      filter_type = 0;
+    } else {
+      throw std::runtime_error("unsupported dsp_filter type: " + type);
+    }
+
+    std::vector<uint8_t> out;
+    appendLe16(out, idx);
+    appendLe16(out, filter_type);
+    appendLe16(out, 0);
+    appendLe16(out, static_cast<uint16_t>(coefficients.size()));
+    appendLe16(out, 0);
+    appendLe16(out, static_cast<uint16_t>(coefficients.size() * sizeof(int16_t)));
+    for (const auto coef : coefficients) appendLe16(out, static_cast<uint16_t>(coef));
+    align4(out);
+    return out;
+  }
+
+  static int16_t filterMatrixEntry(const JsonValue& entry, const std::map<std::string, int16_t>& filter_ids) {
+    if (entry.isNull()) return -1;
+    if (entry.isNumber()) return static_cast<int16_t>(entry.asInt64());
+    if (entry.isString()) {
+      const auto text = entry.asString();
+      if (text.empty() || text == "off" || text == "none" || text == "null") return -1;
+      const auto it = filter_ids.find(text);
+      if (it == filter_ids.end()) throw std::runtime_error("dsp_filter matrix references unknown filter: " + text);
+      return it->second;
+    }
+    if (entry.isObject()) {
+      return filterMatrixEntry(entry.has("filter") ? entry.at("filter") : entry.at("filter_id"), filter_ids);
+    }
+    throw std::runtime_error("dsp_filter matrix entry must be filter id, number, or null");
+  }
+
+  static std::vector<uint8_t> packDspFilterChannelConfig(const JsonValue& route,
+                                                         uint32_t fallback_idx,
+                                                         const std::map<std::string, int16_t>& filter_ids) {
+    const auto inputs = channelList(route, "input");
+    const auto outputs = channelList(route, "output");
+    const auto& matrix = requiredArray(route, "matrix");
+    if (matrix.asArray().size() != outputs.size()) throw std::runtime_error("dsp_filter matrix row count must match output channels");
+
+    std::vector<uint8_t> data;
+    for (const auto channel : inputs) appendLe16(data, channel);
+    for (const auto channel : outputs) appendLe16(data, channel);
+    for (size_t row = 0; row < outputs.size(); ++row) {
+      const auto& row_value = matrix.asArray()[row];
+      if (!row_value.isArray() || row_value.asArray().size() != inputs.size()) {
+        throw std::runtime_error("dsp_filter matrix column count must match input channels");
+      }
+      for (const auto& entry : row_value.asArray()) {
+        appendLe16(data, static_cast<uint16_t>(filterMatrixEntry(entry, filter_ids)));
+      }
+    }
+    align4(data);
+
+    std::vector<uint8_t> out;
+    appendLe32(out, uintValue(route, "config_idx", fallback_idx));
+    appendLe32(out, static_cast<uint32_t>(inputs.size()));
+    appendLe32(out, static_cast<uint32_t>(outputs.size()));
+    appendLe32(out, static_cast<uint32_t>(data.size()));
+    out.insert(out.end(), data.begin(), data.end());
+    align4(out);
+    return out;
+  }
+
+  static std::vector<uint8_t> packDspFilter(const JsonValue& value) {
+    const auto& filters = requiredArray(value, "filters");
+    const auto& routes = requiredArray(value, "routes");
+    std::vector<uint8_t> data;
+    std::map<std::string, int16_t> filter_ids;
+    for (size_t i = 0; i < filters.asArray().size(); ++i) {
+      const auto& filter = filters.asArray()[i];
+      const uint16_t index = static_cast<uint16_t>(uintValue(filter, "index", static_cast<uint32_t>(i)));
+      const std::string filter_id = stringValue(filter, "filter_id", stringValue(filter, "id"));
+      if (!filter_id.empty()) filter_ids[filter_id] = static_cast<int16_t>(index);
+      auto packed = packDspFilterHeader(filter, static_cast<uint16_t>(i));
+      data.insert(data.end(), packed.begin(), packed.end());
+    }
+    for (size_t i = 0; i < routes.asArray().size(); ++i) {
+      auto packed = packDspFilterChannelConfig(routes.asArray()[i], static_cast<uint32_t>(i), filter_ids);
+      data.insert(data.end(), packed.begin(), packed.end());
+    }
+
+    std::vector<uint8_t> payload;
+    appendLe32(payload, static_cast<uint32_t>(filters.asArray().size()));
+    appendLe32(payload, static_cast<uint32_t>(routes.asArray().size()));
+    appendLe32(payload, static_cast<uint32_t>(data.size()));
+    payload.insert(payload.end(), data.begin(), data.end());
+    return payload;
+  }
+};
+
 } // namespace
 
 module_config::Status ModuleConfigRegistry::registerHandler(std::unique_ptr<module_config::IModuleConfigHandler> handler) {
@@ -1946,6 +2728,10 @@ size_t ModuleConfigRegistry::size() const {
 }
 
 ConfigService::ConfigService() {
+  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("filter.channel_remap"));
+  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("delay.line"));
+  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("mix.fader_balance"));
+  (void)module_configs_.registerHandler(std::make_unique<SofBasicModuleConfigHandler>("filter.dsp_filter"));
   (void)module_configs_.registerHandler(std::make_unique<GenericModuleConfigHandler>());
 }
 
@@ -2061,6 +2847,7 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
     if (containsAlsaTopologyError(alsatplg_log)) {
       return Status::internal("alsatplg reported topology errors; see " + output.alsatplg_log_path);
     }
+    output.tplg_built = true;
 
     const std::string decode_command = shellQuote(alsatplg) + " -d " + shellQuote(output.tplg_path) +
                                        " -o " + shellQuote(output.tplg_decode_conf_path) +
@@ -2068,16 +2855,15 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
     exit_code = -1;
     status = os_->process().runCommand(decode_command, exit_code);
     if (!status.ok()) return status;
-    if (exit_code != 0) return Status::internal("alsatplg decode failed with exit code " + std::to_string(exit_code));
 
     std::string decode_log;
     status = readText(*filesystem_, output.tplg_decode_log_path, decode_log);
     if (!status.ok()) return status;
-    if (containsAlsaTopologyError(decode_log)) {
-      return Status::internal("alsatplg decode reported topology errors; see " + output.tplg_decode_log_path);
+    if (exit_code != 0 || containsAlsaTopologyError(decode_log)) {
+      ir.warnings.push_back("alsatplg decode is not available for this topology; see " + output.tplg_decode_log_path);
+    } else {
+      output.tplg_decoded = true;
     }
-    output.tplg_decoded = true;
-    output.tplg_built = true;
   }
 
   output.ok = true;
