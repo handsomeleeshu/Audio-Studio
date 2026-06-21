@@ -223,15 +223,6 @@ int audio_controller_get_transport_stats(audio_controller_t* controller,
     return 0;
 }
 
-int audio_controller_append_log_data(audio_controller_t* controller,
-                                     const void* data,
-                                     size_t size)
-{
-    if (!controller)
-        return -1;
-    return ac_transport_append_log_data(&controller->transport, data, size);
-}
-
 const char* audio_controller_get_last_error(audio_controller_t* controller)
 {
     if (!controller)

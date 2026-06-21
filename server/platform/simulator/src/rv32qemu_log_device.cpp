@@ -84,7 +84,10 @@ public:
     if (!status.ok()) return status;
 
     manager_ = std::make_unique<framework::transport::TransportManager>();
-    status = manager_->bindDataLinkDevice(*datalink_);
+    framework::transport::DataLinkManagerConfig datalink_config;
+    datalink_config.ack_timeout_ms = 1000;
+    datalink_config.max_retries = 3;
+    status = manager_->bindDataLinkDevice(*datalink_, datalink_config);
     if (!status.ok()) return status;
     status = manager_->openChannel(kLogChannelId, "log");
     if (!status.ok()) return status;
@@ -130,7 +133,11 @@ public:
     framework::transport::TransportFrame response;
     const auto status = manager_->sendSync(kLogChannelId, kLogCommandRead, {}, response, timeout_ms);
     if (!status.ok()) return status;
-    if (response.payload.empty()) return drivers::log::LogResult::unavailable("rv32qemu log read returned no data");
+    if (response.payload.empty()) {
+      chunk.sequence = next_sequence_;
+      chunk.bytes.clear();
+      return drivers::log::LogResult::success();
+    }
     chunk.sequence = next_sequence_++;
     chunk.bytes = std::move(response.payload);
     ++chunks_read_;

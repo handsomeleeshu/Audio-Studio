@@ -1,8 +1,8 @@
 #include "log_service.hpp"
+#include "sof_logger_decoder_c.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -185,6 +185,7 @@ framework::Status LogService::readRaw(const std::string& id,
       if (chunks.empty()) return status;
       break;
     }
+    if (chunk.bytes.empty()) break;
     chunks.push_back(std::move(chunk));
     ++session->raw_chunks_read;
   }
@@ -205,6 +206,7 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
       if (entries.empty()) return status;
       break;
     }
+    if (chunks.empty()) break;
     for (const auto& chunk : chunks) {
       if (sofLoggerEnabled(*session)) {
         status = appendRawTrace(*session, chunks);
@@ -277,8 +279,7 @@ LogEntry LogService::decodeLine(int sequence, const std::string& line) {
 }
 
 bool LogService::sofLoggerEnabled(const Session& session) {
-  return !optionString(session.config, "sof_logger").empty() &&
-         !optionString(session.config, "trace_ldc").empty();
+  return !optionString(session.config, "trace_ldc").empty();
 }
 
 std::string LogService::optionString(const LogSessionConfig& config, const std::string& key) {
@@ -294,16 +295,6 @@ std::string LogService::safePathToken(const std::string& value) {
     else out.push_back('_');
   }
   return out.empty() ? "log" : out;
-}
-
-std::string LogService::shellQuote(const std::string& value) {
-  std::string out = "'";
-  for (const auto ch : value) {
-    if (ch == '\'') out += "'\\''";
-    else out.push_back(ch);
-  }
-  out.push_back('\'');
-  return out;
 }
 
 LogEntry LogService::decodeSofLoggerLine(int sequence, const std::string& line) {
@@ -334,13 +325,11 @@ framework::Status LogService::appendRawTrace(Session& session, const std::vector
 }
 
 framework::Status LogService::decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries) {
-  const auto sof_logger = optionString(session.config, "sof_logger");
   const auto trace_ldc = optionString(session.config, "trace_ldc");
-  const std::string command = shellQuote(sof_logger) + " -i " + shellQuote(session.raw_trace_path) +
-                              " -l " + shellQuote(trace_ldc) + " -n -o " +
-                              shellQuote(session.decoded_trace_path) + " >/dev/null 2>&1";
-  const int rc = std::system(command.c_str());
-  if (rc != 0) return framework::Status::unavailable("sof-logger failed to decode trace");
+  const int rc = audio_studio_sof_logger_decode_file(
+      session.raw_trace_path.c_str(), trace_ldc.c_str(),
+      session.decoded_trace_path.c_str());
+  if (rc != 0) return framework::Status::unavailable("SOF logger decoder failed to decode trace");
 
   std::ifstream decoded(session.decoded_trace_path);
   if (!decoded) return framework::Status::unavailable("failed to open SOF decoded trace file: " + session.decoded_trace_path);

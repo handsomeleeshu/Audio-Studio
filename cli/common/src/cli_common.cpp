@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -66,16 +68,17 @@ struct CliOptions {
   std::string datalink_rx;
   std::string datalink_tx;
   uint32_t datalink_mtu = 0;
-  std::string sof_logger;
   std::string trace_ldc;
   bool blocking_write = true;
   bool nonblocking_write = false;
   bool raw_log = false;
+  bool follow = false;
   bool no_color = false;
   std::string file;
   std::string output;
   uint32_t duration_ms = 1000;
   uint32_t count = 32;
+  bool count_set = false;
   double seconds = 0.0;
   uint32_t chunk_bytes = 0;
   std::vector<std::string> paths;
@@ -118,15 +121,15 @@ Args argsFromOptions(const CliOptions& options) {
   addIfSet(values, "--datalink-rx", options.datalink_rx);
   addIfSet(values, "--datalink-tx", options.datalink_tx);
   if (options.datalink_mtu > 0) addValue(values, "--datalink-mtu", std::to_string(options.datalink_mtu));
-  addIfSet(values, "--sof-logger", options.sof_logger);
   addIfSet(values, "--trace-ldc", options.trace_ldc);
   addValue(values, "--blocking-write", options.blocking_write && !options.nonblocking_write ? "true" : "false");
   if (options.raw_log) values.push_back("--raw");
+  if (options.follow) values.push_back("--follow");
   if (options.no_color) values.push_back("--no-color");
   addIfSet(values, "--file", options.file);
   addIfSet(values, "--output", options.output);
   addValue(values, "--duration-ms", std::to_string(options.duration_ms));
-  addValue(values, "--count", std::to_string(options.count));
+  if (options.count_set) addValue(values, "--count", std::to_string(options.count));
   if (options.seconds > 0.0) addValue(values, "--seconds", std::to_string(options.seconds));
   if (options.chunk_bytes > 0) addValue(values, "--chunk-bytes", std::to_string(options.chunk_bytes));
   values.insert(values.end(), options.paths.begin(), options.paths.end());
@@ -135,6 +138,9 @@ Args argsFromOptions(const CliOptions& options) {
 
 int parseCliOptions(const std::string& tool, const std::string& default_action, int argc, char** argv, CliOptions& options) {
   options.action = default_action;
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--count") == 0) options.count_set = true;
+  }
   if (tool == "as_log") options.driver_factory = "linux-host";
   CLI::App app{"Audio Studio command line tool", tool};
   app.option_defaults()->always_capture_default();
@@ -162,11 +168,11 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   app.add_option("--datalink-rx", options.datalink_rx, "Simulator data-link RX file");
   app.add_option("--datalink-tx", options.datalink_tx, "Simulator data-link TX file");
   app.add_option("--datalink-mtu", options.datalink_mtu, "Simulator data-link MTU");
-  app.add_option("--sof-logger", options.sof_logger, "SOF logger executable used to decode raw firmware trace");
   app.add_option("--trace-ldc", options.trace_ldc, "SOF logger dictionary used to decode raw firmware trace");
   app.add_option("--blocking-write", options.blocking_write, "Whether playback stream writes use blocking semantics");
   app.add_flag("--nonblocking-write", options.nonblocking_write, "Request nonblocking playback stream writes");
   app.add_flag("--raw", options.raw_log, "Read raw log chunks instead of decoded entries");
+  app.add_flag("--follow", options.follow, "Continue reading log output until interrupted");
   app.add_flag("--no-color", options.no_color, "Disable ANSI color in log output");
   app.add_option("--file", options.file, "Playback input file");
   app.add_option("--output", options.output, "Record output file");
@@ -253,7 +259,6 @@ bool takesValue(const std::string& flag) {
     "--datalink-rx",
     "--datalink-tx",
     "--datalink-mtu",
-    "--sof-logger",
     "--trace-ldc",
     "--blocking-write",
     "--file",
@@ -645,9 +650,6 @@ rpc::JsonValue logSessionParamsFromArgs(const Args& args) {
   if (!args.valueAfter("--datalink-mtu").empty()) {
     params["datalink_mtu"] = static_cast<uint32_t>(std::stoul(args.valueAfter("--datalink-mtu")));
   }
-  if (!args.valueAfter("--sof-logger").empty()) {
-    params["sof_logger"] = args.valueAfter("--sof-logger");
-  }
   if (!args.valueAfter("--trace-ldc").empty()) {
     params["trace_ldc"] = args.valueAfter("--trace-ldc");
   }
@@ -673,20 +675,42 @@ int runLogTool(rpc::JsonRpcClient& client, const Args& args) {
   client.call("log.start", session_params);
 
   try {
+    const bool follow = args.has("--follow");
+    const bool bounded = args.has("--count");
     const uint32_t count = uint32Arg(args, "--count", 32);
+    uint32_t emitted = 0;
     if (args.has("--raw")) {
-      session_params["max_chunks"] = count;
-      auto raw = client.call("log.readRaw", session_params);
-      for (const auto& chunk : raw.at("chunks").asArray()) {
-        std::cout << chunk.at("bytes").asString();
-      }
+      do {
+        session_params["max_chunks"] = follow ? 1u : count;
+        auto raw = client.call("log.readRaw", session_params);
+        bool printed = false;
+        for (const auto& chunk : raw.at("chunks").asArray()) {
+          const auto bytes = chunk.at("bytes").asString();
+          if (bytes.empty()) continue;
+          std::cout << bytes;
+          printed = true;
+          ++emitted;
+        }
+        std::cout.flush();
+        if (!follow || (bounded && emitted >= count)) break;
+        if (!printed) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      } while (true);
     } else {
-      session_params["max_entries"] = count;
-      auto result = client.call("log.readEntries", session_params);
       const bool color = !args.has("--no-color");
-      for (const auto& item : result.at("entries").asArray()) {
-        std::cout << formatLogEntry(cliLogEntryFromJson(item), color) << "\n";
-      }
+      do {
+        session_params["max_entries"] = follow ? 32u : count;
+        auto result = client.call("log.readEntries", session_params);
+        bool printed = false;
+        for (const auto& item : result.at("entries").asArray()) {
+          std::cout << formatLogEntry(cliLogEntryFromJson(item), color) << "\n";
+          printed = true;
+          ++emitted;
+          if (bounded && emitted >= count) break;
+        }
+        std::cout.flush();
+        if (!follow || (bounded && emitted >= count)) break;
+        if (!printed) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      } while (true);
     }
     client.call("log.stop", session_params);
     client.call("log.closeSession", session_params);

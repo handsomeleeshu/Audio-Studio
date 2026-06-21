@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cerrno>
 #include <filesystem>
-#include <fstream>
 #include <memory>
+#include <system_error>
 #include <thread>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace audio_studio::platform::simulator {
 namespace {
@@ -51,8 +56,20 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::ensureFile(const 
   const auto parent = std::filesystem::path(path).parent_path();
   if (!parent.empty()) std::filesystem::create_directories(parent, error);
   if (error) return drivers::datalink::DataLinkResult::unavailable("failed to create simulator pipe directory: " + error.message());
-  std::ofstream output(path, std::ios::binary | std::ios::trunc);
-  if (!output) return drivers::datalink::DataLinkResult::unavailable("failed to open simulator pipe file: " + path);
+  struct stat st {};
+  if (::lstat(path.c_str(), &st) == 0) {
+    if (!S_ISREG(st.st_mode)) {
+      std::filesystem::remove(path, error);
+      if (error) return drivers::datalink::DataLinkResult::unavailable("failed to replace simulator data-link file: " + error.message());
+    }
+  }
+  if (::lstat(path.c_str(), &st) != 0) {
+    const int fd = ::open(path.c_str(), O_CREAT | O_TRUNC | O_RDWR, 0666);
+    if (fd < 0) {
+      return drivers::datalink::DataLinkResult::unavailable("failed to create simulator data-link file: " + path);
+    }
+    ::close(fd);
+  }
   return drivers::datalink::DataLinkResult::success();
 }
 
@@ -68,12 +85,16 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::open(const driver
   loopback_ = rx_path_.empty() && tx_path_.empty();
   read_offset_ = 0;
   loopback_rx_.clear();
+  rx_fd_ = -1;
+  tx_fd_ = -1;
 
   if (!loopback_) {
     auto status = ensureFile(rx_path_);
     if (!status.ok()) return status;
     status = ensureFile(tx_path_);
     if (!status.ok()) return status;
+    rx_fd_ = ::open(rx_path_.c_str(), O_RDONLY);
+    if (rx_fd_ < 0) return drivers::datalink::DataLinkResult::unavailable("failed to open simulator RX data-link file: " + rx_path_);
   }
 
   connected_ = true;
@@ -83,6 +104,14 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::open(const driver
 void SimulatorPipeDataLinkDevice::close() {
   std::lock_guard<std::mutex> lock(mutex_);
   connected_ = false;
+  if (rx_fd_ >= 0) {
+    ::close(rx_fd_);
+    rx_fd_ = -1;
+  }
+  if (tx_fd_ >= 0) {
+    ::close(tx_fd_);
+    tx_fd_ = -1;
+  }
   loopback_rx_.clear();
 }
 
@@ -95,10 +124,13 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::writeBlock(const 
     return drivers::datalink::DataLinkResult::success();
   }
 
-  std::ofstream output(tx_path_, std::ios::binary | std::ios::app);
-  if (!output) return drivers::datalink::DataLinkResult::unavailable("failed to write simulator pipe: " + tx_path_);
-  output.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
-  if (!output) return drivers::datalink::DataLinkResult::unavailable("simulator pipe write failed: " + tx_path_);
+  const int tx_fd = ::open(tx_path_.c_str(), O_WRONLY | O_APPEND);
+  if (tx_fd < 0) return drivers::datalink::DataLinkResult::unavailable("simulator pipe write open failed: " + tx_path_);
+  const auto written = ::write(tx_fd, data, size);
+  ::close(tx_fd);
+  if (written < 0 || static_cast<size_t>(written) != size) {
+    return drivers::datalink::DataLinkResult::unavailable("simulator pipe write failed: " + tx_path_);
+  }
   return drivers::datalink::DataLinkResult::success();
 }
 
@@ -122,16 +154,18 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::readBlock(uint8_t
           actual_size = count;
           return drivers::datalink::DataLinkResult::success();
         }
-      } else {
-        std::ifstream input(rx_path_, std::ios::binary);
-        if (!input) return drivers::datalink::DataLinkResult::unavailable("failed to read simulator pipe: " + rx_path_);
-        input.seekg(static_cast<std::streamoff>(read_offset_), std::ios::beg);
-        input.read(reinterpret_cast<char*>(buffer), static_cast<std::streamsize>(capacity));
-        const auto count = input.gcount();
+      } else if (rx_fd_ >= 0) {
+        if (::lseek(rx_fd_, static_cast<off_t>(read_offset_), SEEK_SET) < 0) {
+          return drivers::datalink::DataLinkResult::unavailable("simulator pipe seek failed: " + rx_path_);
+        }
+        const auto count = ::read(rx_fd_, buffer, capacity);
         if (count > 0) {
           actual_size = static_cast<size_t>(count);
           read_offset_ += actual_size;
           return drivers::datalink::DataLinkResult::success();
+        }
+        if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+          return drivers::datalink::DataLinkResult::unavailable("simulator pipe read failed: " + rx_path_);
         }
       }
     }

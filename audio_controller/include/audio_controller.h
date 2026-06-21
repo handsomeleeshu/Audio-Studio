@@ -34,6 +34,16 @@ typedef struct audio_controller_datalink_device_ops {
     size_t (*mtu)(void* user);
 } audio_controller_datalink_device_ops_t;
 
+typedef struct audio_controller_log_source_ops {
+    void* user;
+    int (*open)(void* user);
+    int (*start)(void* user);
+    int (*read)(void* user, void* buffer, size_t capacity,
+                size_t* actual_size, unsigned int timeout_ms);
+    void (*stop)(void* user);
+    void (*close)(void* user);
+} audio_controller_log_source_ops_t;
+
 typedef struct audio_controller_driver_ops {
     void* user;
     void* (*alloc)(void* user, size_t size, size_t alignment);
@@ -50,6 +60,7 @@ typedef struct audio_controller_driver_ops {
     int (*mutex_lock)(void* user, audio_controller_mutex_t mutex);
     int (*mutex_unlock)(void* user, audio_controller_mutex_t mutex);
     const audio_controller_datalink_device_ops_t* datalink;
+    const audio_controller_log_source_ops_t* log_source;
 } audio_controller_driver_ops_t;
 
 typedef struct audio_controller_create_params {
@@ -107,9 +118,6 @@ int audio_controller_install_all(audio_controller_t* controller,
 int audio_controller_get_summary(audio_controller_t* controller, audio_controller_topology_summary_t* summary);
 int audio_controller_get_transport_stats(audio_controller_t* controller,
                                          audio_controller_transport_stats_t* stats);
-int audio_controller_append_log_data(audio_controller_t* controller,
-                                     const void* data,
-                                     size_t size);
 const char* audio_controller_get_last_error(audio_controller_t* controller);
 
 #ifdef __cplusplus

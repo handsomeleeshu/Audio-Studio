@@ -77,7 +77,6 @@ private:
   static bool sofLoggerEnabled(const Session& session);
   static std::string optionString(const LogSessionConfig& config, const std::string& key);
   static std::string safePathToken(const std::string& value);
-  static std::string shellQuote(const std::string& value);
   static LogEntry decodeLine(int sequence, const std::string& line);
   static LogEntry decodeSofLoggerLine(int sequence, const std::string& line);
   static bool passesLevel(const std::string& level, const std::string& min_level);

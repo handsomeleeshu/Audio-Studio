@@ -30,11 +30,12 @@ private:
                                   const std::string& fallback);
 
   drivers::datalink::DataLinkResult ensureFile(const std::string& path) const;
-
   mutable std::mutex mutex_;
   std::string name_;
   std::string rx_path_;
   std::string tx_path_;
+  int rx_fd_ = -1;
+  int tx_fd_ = -1;
   bool connected_ = false;
   bool loopback_ = false;
   size_t mtu_ = 512;

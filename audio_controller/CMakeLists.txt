@@ -14,6 +14,7 @@ set(CMAKE_C_EXTENSIONS ON)
 add_library(audio_controller STATIC
   src/ac_audio_controller.c
   src/ac_datalink.c
+  src/ac_log.c
   src/ac_transport.c
   src/ac_topology_parser.c
   src/ac_sof_loader.c)
@@ -45,6 +46,8 @@ if(AUDIO_CONTROLLER_BUILD_TESTS)
   enable_testing()
   add_executable(audio_controller_transport_tests
     tests/ac_transport_tests.c)
+  target_include_directories(audio_controller_transport_tests PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/src")
   target_link_libraries(audio_controller_transport_tests PRIVATE audio_controller)
   add_test(NAME audio_controller_transport_tests
     COMMAND audio_controller_transport_tests)

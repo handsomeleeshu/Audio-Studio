@@ -10,6 +10,7 @@
 #define AC_TRANSPORT_CHANNEL_LOG 1u
 #define AC_TRANSPORT_LOG_OPEN 1u
 #define AC_TRANSPORT_LOG_READ 2u
+#define AC_TRANSPORT_RESPONSE_TIMEOUT_MS 1000u
 #define AC_TRANSPORT_MAX_PAYLOAD \
     (AC_DATALINK_MAX_PACKET_SIZE - AC_TRANSPORT_HEADER_SIZE)
 #define AC_TRANSPORT_LOG_READ_CHUNK 512u
@@ -162,78 +163,6 @@ static int ac_transport_encode(unsigned char* out,
     return 0;
 }
 
-static void ac_transport_log_lock(ac_transport_controller_t* transport)
-{
-    if (transport->driver && transport->log_mutex_created &&
-        transport->driver->mutex_lock)
-        (void)transport->driver->mutex_lock(transport->driver->user,
-                                            transport->log_mutex);
-}
-
-static void ac_transport_log_unlock(ac_transport_controller_t* transport)
-{
-    if (transport->driver && transport->log_mutex_created &&
-        transport->driver->mutex_unlock)
-        (void)transport->driver->mutex_unlock(transport->driver->user,
-                                              transport->log_mutex);
-}
-
-static size_t ac_transport_read_log_data(ac_transport_controller_t* transport,
-                                         unsigned char* out,
-                                         size_t capacity)
-{
-    size_t read_size;
-    size_t tail;
-    size_t first_count;
-
-    if (!transport || !out || capacity == 0u)
-        return 0u;
-
-    ac_transport_log_lock(transport);
-    read_size = transport->log_size;
-    if (read_size > capacity)
-        read_size = capacity;
-    tail = (transport->log_head + AC_TRANSPORT_LOG_BUFFER_SIZE -
-            transport->log_size) % AC_TRANSPORT_LOG_BUFFER_SIZE;
-    first_count = AC_TRANSPORT_LOG_BUFFER_SIZE - tail;
-    if (first_count > read_size)
-        first_count = read_size;
-    if (first_count > 0u)
-        memcpy(out, transport->log_buffer + tail, first_count);
-    if (read_size > first_count) {
-        memcpy(out + first_count, transport->log_buffer,
-               read_size - first_count);
-    }
-    transport->log_size -= read_size;
-    ac_transport_log_unlock(transport);
-    return read_size;
-}
-
-int ac_transport_append_log_data(ac_transport_controller_t* transport,
-                                 const void* data,
-                                 size_t size)
-{
-    const unsigned char* bytes;
-    size_t i;
-
-    if (!transport || (!data && size > 0u))
-        return -1;
-    if (size == 0u)
-        return 0;
-
-    bytes = (const unsigned char*)data;
-    ac_transport_log_lock(transport);
-    for (i = 0u; i < size; i++) {
-        transport->log_buffer[transport->log_head] = bytes[i];
-        transport->log_head = (transport->log_head + 1u) %
-                              AC_TRANSPORT_LOG_BUFFER_SIZE;
-        if (transport->log_size < AC_TRANSPORT_LOG_BUFFER_SIZE)
-            transport->log_size++;
-    }
-    ac_transport_log_unlock(transport);
-    return 0;
-}
-
 static int ac_transport_send_response(ac_transport_controller_t* transport,
                                       const ac_transport_frame_t* request,
                                       uint32_t extra_flags,
@@ -249,7 +178,7 @@ static int ac_transport_send_response(ac_transport_controller_t* transport,
                             payload_size, &packet_size) != 0)
         return -1;
     return ac_datalink_send_packet(&transport->datalink, packet, packet_size,
-                                   100u);
+                                   AC_TRANSPORT_RESPONSE_TIMEOUT_MS);
 }
 
 static int ac_transport_handle_log(ac_transport_controller_t* transport,
@@ -258,11 +187,19 @@ static int ac_transport_handle_log(ac_transport_controller_t* transport,
     unsigned char payload[AC_TRANSPORT_LOG_READ_CHUNK];
     size_t payload_size;
 
-    if (request->command_id == AC_TRANSPORT_LOG_OPEN)
+    if (request->command_id == AC_TRANSPORT_LOG_OPEN) {
+        if (ac_log_start(&transport->log) != 0)
+            return ac_transport_send_response(
+                transport, request, AC_TRANSPORT_FLAG_ERROR,
+                (const unsigned char*)"log start failed", 16u);
         return ac_transport_send_response(transport, request, 0u, 0, 0u);
+    }
     if (request->command_id == AC_TRANSPORT_LOG_READ) {
-        payload_size = ac_transport_read_log_data(transport, payload,
-                                                  sizeof(payload));
+        if (ac_log_read(&transport->log, payload, sizeof(payload),
+                        &payload_size, 100u) < 0)
+            return ac_transport_send_response(
+                transport, request, AC_TRANSPORT_FLAG_ERROR,
+                (const unsigned char*)"log read failed", 15u);
         return ac_transport_send_response(transport, request, 0u, payload,
                                           payload_size);
     }
@@ -322,12 +259,12 @@ int ac_transport_init(ac_transport_controller_t* transport,
 
     memset(transport, 0, sizeof(*transport));
     transport->driver = driver;
-    if (driver->mutex_create &&
-        driver->mutex_create(driver->user, &transport->log_mutex) == 0)
-        transport->log_mutex_created = 1;
-
     if (ac_datalink_init(&transport->datalink, driver->datalink) != 0)
         return -1;
+    if (ac_log_init(&transport->log, driver->log_source) != 0) {
+        ac_datalink_deinit(&transport->datalink);
+        return -1;
+    }
 
     transport->initialized = 1;
     if (driver->datalink && driver->thread_create && driver->thread_join) {
@@ -335,6 +272,7 @@ int ac_transport_init(ac_transport_controller_t* transport,
         if (driver->thread_create(driver->user, &transport->thread,
                                   ac_transport_worker, transport) != 0) {
             transport->running = 0;
+            ac_log_deinit(&transport->log);
             ac_datalink_deinit(&transport->datalink);
             transport->initialized = 0;
             return -1;
@@ -357,13 +295,8 @@ void ac_transport_deinit(ac_transport_controller_t* transport)
     }
     transport->running = 0;
     transport->worker_started = 0;
+    ac_log_deinit(&transport->log);
     ac_datalink_deinit(&transport->datalink);
-    if (transport->log_mutex_created && transport->driver &&
-        transport->driver->mutex_destroy) {
-        transport->driver->mutex_destroy(transport->driver->user,
-                                         transport->log_mutex);
-    }
-    transport->log_mutex_created = 0;
     transport->initialized = 0;
 }
 

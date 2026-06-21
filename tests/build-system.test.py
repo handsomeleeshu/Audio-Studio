@@ -199,6 +199,32 @@ def assert_datalink_driver_naming():
                     f'{expected_absent} still appears in {source.relative_to(ROOT)}')
 
 
+def assert_as_log_embeds_sof_decoder():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    rpc_api = read_text(ROOT / 'rpc' / 'api' / 'audio_studio_rpc_api.cpp')
+    log_service = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'log_service.cpp')
+    server_cmake = read_text(ROOT / 'server' / 'CMakeLists.txt')
+
+    assert '--sof-logger' not in cli_common
+    assert 'sof_logger' not in cli_common
+    assert 'sof_logger' not in rpc_api
+    assert 'std::system' not in log_service
+    require_contains(server_cmake, 'tools/logger/convert.c')
+
+
+def assert_sof_test_ac_run_is_platform_neutral():
+    ac_run = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'ac-run-cmds.c')
+    forbidden = (
+        'rv32qemu',
+        'SOF_TEST_PLATFORM',
+        'ac_rv32qemu',
+        'sof_ipc_set_trace_bytes_sink',
+        'audio_controller_append_log_data',
+    )
+    for expected_absent in forbidden:
+        assert expected_absent not in ac_run
+
+
 def assert_as_config_decode_status(result, out_dir, project_name):
     decode_log = out_dir / f'{project_name}_decode.log'
     assert decode_log.exists(), f'missing as_config decode log: {decode_log}'
@@ -344,6 +370,8 @@ def main():
     assert_modular_kconfig_tree()
     assert_driver_cmake_tree()
     assert_datalink_driver_naming()
+    assert_as_log_embeds_sof_decoder()
+    assert_sof_test_ac_run_is_platform_neutral()
 
     if LINUX_BUILD_DIR.exists():
         shutil.rmtree(LINUX_BUILD_DIR)
