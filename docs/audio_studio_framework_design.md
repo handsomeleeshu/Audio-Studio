@@ -6110,9 +6110,9 @@ drivers/log/controller/ControllerLogDevice
 
 这样 A2 direct、DSP simulator、其他 Audio Controller 平台不需要各自实现 log driver。
 
-rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。配置 `datalink_endpoint`、`datalink_rx`/`datalink_tx` 后，该 log device 会创建 `simulator-pipe` data-link device，绑定标准 `TransportManager`，打开 Log channel 并通过 transport command 读取 raw log chunk；未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
+rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`datalink_endpoint`、`datalink_rx`/`datalink_tx` 是 `as_server` 与 audio controller 之间约定的运行期链路信息，应由 `as_server --log-datalink-*` 参数或 server 配置提供。该 log device 会创建 `simulator-pipe` data-link device，绑定标准 `TransportManager`，打开 Log channel 并通过 transport command 读取 raw log chunk；未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
 
-`as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。CLI/RPC 只传 `--trace-ldc` / `trace_ldc`，不再暴露外部 SOF logger executable 参数。`.ldc` 仍是 raw SOF trace 解码必需字典；`as_log` 负责 level 过滤后的标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
+`as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。`.ldc` 仍是 raw SOF trace 解码必需字典，但它属于 `as_server` 的 log session 默认配置，应由 `as_server --log-trace-ldc` 或 server 配置提供；`as_log` CLI 不暴露外部 SOF logger executable，也不携带 log driver factory、data-link endpoint 或 `.ldc`。`as_log` 负责连接 `as_server`、请求 log session、标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
 
 rv32qemu 端到端验证路径：
 
@@ -6135,10 +6135,12 @@ Misc/sof_test/platform/rv32qemu:
     -> platform data-link endpoint files
 
 Audio-Studio host:
-  as_log --driver-factory rv32qemu
-         --datalink-endpoint <sof_test cwd>/as_datalink
-         --trace-ldc application/rv32qemu/build/sof.ldc
-         --follow
+  as_server --rpc --host 127.0.0.1 --port 29231
+            --log-driver-factory rv32qemu
+            --log-datalink-endpoint <sof_test cwd>/as_datalink
+            --log-trace-ldc application/rv32qemu/build/sof.ldc
+
+  as_log --host 127.0.0.1 --port 29231 --follow
 ```
 
 `audio_controller` 本体不包含 rv32qemu platform 概念；`Misc/sof_test/ac-run-cmds.c` 只负责 common 命令解析和 audio controller 生命周期管理。平台差异由 `Misc/sof_test/platform/<platform>/ac_platform.c` 提供：`ac_datalink_platform_init/deinit()` 注册 data-link ops，`ac_log_platform_init/deinit()` 注册 log source ops。rv32qemu 中 data-link endpoint 文件只用于 Audio Studio host 与 audio controller 通信；`sof_trace.fifo` 只用于 SOF simulator 输出 raw trace，两者不能混用。
@@ -6153,9 +6155,6 @@ python3 application/rv32qemu/sof-build-test.py \
 
 Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
   --host 127.0.0.1 --port 29231 \
-  --driver-factory rv32qemu \
-  --datalink-endpoint /home/shuai/work/code/vass/Misc/sof_test/simple_test/as_datalink \
-  --trace-ldc /home/shuai/work/code/vass/application/rv32qemu/build/sof.ldc \
   --level debug --follow
 ```
 

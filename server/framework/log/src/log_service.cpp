@@ -41,8 +41,15 @@ void LogService::configureDeviceRegistry(drivers::log::LogDeviceRegistry* regist
   registry_ = registry;
 }
 
+void LogService::setDefaultSessionConfig(LogSessionConfig config) {
+  config.session_id.clear();
+  if (!config.min_level.empty()) config.min_level = normalizeLevel(config.min_level);
+  default_config_ = std::move(config);
+}
+
 framework::Status LogService::createSession(LogSessionConfig config, LogSessionInfo& out) {
   out = {};
+  config = mergeDefaultConfig(std::move(config));
   if (config.session_id.empty()) {
     config.session_id = "log_" + std::to_string(static_cast<long long>(sessions_.size() + 1));
   }
@@ -280,6 +287,21 @@ LogEntry LogService::decodeLine(int sequence, const std::string& line) {
 
 bool LogService::sofLoggerEnabled(const Session& session) {
   return !optionString(session.config, "trace_ldc").empty();
+}
+
+LogSessionConfig LogService::mergeDefaultConfig(LogSessionConfig config) const {
+  LogSessionConfig merged = default_config_;
+  if (!config.session_id.empty()) merged.session_id = std::move(config.session_id);
+  if (!config.driver_factory.empty()) merged.driver_factory = std::move(config.driver_factory);
+  if (!config.source.empty()) merged.source = std::move(config.source);
+  if (!config.min_level.empty()) merged.min_level = std::move(config.min_level);
+  merged.raw = config.raw;
+  for (auto& item : config.options) merged.options[item.first] = std::move(item.second);
+
+  if (merged.driver_factory.empty()) merged.driver_factory = "linux-host";
+  if (merged.source.empty()) merged.source = "firmware";
+  if (merged.min_level.empty()) merged.min_level = "debug";
+  return merged;
 }
 
 std::string LogService::optionString(const LogSessionConfig& config, const std::string& key) {

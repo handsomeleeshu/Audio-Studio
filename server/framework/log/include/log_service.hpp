@@ -46,6 +46,7 @@ struct LogSessionStats {
 class LogService {
 public:
   void configureDeviceRegistry(drivers::log::LogDeviceRegistry* registry);
+  void setDefaultSessionConfig(LogSessionConfig config);
 
   framework::Status createSession(LogSessionConfig config, LogSessionInfo& out);
   framework::Status configureSession(const std::string& id, const LogSessionConfig& config, LogSessionInfo& out);
@@ -75,6 +76,7 @@ private:
   };
 
   static bool sofLoggerEnabled(const Session& session);
+  LogSessionConfig mergeDefaultConfig(LogSessionConfig config) const;
   static std::string optionString(const LogSessionConfig& config, const std::string& key);
   static std::string safePathToken(const std::string& value);
   static LogEntry decodeLine(int sequence, const std::string& line);
@@ -89,6 +91,7 @@ private:
   int next_sequence_ = 1;
   std::vector<LogEntry> entries_;
   drivers::log::LogDeviceRegistry* registry_ = nullptr;
+  LogSessionConfig default_config_;
   std::map<std::string, Session> sessions_;
 };
 

@@ -288,9 +288,9 @@ framework::log::LogSessionConfig logSessionConfigFromParams(const JsonValue& par
   const auto object = requireObjectParams(params, "log.createSession");
   framework::log::LogSessionConfig config;
   config.session_id = optionalStringParam(object, "session_id", "");
-  config.driver_factory = optionalStringParam(object, "driver_factory", "linux-host");
-  config.source = optionalStringParam(object, "source", "firmware");
-  config.min_level = optionalStringParam(object, "min_level", optionalStringParam(object, "level", "debug"));
+  config.driver_factory = optionalStringParam(object, "driver_factory", "");
+  config.source = optionalStringParam(object, "source", "");
+  config.min_level = optionalStringParam(object, "min_level", optionalStringParam(object, "level", ""));
   config.raw = optionalBoolParam(object, "raw", false);
   if (object.has("datalink_endpoint")) {
     config.options["endpoint"] = optionalStringParam(object, "datalink_endpoint", "");

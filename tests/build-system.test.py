@@ -225,6 +225,29 @@ def assert_sof_test_ac_run_is_platform_neutral():
         assert expected_absent not in ac_run
 
 
+def assert_as_log_cli_is_transport_neutral():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
+    log_service_header = read_text(ROOT / 'server' / 'framework' / 'log' / 'include' / 'log_service.hpp')
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+
+    assert 'if (tool == "as_log") options.driver_factory = "linux-host";' not in cli_common
+    assert 'if (tool != "as_log")' in cli_common
+    for forbidden_param in ('params["driver_factory"]', 'params["datalink_endpoint"]', 'params["trace_ldc"]'):
+        assert forbidden_param not in cli_common
+    require_contains(as_server, '--log-driver-factory')
+    require_contains(as_server, '--log-datalink-endpoint')
+    require_contains(as_server, '--log-trace-ldc')
+    require_contains(log_service_header, 'setDefaultSessionConfig')
+    require_contains(rv32_helper, '"--log-driver-factory", "rv32qemu"')
+    require_contains(rv32_helper, '"--log-datalink-endpoint", datalink_endpoint')
+    require_contains(rv32_helper, '"--log-trace-ldc", trace_ldc')
+
+    as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('--driver-factory', '--datalink-endpoint', '--trace-ldc'):
+        assert forbidden not in as_log_section
+
+
 def assert_as_config_decode_status(result, out_dir, project_name):
     decode_log = out_dir / f'{project_name}_decode.log'
     assert decode_log.exists(), f'missing as_config decode log: {decode_log}'
@@ -372,6 +395,7 @@ def main():
     assert_datalink_driver_naming()
     assert_as_log_embeds_sof_decoder()
     assert_sof_test_ac_run_is_platform_neutral()
+    assert_as_log_cli_is_transport_neutral()
 
     if LINUX_BUILD_DIR.exists():
         shutil.rmtree(LINUX_BUILD_DIR)
@@ -732,7 +756,14 @@ def main():
     run(['ctest', '--test-dir', str(RPC_SOCKET_SIMULATOR_BUILD_DIR), '--output-on-failure'])
     simulator_port = find_free_port()
     simulator_server = subprocess.Popen(
-        [str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', simulator_port, '--max-requests', '5'],
+        [
+            str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server'),
+            '--rpc',
+            '--host', '127.0.0.1',
+            '--port', simulator_port,
+            '--max-requests', '5',
+            '--log-driver-factory', 'rv32qemu-simulator',
+        ],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -743,7 +774,6 @@ def main():
             str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_log'),
             '--host', '127.0.0.1',
             '--port', simulator_port,
-            '--driver-factory', 'rv32qemu-simulator',
             '--level', 'debug',
             '--count', '2',
             '--no-color',

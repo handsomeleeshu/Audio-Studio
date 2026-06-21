@@ -63,7 +63,9 @@ struct CliOptions {
   std::string device = "default";
   std::string source = "firmware";
   std::string level = "info";
-  std::string driver_factory = defaultAudioDriverFactory();
+  bool source_set = false;
+  bool level_set = false;
+  std::string driver_factory;
   std::string datalink_endpoint;
   std::string datalink_rx;
   std::string datalink_tx;
@@ -114,9 +116,9 @@ Args argsFromOptions(const CliOptions& options) {
   addValue(values, "--bytes-per-sample", std::to_string(options.bytes_per_sample));
   addValue(values, "--sample-format", options.sample_format);
   addValue(values, "--device", options.device);
-  addValue(values, "--source", options.source);
-  addValue(values, "--level", options.level);
-  addValue(values, "--driver-factory", options.driver_factory);
+  if (options.source_set) addValue(values, "--source", options.source);
+  if (options.level_set) addValue(values, "--level", options.level);
+  addIfSet(values, "--driver-factory", options.driver_factory);
   addIfSet(values, "--datalink-endpoint", options.datalink_endpoint);
   addIfSet(values, "--datalink-rx", options.datalink_rx);
   addIfSet(values, "--datalink-tx", options.datalink_tx);
@@ -140,8 +142,9 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   options.action = default_action;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--count") == 0) options.count_set = true;
+    if (std::strcmp(argv[i], "--source") == 0 || std::strncmp(argv[i], "--source=", 9) == 0) options.source_set = true;
+    if (std::strcmp(argv[i], "--level") == 0 || std::strncmp(argv[i], "--level=", 8) == 0) options.level_set = true;
   }
-  if (tool == "as_log") options.driver_factory = "linux-host";
   CLI::App app{"Audio Studio command line tool", tool};
   app.option_defaults()->always_capture_default();
   app.add_flag("--self-test", options.self_test, "Run the host-side self test path");
@@ -163,12 +166,14 @@ int parseCliOptions(const std::string& tool, const std::string& default_action, 
   app.add_option("--device", options.device, "Audio device name");
   app.add_option("--source", options.source, "Log source path or firmware source name");
   app.add_option("--level", options.level, "Minimum decoded log level");
-  app.add_option("--driver-factory", options.driver_factory, "Driver factory name");
-  app.add_option("--datalink-endpoint", options.datalink_endpoint, "Simulator data-link endpoint prefix");
-  app.add_option("--datalink-rx", options.datalink_rx, "Simulator data-link RX file");
-  app.add_option("--datalink-tx", options.datalink_tx, "Simulator data-link TX file");
-  app.add_option("--datalink-mtu", options.datalink_mtu, "Simulator data-link MTU");
-  app.add_option("--trace-ldc", options.trace_ldc, "SOF logger dictionary used to decode raw firmware trace");
+  if (tool != "as_log") {
+    app.add_option("--driver-factory", options.driver_factory, "Driver factory name");
+    app.add_option("--datalink-endpoint", options.datalink_endpoint, "Simulator data-link endpoint prefix");
+    app.add_option("--datalink-rx", options.datalink_rx, "Simulator data-link RX file");
+    app.add_option("--datalink-tx", options.datalink_tx, "Simulator data-link TX file");
+    app.add_option("--datalink-mtu", options.datalink_mtu, "Simulator data-link MTU");
+    app.add_option("--trace-ldc", options.trace_ldc, "SOF logger dictionary used to decode raw firmware trace");
+  }
   app.add_option("--blocking-write", options.blocking_write, "Whether playback stream writes use blocking semantics");
   app.add_flag("--nonblocking-write", options.nonblocking_write, "Request nonblocking playback stream writes");
   app.add_flag("--raw", options.raw_log, "Read raw log chunks instead of decoded entries");
@@ -634,25 +639,9 @@ std::string logSessionIdFromArgs(const Args& args) {
 rpc::JsonValue logSessionParamsFromArgs(const Args& args) {
   rpc::JsonValue params = rpc::JsonValue::object();
   params["session_id"] = logSessionIdFromArgs(args);
-  params["driver_factory"] = args.valueAfter("--driver-factory", "linux-host");
-  params["source"] = args.valueAfter("--source", args.valueAfter("--device", "firmware"));
-  params["min_level"] = args.valueAfter("--level", "info");
+  if (!args.valueAfter("--source").empty()) params["source"] = args.valueAfter("--source");
+  if (!args.valueAfter("--level").empty()) params["min_level"] = args.valueAfter("--level");
   params["raw"] = args.has("--raw");
-  if (!args.valueAfter("--datalink-endpoint").empty()) {
-    params["datalink_endpoint"] = args.valueAfter("--datalink-endpoint");
-  }
-  if (!args.valueAfter("--datalink-rx").empty()) {
-    params["datalink_rx"] = args.valueAfter("--datalink-rx");
-  }
-  if (!args.valueAfter("--datalink-tx").empty()) {
-    params["datalink_tx"] = args.valueAfter("--datalink-tx");
-  }
-  if (!args.valueAfter("--datalink-mtu").empty()) {
-    params["datalink_mtu"] = static_cast<uint32_t>(std::stoul(args.valueAfter("--datalink-mtu")));
-  }
-  if (!args.valueAfter("--trace-ldc").empty()) {
-    params["trace_ldc"] = args.valueAfter("--trace-ldc");
-  }
   return params;
 }
 
