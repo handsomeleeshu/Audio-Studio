@@ -1373,10 +1373,12 @@ Audio-Studio/rpc/
 Audio-Studio/drivers/
   include/
   src/
-  os/ socket/ filesystem/ pipe/ dynlib/ transport/ audio/ control/ log/ dump/
+  os/ socket/ filesystem/ pipe/ dynlib/ datalink/ audio/ control/ log/ dump/
   Kconfig
   CMakeLists.txt
 ```
+
+`server/` 采用和顶层 `drivers/` 相同的分散式构建管理：`server/CMakeLists.txt` 只组合 `main/`、`framework/`、`platform/` 等上层 target；`server/framework/CMakeLists.txt` 与 `server/platform/CMakeLists.txt` 只做子目录聚合；每个 framework/platform 子模块在自己的 `CMakeLists.txt` 和 `Kconfig` 内声明 source、include、feature switch 和依赖。新增 `framework/log`、`framework/transport` 或 `platform/simulator` 能力时，不允许继续把 source list 堆进 `server/CMakeLists.txt`。
 
 ### 3.4 GUI/backend 不等于 server
 
@@ -1936,6 +1938,8 @@ header_crc32   32
 
 同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞。
 
+Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
+
 TransportManager 本身只被 controller 类 driver implementation 使用；`framework/log`、`framework/dump`、`framework/audio`、`framework/control` 仍只依赖各自的 `I*Device` interface。
 
 当前落地文件：
@@ -1947,9 +1951,12 @@ server/framework/transport/include/transport_checksum.hpp
 server/platform/simulator/include/simulator_pipe_datalink_device.hpp
 server/platform/simulator/src/simulator_pipe_datalink_device.cpp
 server/platform/simulator/src/rv32qemu_log_device.cpp
+audio_controller/src/ac_transport_channel.h
 audio_controller/src/ac_datalink.c
 audio_controller/src/ac_transport.c
-Misc/sof_test/platform/rv32qemu/ac_rv32qemu_datalink.c
+audio_controller/src/ac_log.c
+Misc/sof_test/ac-run-cmds.c
+Misc/sof_test/platform/rv32qemu/ac_platform.c
 ```
 
 ### 4.12 顶层 drivers
@@ -6135,12 +6142,12 @@ Misc/sof_test/platform/rv32qemu:
     -> platform data-link endpoint files
 
 Audio-Studio host:
-  as_server --rpc --host 127.0.0.1 --port 29231
+  as_server --rpc
             --log-driver-factory rv32qemu
             --log-datalink-endpoint <sof_test cwd>/as_datalink
             --log-trace-ldc application/rv32qemu/build/sof.ldc
 
-  as_log --host 127.0.0.1 --port 29231 --follow
+  as_log --level debug --follow
 ```
 
 `audio_controller` 本体不包含 rv32qemu platform 概念；`Misc/sof_test/ac-run-cmds.c` 只负责 common 命令解析和 audio controller 生命周期管理。平台差异由 `Misc/sof_test/platform/<platform>/ac_platform.c` 提供：`ac_datalink_platform_init/deinit()` 注册 data-link ops，`ac_log_platform_init/deinit()` 注册 log source ops。rv32qemu 中 data-link endpoint 文件只用于 Audio Studio host 与 audio controller 通信；`sof_trace.fifo` 只用于 SOF simulator 输出 raw trace，两者不能混用。
@@ -6154,9 +6161,12 @@ python3 application/rv32qemu/sof-build-test.py \
   --trace-ldc application/rv32qemu/build/sof.ldc
 
 Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
-  --host 127.0.0.1 --port 29231 \
   --level debug --follow
 ```
+
+`as_server` 与 CLI 默认使用 `127.0.0.1:9900`，两边同时省略 `--host/--port` 时必须能通信。`--log-datalink-endpoint` 和 `--log-trace-ldc` 是 `as_server` 与 audio controller/log decoder 的运行期约定，不属于 `as_log` 用户命令参数。`as_log --follow --count N` 正常退出时必须关闭 log session；测试中不要用外层 `timeout` 强杀 CLI 作为正常 close 验证，因为 SIGTERM 可能跳过 close RPC，导致 controller 侧 log source 仍持有 `sof_trace.fifo`，进而影响 simulator trace writer。
+
+rv32qemu data-link endpoint 使用普通 host 文件模拟双向链路，session open 时打开、session close 时关闭，read/write 块不做每块 open/close。host 侧打开 RX 文件时从当前 EOF 开始读取，避免新 session 误读上一次运行遗留的 ACK/response；controller 侧也维护 stream offset。data-link 的 retry/ACK/CRC/切片仍由 `DataLinkManager` 和 `ac_datalink` common code 负责，platform ops 只提供最基础的文件读写和 MTU。
 
 #### 15.6 非 Audio Controller 平台
 

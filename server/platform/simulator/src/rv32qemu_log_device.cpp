@@ -1,7 +1,9 @@
 #include "log_device.hpp"
 #include "simulator_pipe_datalink_device.hpp"
 #include "transport_manager.hpp"
+#include "ac_transport_channel.h"
 
+#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -10,9 +12,7 @@
 namespace audio_studio::platform::simulator {
 namespace {
 
-constexpr uint16_t kLogChannelId = 1;
-constexpr uint16_t kLogCommandOpen = 1;
-constexpr uint16_t kLogCommandRead = 2;
+constexpr uint32_t kLogControllerReadTimeoutMs = 100;
 
 std::string optionString(const drivers::log::LogDeviceConfig& config,
                          const std::string& key,
@@ -25,6 +25,23 @@ bool hasTransportEndpoint(const drivers::log::LogDeviceConfig& config) {
   return !optionString(config, "endpoint").empty() ||
          !optionString(config, "rx_path").empty() ||
          !optionString(config, "tx_path").empty();
+}
+
+bool isTransportReadTimeout(const framework::Status& status) {
+  return status.code() == framework::StatusCode::kUnavailable &&
+         status.message().find("timed out") != std::string::npos;
+}
+
+uint32_t transportTimeoutForLogRead(uint32_t timeout_ms) {
+  return std::max<uint32_t>(timeout_ms + kLogControllerReadTimeoutMs + 250u, 500u);
+}
+
+drivers::log::LogResult transportPayloadStatus(const framework::transport::TransportFrame& response) {
+  if ((response.flags & framework::transport::kTransportFrameError) == 0) {
+    return drivers::log::LogResult::success();
+  }
+  const std::string message(response.payload.begin(), response.payload.end());
+  return drivers::log::LogResult::unavailable(message.empty() ? "transport log command failed" : message);
 }
 
 drivers::datalink::DataLinkDeviceConfig transportConfigFromLogConfig(const drivers::log::LogDeviceConfig& config) {
@@ -89,12 +106,14 @@ public:
     datalink_config.max_retries = 3;
     status = manager_->bindDataLinkDevice(*datalink_, datalink_config);
     if (!status.ok()) return status;
-    status = manager_->openChannel(kLogChannelId, "log");
+    status = manager_->openChannel(AC_TRANSPORT_CHANNEL_LOG, "log");
     if (!status.ok()) return status;
 
     framework::transport::TransportFrame response;
     const std::vector<uint8_t> source(config_.source.begin(), config_.source.end());
-    status = manager_->sendSync(kLogChannelId, kLogCommandOpen, source, response, 1000);
+    status = manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_OPEN, source, response, 1000);
+    if (!status.ok()) return status;
+    status = transportPayloadStatus(response);
     if (!status.ok()) return status;
     if (!response.payload.empty()) {
       chunks_.push_back({next_sequence_++, response.payload});
@@ -108,7 +127,11 @@ public:
   drivers::log::LogResult stop() override {
     if (!open_) return drivers::log::LogResult::unavailable("rv32qemu log device is not open");
     if (manager_) {
-      (void)manager_->closeChannel(kLogChannelId);
+      if (transport_ready_) {
+        framework::transport::TransportFrame response;
+        (void)manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_CLOSE, {}, response, 500);
+      }
+      (void)manager_->closeChannel(AC_TRANSPORT_CHANNEL_LOG);
       manager_.reset();
     }
     if (datalink_) {
@@ -131,8 +154,18 @@ public:
     if (!transport_ready_ || !manager_) return drivers::log::LogResult::unavailable("no rv32qemu log chunk available");
 
     framework::transport::TransportFrame response;
-    const auto status = manager_->sendSync(kLogChannelId, kLogCommandRead, {}, response, timeout_ms);
-    if (!status.ok()) return status;
+    const auto status = manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_READ, {}, response,
+                                           transportTimeoutForLogRead(timeout_ms));
+    if (!status.ok()) {
+      if (isTransportReadTimeout(status)) {
+        chunk.sequence = next_sequence_;
+        chunk.bytes.clear();
+        return drivers::log::LogResult::success();
+      }
+      return status;
+    }
+    const auto payload_status = transportPayloadStatus(response);
+    if (!payload_status.ok()) return payload_status;
     if (response.payload.empty()) {
       chunk.sequence = next_sequence_;
       chunk.bytes.clear();

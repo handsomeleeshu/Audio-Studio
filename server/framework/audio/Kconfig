@@ -1,0 +1,4 @@
+config FRAMEWORK_AUDIO
+  bool "Build audio framework library"
+  default n
+  depends on FRAMEWORK_COMMON

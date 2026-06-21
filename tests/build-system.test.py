@@ -204,12 +204,14 @@ def assert_as_log_embeds_sof_decoder():
     rpc_api = read_text(ROOT / 'rpc' / 'api' / 'audio_studio_rpc_api.cpp')
     log_service = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'log_service.cpp')
     server_cmake = read_text(ROOT / 'server' / 'CMakeLists.txt')
+    log_cmake = read_text(ROOT / 'server' / 'framework' / 'log' / 'CMakeLists.txt')
 
     assert '--sof-logger' not in cli_common
     assert 'sof_logger' not in cli_common
     assert 'sof_logger' not in rpc_api
     assert 'std::system' not in log_service
-    require_contains(server_cmake, 'tools/logger/convert.c')
+    assert 'tools/logger/convert.c' not in server_cmake
+    require_contains(log_cmake, 'tools/logger/convert.c')
 
 
 def assert_sof_test_ac_run_is_platform_neutral():
@@ -246,6 +248,78 @@ def assert_as_log_cli_is_transport_neutral():
     as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
     for forbidden in ('--driver-factory', '--datalink-endpoint', '--trace-ldc'):
         assert forbidden not in as_log_section
+
+
+def assert_framework_build_config_is_modular():
+    server_cmake = read_text(ROOT / 'server' / 'CMakeLists.txt')
+    framework_kconfig = read_text(ROOT / 'server' / 'framework' / 'Kconfig')
+    platform_kconfig = read_text(ROOT / 'server' / 'platform' / 'Kconfig')
+
+    for module in ['common', 'session', 'control', 'audio', 'config', 'log', 'dump', 'plugin', 'transport']:
+        assert (ROOT / 'server' / 'framework' / module / 'CMakeLists.txt').exists()
+        assert (ROOT / 'server' / 'framework' / module / 'Kconfig').exists()
+        assert f'source "server/framework/{module}/Kconfig"' in framework_kconfig
+        assert f'framework/{module}/src/' not in server_cmake
+
+    for module in ['core', 'a2', 'simulator']:
+        assert (ROOT / 'server' / 'platform' / module / 'CMakeLists.txt').exists()
+        assert (ROOT / 'server' / 'platform' / module / 'Kconfig').exists()
+        assert f'source "server/platform/{module}/Kconfig"' in platform_kconfig
+        assert f'platform/{module}/src/' not in server_cmake
+
+    assert 'add_subdirectory(framework)' in server_cmake
+    assert 'add_subdirectory(platform)' in server_cmake
+
+
+def assert_audio_controller_transport_channels_are_layered():
+    transport_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.c')
+    transport_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.h')
+    log_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_log.c')
+    channel_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport_channel.h')
+    rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
+
+    assert 'ac_transport_handle_log' not in transport_c
+    assert 'ac_log_transport_handler' in log_c
+    assert 'ac_transport_register_channel' in transport_h
+    assert 'ac_transport_open_channel' in transport_h
+    assert 'AC_TRANSPORT_CHANNEL_LOG' in channel_h
+    assert 'AC_TRANSPORT_CHANNEL_DUMP' in channel_h
+    assert '#include "ac_transport_channel.h"' in rv32_log_device
+    assert 'kLogChannelId = 1' not in rv32_log_device
+
+
+def assert_sof_test_ac_run_uses_getopt_long():
+    ac_run = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'ac-run-cmds.c')
+    assert '#include <getopt.h>' in ac_run
+    assert 'getopt_long' in ac_run
+    assert 'ac_run_option_value' not in ac_run
+    assert 'ac_run_has_option' not in ac_run
+
+
+def assert_default_rpc_endpoint_can_be_omitted_for_as_log():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+
+    require_contains(cli_common, 'uint16_t port = 9900;')
+    require_contains(as_server, 'uint16_t port = 9900;')
+    require_contains(rv32_helper, 'DEFAULT_AS_SERVER_PORT = 9900')
+
+    as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('"--host"', '"--port"'):
+        assert forbidden not in as_log_section
+
+    server_cmd_section = rv32_helper.split('server_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('"--host"', '"--port"'):
+        assert forbidden not in server_cmd_section
+
+
+def assert_rv32_log_timeout_is_not_fatal_for_follow():
+    rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
+    require_contains(rv32_log_device, 'isTransportReadTimeout')
+    require_contains(rv32_log_device, 'chunk.bytes.clear()')
+    read_chunk = rv32_log_device.split('readChunk(drivers::log::LogRawChunk& chunk', 1)[1].split('getStats', 1)[0]
+    assert 'if (!status.ok()) return status;' not in read_chunk
 
 
 def assert_as_config_decode_status(result, out_dir, project_name):
@@ -396,6 +470,11 @@ def main():
     assert_as_log_embeds_sof_decoder()
     assert_sof_test_ac_run_is_platform_neutral()
     assert_as_log_cli_is_transport_neutral()
+    assert_framework_build_config_is_modular()
+    assert_audio_controller_transport_channels_are_layered()
+    assert_sof_test_ac_run_uses_getopt_long()
+    assert_default_rpc_endpoint_can_be_omitted_for_as_log()
+    assert_rv32_log_timeout_is_not_fatal_for_follow()
 
     if LINUX_BUILD_DIR.exists():
         shutil.rmtree(LINUX_BUILD_DIR)

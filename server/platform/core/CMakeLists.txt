@@ -1,0 +1,6 @@
+add_library(audio_studio_platform_core
+  src/platform_registry.cpp
+)
+target_include_directories(audio_studio_platform_core PUBLIC include)
+target_link_libraries(audio_studio_platform_core PUBLIC audio_studio_framework_common)
+target_compile_features(audio_studio_platform_core PUBLIC cxx_std_17)

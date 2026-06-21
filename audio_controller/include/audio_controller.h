@@ -59,6 +59,7 @@ typedef struct audio_controller_driver_ops {
     void (*mutex_destroy)(void* user, audio_controller_mutex_t mutex);
     int (*mutex_lock)(void* user, audio_controller_mutex_t mutex);
     int (*mutex_unlock)(void* user, audio_controller_mutex_t mutex);
+    void (*sleep_ms)(void* user, unsigned int milliseconds);
     const audio_controller_datalink_device_ops_t* datalink;
     const audio_controller_log_source_ops_t* log_source;
 } audio_controller_driver_ops_t;

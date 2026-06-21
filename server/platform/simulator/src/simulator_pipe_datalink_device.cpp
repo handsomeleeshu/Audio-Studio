@@ -95,6 +95,16 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::open(const driver
     if (!status.ok()) return status;
     rx_fd_ = ::open(rx_path_.c_str(), O_RDONLY);
     if (rx_fd_ < 0) return drivers::datalink::DataLinkResult::unavailable("failed to open simulator RX data-link file: " + rx_path_);
+    struct stat rx_stat {};
+    if (::fstat(rx_fd_, &rx_stat) == 0 && rx_stat.st_size > 0) {
+      read_offset_ = static_cast<size_t>(rx_stat.st_size);
+    }
+    tx_fd_ = ::open(tx_path_.c_str(), O_WRONLY | O_APPEND);
+    if (tx_fd_ < 0) {
+      ::close(rx_fd_);
+      rx_fd_ = -1;
+      return drivers::datalink::DataLinkResult::unavailable("failed to open simulator TX data-link file: " + tx_path_);
+    }
   }
 
   connected_ = true;
@@ -124,13 +134,12 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::writeBlock(const 
     return drivers::datalink::DataLinkResult::success();
   }
 
-  const int tx_fd = ::open(tx_path_.c_str(), O_WRONLY | O_APPEND);
-  if (tx_fd < 0) return drivers::datalink::DataLinkResult::unavailable("simulator pipe write open failed: " + tx_path_);
-  const auto written = ::write(tx_fd, data, size);
-  ::close(tx_fd);
+  if (tx_fd_ < 0) return drivers::datalink::DataLinkResult::unavailable("simulator pipe TX data-link file is not open: " + tx_path_);
+  const auto written = ::write(tx_fd_, data, size);
   if (written < 0 || static_cast<size_t>(written) != size) {
     return drivers::datalink::DataLinkResult::unavailable("simulator pipe write failed: " + tx_path_);
   }
+  (void)::fsync(tx_fd_);
   return drivers::datalink::DataLinkResult::success();
 }
 
@@ -180,6 +189,7 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::readBlock(uint8_t
 drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::flush() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!connected_) return drivers::datalink::DataLinkResult::unavailable("simulator pipe data-link is not connected");
+  if (tx_fd_ >= 0) (void)::fsync(tx_fd_);
   loopback_rx_.clear();
   return drivers::datalink::DataLinkResult::success();
 }

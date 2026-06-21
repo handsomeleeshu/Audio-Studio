@@ -2,29 +2,9 @@
 
 #include <string.h>
 
-#define AC_TRANSPORT_HEADER_SIZE 36u
-#define AC_TRANSPORT_FLAG_REQUEST 0x00000001u
-#define AC_TRANSPORT_FLAG_RESPONSE 0x00000002u
-#define AC_TRANSPORT_FLAG_ACK 0x00000004u
-#define AC_TRANSPORT_FLAG_ERROR 0x00000080u
-#define AC_TRANSPORT_CHANNEL_LOG 1u
-#define AC_TRANSPORT_LOG_OPEN 1u
-#define AC_TRANSPORT_LOG_READ 2u
 #define AC_TRANSPORT_RESPONSE_TIMEOUT_MS 1000u
-#define AC_TRANSPORT_MAX_PAYLOAD \
-    (AC_DATALINK_MAX_PACKET_SIZE - AC_TRANSPORT_HEADER_SIZE)
-#define AC_TRANSPORT_LOG_READ_CHUNK 512u
-
-typedef struct ac_transport_frame {
-    uint16_t version;
-    uint16_t channel_id;
-    uint16_t command_id;
-    uint32_t flags;
-    uint32_t sequence_id;
-    uint32_t session_id;
-    const unsigned char* payload;
-    size_t payload_size;
-} ac_transport_frame_t;
+#define AC_TRANSPORT_RX_POLL_TIMEOUT_MS 1u
+#define AC_TRANSPORT_RX_IDLE_SLEEP_MS 1u
 
 static uint16_t ac_read_le16(const unsigned char* data)
 {
@@ -163,71 +143,156 @@ static int ac_transport_encode(unsigned char* out,
     return 0;
 }
 
-static int ac_transport_send_response(ac_transport_controller_t* transport,
-                                      const ac_transport_frame_t* request,
-                                      uint32_t extra_flags,
-                                      const unsigned char* payload,
-                                      size_t payload_size)
+static void ac_transport_sleep(ac_transport_controller_t* transport,
+                               unsigned int milliseconds)
 {
-    unsigned char packet[AC_DATALINK_MAX_PACKET_SIZE];
-    size_t packet_size;
-    uint32_t flags;
+    if (transport && transport->driver && transport->driver->sleep_ms)
+        transport->driver->sleep_ms(transport->driver->user, milliseconds);
+}
 
-    flags = AC_TRANSPORT_FLAG_RESPONSE | AC_TRANSPORT_FLAG_ACK | extra_flags;
-    if (ac_transport_encode(packet, sizeof(packet), request, flags, payload,
-                            payload_size, &packet_size) != 0)
+static void ac_transport_lock_io(ac_transport_controller_t* transport)
+{
+    if (transport && transport->io_mutex_created && transport->driver &&
+        transport->driver->mutex_lock)
+        (void)transport->driver->mutex_lock(transport->driver->user,
+                                            transport->io_mutex);
+}
+
+static void ac_transport_unlock_io(ac_transport_controller_t* transport)
+{
+    if (transport && transport->io_mutex_created && transport->driver &&
+        transport->driver->mutex_unlock)
+        (void)transport->driver->mutex_unlock(transport->driver->user,
+                                              transport->io_mutex);
+}
+
+static void ac_channel_lock(ac_transport_controller_t* transport,
+                            ac_transport_channel_runtime_t* channel)
+{
+    if (transport && channel && channel->mutex_created && transport->driver &&
+        transport->driver->mutex_lock)
+        (void)transport->driver->mutex_lock(transport->driver->user,
+                                            channel->mutex);
+}
+
+static void ac_channel_unlock(ac_transport_controller_t* transport,
+                              ac_transport_channel_runtime_t* channel)
+{
+    if (transport && channel && channel->mutex_created && transport->driver &&
+        transport->driver->mutex_unlock)
+        (void)transport->driver->mutex_unlock(transport->driver->user,
+                                              channel->mutex);
+}
+
+static ac_transport_channel_runtime_t*
+ac_transport_find_channel(ac_transport_controller_t* transport,
+                          uint16_t channel_id)
+{
+    size_t i;
+
+    if (!transport)
+        return 0;
+    for (i = 0u; i < transport->channel_count; ++i) {
+        if (transport->channels[i].id == channel_id)
+            return &transport->channels[i];
+    }
+    return 0;
+}
+
+static int ac_transport_pop_request(ac_transport_controller_t* transport,
+                                    ac_transport_channel_runtime_t* channel,
+                                    ac_transport_queued_request_t* request)
+{
+    if (!transport || !channel || !request)
+        return 0;
+
+    ac_channel_lock(transport, channel);
+    if (channel->count == 0u) {
+        ac_channel_unlock(transport, channel);
+        return 0;
+    }
+    *request = channel->queue[channel->head];
+    channel->head = (channel->head + 1u) % AC_TRANSPORT_CHANNEL_QUEUE_DEPTH;
+    channel->count--;
+    ac_channel_unlock(transport, channel);
+
+    request->frame.payload = request->payload;
+    return 1;
+}
+
+static int ac_transport_queue_request(ac_transport_controller_t* transport,
+                                      ac_transport_channel_runtime_t* channel,
+                                      const ac_transport_frame_t* frame)
+{
+    ac_transport_queued_request_t* request;
+
+    if (!transport || !channel || !frame)
         return -1;
-    return ac_datalink_send_packet(&transport->datalink, packet, packet_size,
-                                   AC_TRANSPORT_RESPONSE_TIMEOUT_MS);
+    if (frame->payload_size > AC_TRANSPORT_MAX_PAYLOAD)
+        return -1;
+
+    ac_channel_lock(transport, channel);
+    if (channel->count >= AC_TRANSPORT_CHANNEL_QUEUE_DEPTH) {
+        ac_channel_unlock(transport, channel);
+        return -1;
+    }
+    request = &channel->queue[channel->tail];
+    memset(request, 0, sizeof(*request));
+    request->frame = *frame;
+    if (frame->payload_size > 0u)
+        memcpy(request->payload, frame->payload, frame->payload_size);
+    request->frame.payload = request->payload;
+    channel->tail = (channel->tail + 1u) % AC_TRANSPORT_CHANNEL_QUEUE_DEPTH;
+    channel->count++;
+    ac_channel_unlock(transport, channel);
+    return 0;
 }
 
-static int ac_transport_handle_log(ac_transport_controller_t* transport,
-                                   const ac_transport_frame_t* request)
+static void* ac_transport_channel_worker(void* arg)
 {
-    unsigned char payload[AC_TRANSPORT_LOG_READ_CHUNK];
-    size_t payload_size;
+    ac_transport_channel_runtime_t* channel;
+    ac_transport_controller_t* transport;
+    ac_transport_queued_request_t request;
 
-    if (request->command_id == AC_TRANSPORT_LOG_OPEN) {
-        if (ac_log_start(&transport->log) != 0)
-            return ac_transport_send_response(
-                transport, request, AC_TRANSPORT_FLAG_ERROR,
-                (const unsigned char*)"log start failed", 16u);
-        return ac_transport_send_response(transport, request, 0u, 0, 0u);
-    }
-    if (request->command_id == AC_TRANSPORT_LOG_READ) {
-        if (ac_log_read(&transport->log, payload, sizeof(payload),
-                        &payload_size, 100u) < 0)
-            return ac_transport_send_response(
-                transport, request, AC_TRANSPORT_FLAG_ERROR,
-                (const unsigned char*)"log read failed", 15u);
-        return ac_transport_send_response(transport, request, 0u, payload,
-                                          payload_size);
-    }
+    channel = (ac_transport_channel_runtime_t*)arg;
+    if (!channel)
+        return 0;
+    transport = channel->transport;
 
-    return ac_transport_send_response(transport, request,
-                                      AC_TRANSPORT_FLAG_ERROR,
-                                      (const unsigned char*)"bad log command",
-                                      15u);
+    while (!channel->stop_requested || channel->count > 0u) {
+        if (ac_transport_pop_request(transport, channel, &request)) {
+            if (channel->handler)
+                (void)channel->handler(channel->handler_user, transport,
+                                       &request.frame);
+            continue;
+        }
+        ac_transport_sleep(transport, 10u);
+    }
+    return 0;
 }
 
-static int ac_transport_handle_packet(ac_transport_controller_t* transport,
-                                      const unsigned char* packet,
-                                      size_t packet_size)
+static int ac_transport_dispatch_packet(ac_transport_controller_t* transport,
+                                        const unsigned char* packet,
+                                        size_t packet_size)
 {
     ac_transport_frame_t request;
+    ac_transport_channel_runtime_t* channel;
 
     if (ac_transport_decode(packet, packet_size, &request) != 0)
         return -1;
     if ((request.flags & AC_TRANSPORT_FLAG_REQUEST) == 0u)
         return -1;
 
-    if (request.channel_id == AC_TRANSPORT_CHANNEL_LOG)
-        return ac_transport_handle_log(transport, &request);
-
-    return ac_transport_send_response(transport, &request,
-                                      AC_TRANSPORT_FLAG_ERROR,
-                                      (const unsigned char*)"bad channel",
-                                      11u);
+    channel = ac_transport_find_channel(transport, request.channel_id);
+    if (!channel || !channel->open) {
+        return ac_transport_send_error(transport, &request, "bad channel");
+    }
+    if (channel->thread_started)
+        return ac_transport_queue_request(transport, channel, &request);
+    if (!channel->handler)
+        return ac_transport_send_error(transport, &request,
+                                       "channel has no handler");
+    return channel->handler(channel->handler_user, transport, &request);
 }
 
 static void* ac_transport_worker(void* arg)
@@ -235,6 +300,7 @@ static void* ac_transport_worker(void* arg)
     ac_transport_controller_t* transport;
     unsigned char packet[AC_DATALINK_MAX_PACKET_SIZE];
     size_t packet_size;
+    int ret;
 
     transport = (ac_transport_controller_t*)arg;
     if (!transport)
@@ -242,11 +308,15 @@ static void* ac_transport_worker(void* arg)
 
     while (!transport->stop_requested) {
         packet_size = 0u;
-        if (ac_datalink_receive_packet(&transport->datalink, packet,
-                                       sizeof(packet), &packet_size,
-                                       10u) == 0) {
-            (void)ac_transport_handle_packet(transport, packet, packet_size);
-        }
+        ac_transport_lock_io(transport);
+        ret = ac_datalink_receive_packet(&transport->datalink, packet,
+                                         sizeof(packet), &packet_size,
+                                         AC_TRANSPORT_RX_POLL_TIMEOUT_MS);
+        ac_transport_unlock_io(transport);
+        if (ret == 0)
+            (void)ac_transport_dispatch_packet(transport, packet,
+                                               packet_size);
+        ac_transport_sleep(transport, AC_TRANSPORT_RX_IDLE_SLEEP_MS);
     }
     return 0;
 }
@@ -259,22 +329,124 @@ int ac_transport_init(ac_transport_controller_t* transport,
 
     memset(transport, 0, sizeof(*transport));
     transport->driver = driver;
-    if (ac_datalink_init(&transport->datalink, driver->datalink) != 0)
-        return -1;
-    if (ac_log_init(&transport->log, driver->log_source) != 0) {
-        ac_datalink_deinit(&transport->datalink);
+    if (driver->mutex_create && driver->mutex_destroy &&
+        driver->mutex_lock && driver->mutex_unlock) {
+        if (driver->mutex_create(driver->user, &transport->io_mutex) != 0)
+            return -1;
+        transport->io_mutex_created = 1;
+    }
+    if (ac_datalink_init(&transport->datalink, driver->datalink) != 0) {
+        if (transport->io_mutex_created)
+            driver->mutex_destroy(driver->user, transport->io_mutex);
         return -1;
     }
 
     transport->initialized = 1;
-    if (driver->datalink && driver->thread_create && driver->thread_join) {
+    return 0;
+}
+
+int ac_transport_register_channel(ac_transport_controller_t* transport,
+                                  uint16_t channel_id,
+                                  const char* name,
+                                  ac_transport_channel_handler_t handler,
+                                  void* handler_user)
+{
+    ac_transport_channel_runtime_t* channel;
+
+    if (!transport || channel_id == 0u || !handler)
+        return -1;
+    if (ac_transport_find_channel(transport, channel_id))
+        return -1;
+    if (transport->channel_count >= AC_TRANSPORT_MAX_CHANNELS)
+        return -1;
+
+    channel = &transport->channels[transport->channel_count];
+    memset(channel, 0, sizeof(*channel));
+    channel->transport = transport;
+    channel->id = channel_id;
+    channel->name = name;
+    channel->handler = handler;
+    channel->handler_user = handler_user;
+    if (transport->driver && transport->driver->mutex_create &&
+        transport->driver->mutex_destroy &&
+        transport->driver->mutex_lock &&
+        transport->driver->mutex_unlock) {
+        if (transport->driver->mutex_create(transport->driver->user,
+                                            &channel->mutex) != 0)
+            return -1;
+        channel->mutex_created = 1;
+    }
+    transport->channel_count++;
+    return 0;
+}
+
+int ac_transport_open_channel(ac_transport_controller_t* transport,
+                              uint16_t channel_id)
+{
+    ac_transport_channel_runtime_t* channel;
+
+    channel = ac_transport_find_channel(transport, channel_id);
+    if (!transport || !channel)
+        return -1;
+    channel->open = 1;
+    channel->stop_requested = 0;
+    if (!channel->thread_started && transport->driver &&
+        transport->driver->thread_create && transport->driver->thread_join) {
+        if (transport->driver->thread_create(transport->driver->user,
+                                             &channel->thread,
+                                             ac_transport_channel_worker,
+                                             channel) != 0) {
+            channel->open = 0;
+            return -1;
+        }
+        channel->thread_started = 1;
+    }
+    return 0;
+}
+
+void ac_transport_close_channel(ac_transport_controller_t* transport,
+                                uint16_t channel_id)
+{
+    ac_transport_channel_runtime_t* channel;
+
+    channel = ac_transport_find_channel(transport, channel_id);
+    if (!transport || !channel)
+        return;
+
+    channel->open = 0;
+    channel->stop_requested = 1;
+    if (channel->thread_started && transport->driver &&
+        transport->driver->thread_join) {
+        (void)transport->driver->thread_join(transport->driver->user,
+                                             channel->thread);
+    }
+    channel->thread_started = 0;
+    if (channel->mutex_created && transport->driver &&
+        transport->driver->mutex_destroy) {
+        transport->driver->mutex_destroy(transport->driver->user,
+                                         channel->mutex);
+    }
+    channel->mutex_created = 0;
+    channel->count = 0u;
+    channel->head = 0u;
+    channel->tail = 0u;
+}
+
+int ac_transport_start(ac_transport_controller_t* transport)
+{
+    if (!transport || !transport->initialized)
+        return -1;
+    if (transport->worker_started)
+        return 0;
+    if (transport->driver && transport->driver->datalink &&
+        transport->driver->thread_create && transport->driver->thread_join) {
         transport->running = 1;
-        if (driver->thread_create(driver->user, &transport->thread,
-                                  ac_transport_worker, transport) != 0) {
+        transport->stop_requested = 0;
+        if (transport->driver->thread_create(transport->driver->user,
+                                             &transport->thread,
+                                             ac_transport_worker,
+                                             transport) != 0) {
             transport->running = 0;
-            ac_log_deinit(&transport->log);
-            ac_datalink_deinit(&transport->datalink);
-            transport->initialized = 0;
             return -1;
         }
         transport->worker_started = 1;
@@ -284,6 +456,8 @@ int ac_transport_init(ac_transport_controller_t* transport,
 
 void ac_transport_deinit(ac_transport_controller_t* transport)
 {
+    size_t i;
+
     if (!transport)
         return;
 
@@ -295,9 +469,57 @@ void ac_transport_deinit(ac_transport_controller_t* transport)
     }
     transport->running = 0;
     transport->worker_started = 0;
-    ac_log_deinit(&transport->log);
+
+    for (i = 0u; i < transport->channel_count; ++i)
+        ac_transport_close_channel(transport, transport->channels[i].id);
+    transport->channel_count = 0u;
+
     ac_datalink_deinit(&transport->datalink);
+    if (transport->io_mutex_created && transport->driver &&
+        transport->driver->mutex_destroy) {
+        transport->driver->mutex_destroy(transport->driver->user,
+                                         transport->io_mutex);
+    }
+    transport->io_mutex_created = 0;
     transport->initialized = 0;
+}
+
+int ac_transport_send_response(ac_transport_controller_t* transport,
+                               const ac_transport_frame_t* request,
+                               uint32_t extra_flags,
+                               const unsigned char* payload,
+                               size_t payload_size)
+{
+    unsigned char packet[AC_DATALINK_MAX_PACKET_SIZE];
+    size_t packet_size;
+    uint32_t flags;
+    int ret;
+
+    flags = AC_TRANSPORT_FLAG_RESPONSE | AC_TRANSPORT_FLAG_ACK | extra_flags;
+    if (ac_transport_encode(packet, sizeof(packet), request, flags, payload,
+                            payload_size, &packet_size) != 0)
+        return -1;
+    ac_transport_lock_io(transport);
+    ret = ac_datalink_send_packet(&transport->datalink, packet, packet_size,
+                                  AC_TRANSPORT_RESPONSE_TIMEOUT_MS);
+    ac_transport_unlock_io(transport);
+    return ret;
+}
+
+int ac_transport_send_error(ac_transport_controller_t* transport,
+                            const ac_transport_frame_t* request,
+                            const char* message)
+{
+    const unsigned char* payload;
+    size_t size;
+
+    if (!message)
+        message = "transport error";
+    payload = (const unsigned char*)message;
+    size = strlen(message);
+    return ac_transport_send_response(transport, request,
+                                      AC_TRANSPORT_FLAG_ERROR,
+                                      payload, size);
 }
 
 void ac_transport_get_stats(const ac_transport_controller_t* transport,

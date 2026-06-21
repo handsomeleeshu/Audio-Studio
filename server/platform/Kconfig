@@ -12,11 +12,7 @@ config TARGET_PLATFORM_SIMULATOR
 
 endchoice
 
-config PLATFORM_CORE
-  bool "Build platform registry core"
-  default n
-  depends on SERVER && FRAMEWORK_COMMON
-
+source "server/platform/core/Kconfig"
 source "server/platform/a2/Kconfig"
 source "server/platform/simulator/Kconfig"
 

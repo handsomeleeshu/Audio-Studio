@@ -1,0 +1,4 @@
+config FRAMEWORK_CONTROL
+  bool "Build control framework library"
+  default n
+  depends on FRAMEWORK_COMMON

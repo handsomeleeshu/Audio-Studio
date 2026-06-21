@@ -1,0 +1,3 @@
+config FRAMEWORK_COMMON
+  bool "Build common framework library"
+  default n
