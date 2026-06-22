@@ -70,7 +70,7 @@ private:
     bool running = false;
     size_t entries_read = 0;
     size_t raw_chunks_read = 0;
-    size_t decoded_lines_read = 0;
+    size_t decoded_entries_read = 0;
     std::string raw_trace_path;
     std::string decoded_trace_path;
   };

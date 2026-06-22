@@ -63,13 +63,11 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::ensureFile(const 
       if (error) return drivers::datalink::DataLinkResult::unavailable("failed to replace simulator data-link file: " + error.message());
     }
   }
-  if (::lstat(path.c_str(), &st) != 0) {
-    const int fd = ::open(path.c_str(), O_CREAT | O_TRUNC | O_RDWR, 0666);
-    if (fd < 0) {
-      return drivers::datalink::DataLinkResult::unavailable("failed to create simulator data-link file: " + path);
-    }
-    ::close(fd);
+  const int fd = ::open(path.c_str(), O_CREAT | O_RDWR, 0666);
+  if (fd < 0) {
+    return drivers::datalink::DataLinkResult::unavailable("failed to create simulator data-link file: " + path);
   }
+  ::close(fd);
   return drivers::datalink::DataLinkResult::success();
 }
 
@@ -95,10 +93,13 @@ drivers::datalink::DataLinkResult SimulatorPipeDataLinkDevice::open(const driver
     if (!status.ok()) return status;
     rx_fd_ = ::open(rx_path_.c_str(), O_RDONLY);
     if (rx_fd_ < 0) return drivers::datalink::DataLinkResult::unavailable("failed to open simulator RX data-link file: " + rx_path_);
-    struct stat rx_stat {};
-    if (::fstat(rx_fd_, &rx_stat) == 0 && rx_stat.st_size > 0) {
-      read_offset_ = static_cast<size_t>(rx_stat.st_size);
+    const auto rx_end = ::lseek(rx_fd_, 0, SEEK_END);
+    if (rx_end < 0) {
+      ::close(rx_fd_);
+      rx_fd_ = -1;
+      return drivers::datalink::DataLinkResult::unavailable("failed to seek simulator RX data-link file: " + rx_path_);
     }
+    read_offset_ = static_cast<size_t>(rx_end);
     tx_fd_ = ::open(tx_path_.c_str(), O_WRONLY | O_APPEND);
     if (tx_fd_ < 0) {
       ::close(rx_fd_);

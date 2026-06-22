@@ -133,8 +133,8 @@ framework::audio::AudioStream audioStreamFromParams(RpcRuntimeContext& context,
   framework::audio::AudioStream stream;
   stream.id = optionalStringParam(object, "session_id", context.nextSessionId(prefix));
   stream.direction = direction;
-  stream.driver_factory = optionalStringParam(object, "driver_factory", defaultAudioDriverFactory());
-  stream.device_name = optionalStringParam(object, "device_name", optionalStringParam(object, "device", "default"));
+  stream.driver_factory = optionalStringParam(object, "driver_factory", "");
+  stream.device_name = optionalStringParam(object, "device_name", optionalStringParam(object, "device", ""));
   stream.sample_rate = static_cast<int>(optionalUInt32Param(object, "sample_rate", 48000));
   stream.channels = static_cast<int>(optionalUInt16Param(object, "channels", 2));
   stream.bytes_per_sample = static_cast<int>(optionalUInt16Param(object, "bytes_per_sample", 2));

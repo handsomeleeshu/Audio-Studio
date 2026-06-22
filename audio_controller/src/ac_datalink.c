@@ -8,6 +8,7 @@
 #define AC_DATALINK_FLAG_NAK 0x0004u
 #define AC_DATALINK_FLAG_END 0x0008u
 #define AC_DATALINK_MAX_RETRIES 3u
+#define AC_DATALINK_FRAGMENT_TIMEOUT_MS 1000u
 
 typedef struct ac_datalink_frame_view {
     uint16_t flags;
@@ -138,6 +139,13 @@ static size_t ac_datalink_effective_mtu(const ac_datalink_controller_t* datalink
     if (mtu > AC_DATALINK_MAX_FRAME_SIZE)
         mtu = AC_DATALINK_MAX_FRAME_SIZE;
     return mtu;
+}
+
+static unsigned int ac_datalink_fragment_timeout(unsigned int timeout_ms)
+{
+    if (timeout_ms < AC_DATALINK_FRAGMENT_TIMEOUT_MS)
+        return AC_DATALINK_FRAGMENT_TIMEOUT_MS;
+    return timeout_ms;
 }
 
 static int ac_datalink_encode_frame(unsigned char* out,
@@ -413,6 +421,7 @@ int ac_datalink_receive_packet(ac_datalink_controller_t* datalink,
     ac_datalink_frame_view_t first;
     ac_datalink_frame_view_t frame;
     size_t frame_size;
+    unsigned int fragment_timeout_ms;
     uint16_t expected;
     int ret;
 
@@ -443,9 +452,10 @@ int ac_datalink_receive_packet(ac_datalink_controller_t* datalink,
     if (ac_datalink_send_ack(datalink, &first, 1, timeout_ms) != 0)
         return -1;
 
+    fragment_timeout_ms = ac_datalink_fragment_timeout(timeout_ms);
     for (expected = 1u; expected < first.fragment_count; expected++) {
         ret = ac_datalink_read_frame(datalink, &frame, frame_copy,
-                                     &frame_size, timeout_ms);
+                                     &frame_size, fragment_timeout_ms);
         if (ret != 0)
             return ret;
         if ((frame.flags & AC_DATALINK_FLAG_DATA) == 0u ||

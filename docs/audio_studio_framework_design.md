@@ -1924,7 +1924,7 @@ Transport 层负责业务 channel、同步/异步请求、传输层 ACK 和 chan
 magic          32  "ASTM"
 version        16  当前为 1
 header_size    16  当前为 36
-channel_id     16  当前 Log=1，后续 Dump/Audio/Control 继续分配
+channel_id     16  Log=1，Audio control=3，Audio data=4..19
 command_id     16  service 私有命令
 flags          32  REQUEST/RESPONSE/ACK/ASYNC/OPEN/CLOSE/ERROR
 seq_id         32  TransportManager sequence
@@ -1936,9 +1936,43 @@ header_crc32   32
 
 同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞。
 
-Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
+Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`，audio 使用 `ac_audio_control_transport_handler()` 和 `ac_audio_data_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
 
 TransportManager 本身只被 controller 类 driver implementation 使用；`framework/log`、`framework/dump`、`framework/audio`、`framework/control` 仍只依赖各自的 `I*Device` interface。
+
+#### 4.11.4 Simulator audio controller channel
+
+Simulator audio controller 使用一个固定 control channel 和最多 16 个独立 data channel，保证多路 stream 的音频数据互不串流：
+
+```text
+AC_TRANSPORT_CHANNEL_AUDIO_CONTROL = 3
+AC_TRANSPORT_AUDIO_MAX_STREAMS = 16
+AC_TRANSPORT_AUDIO_DATA_CHANNEL_FIRST = 4
+AC_TRANSPORT_AUDIO_DATA_CHANNEL_LAST = 19
+AC_TRANSPORT_MAX_CHANNELS >= 20
+```
+
+`ac_transport.c` 仍保持通用 transport 实现；音频业务逻辑只放在 `ac_audio.c/h`。每路 stream 保存独立的 `sof_stream*`、stream name、direction、sample rate、sample bits、channel map、data channel、running 状态和帧统计。control handler 只处理生命周期命令：
+
+```text
+OPEN    分配 stream slot，记录 stream name 和 direction
+CONFIG  配置 sample rate / channels / bytes per sample / 默认 chmap，并打开/config sof_stream
+START   创建或打开该 stream 对应的 data transport channel，触发 sof_stream START，并返回 data channel id
+STOP    触发 sof_stream STOP，并关闭该 stream 的 data transport channel
+CLOSE   关闭 data transport channel、sof_stream，并释放 slot
+```
+
+音频帧命令全部走该 stream 的 data channel：
+
+```text
+WRITE   playback 数据写入对应 sof_stream
+READ    capture 数据从对应 sof_stream 读取
+DRAIN   playback drain/poll position
+```
+
+Playback `WRITE` 必须使用 blocking write 语义：根据 `sof_stream_get_free_size()` 选择整帧倍数写入，允许 `sof_stream_write()` partial write，并循环直到当前 transport payload 完整写入；没有进展时只能基于 `sof_stream_poll_position()` 和有界等待推进，不能在未知位置随意 `yield` 或裸 sleep。Capture `READ` 同理只允许基于 `sof_stream_get_avail_size()`、poll position 和明确 timeout 的有界等待策略。
+
+simulator pipe data-link 的文件是一个 `ac_run` session 内共享的 request/response append log。controller 启动时可以清空自己的输出文件来建立新 session；host 端 log/audio device 重复打开同一个 endpoint 时只能创建缺失文件，不能 truncate 既有 `.rx/.tx`，否则 controller 侧读偏移会落到文件末尾之外，导致后续 `LOG_OPEN`、audio control 或 data command 超时。多 fragment packet 在首片 ACK 后，后续 fragment 必须使用明确的 fragment timeout 等待，不能沿用 transport worker 的 1ms poll timeout。
 
 当前落地文件：
 
@@ -1949,10 +1983,12 @@ server/framework/transport/include/transport_checksum.hpp
 server/platform/simulator/include/simulator_pipe_datalink_device.hpp
 server/platform/simulator/src/simulator_pipe_datalink_device.cpp
 server/platform/simulator/src/rv32qemu_log_device.cpp
+server/platform/simulator/src/rv32qemu_audio_device.cpp
 audio_controller/src/ac_transport_channel.h
 audio_controller/src/ac_datalink.c
 audio_controller/src/ac_transport.c
 audio_controller/src/ac_log.c
+audio_controller/src/ac_audio.c
 Misc/sof_test/ac-run-cmds.c
 Misc/sof_test/platform/rv32qemu/ac_platform.c
 ```
@@ -2507,6 +2543,8 @@ as_play/as_record
 
 A2/controller profile 后续沿用同一 `IAudioPlaybackDevice` / `IAudioCaptureDevice` interface，只替换 registry 中的 factory implementation。
 
+Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --audio-datalink-endpoint <endpoint>` 提供默认 driver 与 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
+
 ### 7.2 as_control：A2 直连 Controller 模式
 
 ```mermaid
@@ -2592,6 +2630,8 @@ sequenceDiagram
     RPC-->>CLI: print/write file
   end
 ```
+
+SOF logger follow 模式只把真实 SOF log entry 计入 session cursor。decoder 的 table header、EOF/footer 诊断、`Skipped ... after the last statement`、`Potential mailbox wrap`、`Found valid LDC address...` 和 resync 诊断行必须被过滤，不作为 `as_log` entry 输出，也不能计入已读 entry 数。有限 raw file 解码不启用 SOF converter trace mode，因为 trace mode 在 EOF 后会 reopen 循环，可能导致 follow 卡住。
 
 ### 7.5 as_dump
 

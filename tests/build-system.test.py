@@ -293,12 +293,103 @@ def assert_audio_controller_transport_channels_are_layered():
     assert 'kLogChannelId = 1' not in rv32_log_device
 
 
+def assert_simulator_audio_transport_channels_are_stream_scoped():
+    transport_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.c')
+    transport_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.h')
+    channel_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport_channel.h')
+    ac_audio_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_audio.c')
+    simulator_cmake = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'CMakeLists.txt')
+
+    require_contains(channel_h, 'AC_TRANSPORT_CHANNEL_AUDIO_CONTROL 3u')
+    require_contains(channel_h, 'AC_TRANSPORT_AUDIO_MAX_STREAMS 16u')
+    require_contains(channel_h, 'AC_TRANSPORT_AUDIO_DATA_CHANNEL_FIRST 4u')
+    require_contains(channel_h, 'AC_TRANSPORT_AUDIO_DATA_CHANNEL_LAST 19u')
+    require_contains(transport_h, 'AC_TRANSPORT_MAX_CHANNELS 20u')
+    assert 'sof_stream_' not in transport_c
+    require_contains(ac_audio_c, 'sof_stream_open')
+    require_contains(ac_audio_c, 'sof_stream_get_free_size')
+    require_contains(ac_audio_c, 'sof_stream_get_avail_size')
+    require_contains(ac_audio_c, 'AC_TRANSPORT_AUDIO_DRAIN')
+    ac_audio_tests = read_text(ROOT / 'audio_controller' / 'tests' / 'ac_transport_tests.c')
+    require_contains(ac_audio_tests, 'test_audio_write_uses_blocking_write')
+    require_contains(ac_audio_tests, 'test_audio_read_uses_blocking_read')
+    control_handler = ac_audio_c.split('ac_audio_control_transport_handler', 1)[1].split('ac_audio_data_transport_handler', 1)[0]
+    data_handler = ac_audio_c.split('ac_audio_data_transport_handler', 1)[1]
+    assert 'AC_TRANSPORT_AUDIO_WRITE' not in control_handler
+    assert 'AC_TRANSPORT_AUDIO_READ' not in control_handler
+    assert 'AC_TRANSPORT_AUDIO_DRAIN' not in control_handler
+    require_contains(data_handler, 'AC_TRANSPORT_AUDIO_WRITE')
+    require_contains(data_handler, 'AC_TRANSPORT_AUDIO_READ')
+    require_contains(data_handler, 'AC_TRANSPORT_AUDIO_DRAIN')
+    require_contains(simulator_cmake, 'rv32qemu_audio_device.cpp')
+
+
+def assert_audio_cli_lets_server_select_default_driver():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    rpc_api = read_text(ROOT / 'rpc' / 'api' / 'audio_studio_rpc_api.cpp')
+    audio_service_h = read_text(ROOT / 'server' / 'framework' / 'audio' / 'include' / 'audio_service.hpp')
+    as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+    rv32_audio_case = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'simple_test' / 'rv32qemu-as-audio-controller-test-lists.txt')
+
+    audio_session_parser = cli_common.split('rpc::AudioSessionConfig audioSessionConfigFromArgs', 1)[1].split('std::string rpcTransportName', 1)[0]
+    assert 'defaultAudioDriverFactory()' not in audio_session_parser
+    require_contains(audio_session_parser, 'args.valueAfter("--driver-factory", "")')
+    require_contains(audio_session_parser, 'args.valueAfter("--device", "")')
+    rpc_audio_parser = rpc_api.split('framework::audio::AudioStream audioStreamFromParams', 1)[1].split('JsonValue createAudioSession', 1)[0]
+    assert 'defaultAudioDriverFactory()' not in rpc_audio_parser
+    require_contains(rpc_audio_parser, 'optionalStringParam(object, "driver_factory", "")')
+    require_contains(rpc_audio_parser, 'optionalStringParam(object, "device", "")')
+    require_contains(audio_service_h, 'std::map<std::string, std::string> options')
+    require_contains(as_server, '--audio-driver-factory')
+    require_contains(as_server, '--audio-datalink-endpoint')
+    require_contains(rv32_helper, '"--audio-driver-factory", "rv32qemu"')
+    require_contains(rv32_helper, '"--audio-datalink-endpoint", datalink_endpoint')
+    require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')
+
+
+def assert_sof_logger_follow_ignores_decoder_footer():
+    log_service_h = read_text(ROOT / 'server' / 'framework' / 'log' / 'include' / 'log_service.hpp')
+    log_service = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'log_service.cpp')
+    decoder_c = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'sof_logger_decoder_c.c')
+
+    require_contains(log_service_h, 'decoded_entries_read')
+    assert 'decoded_lines_read' not in log_service_h
+    require_contains(log_service, 'isSofLoggerDiagnosticLine')
+    require_contains(log_service, 'Skipped ')
+    require_contains(log_service, 'Potential mailbox wrap')
+    require_contains(log_service, 'Found valid LDC address')
+    require_contains(log_service, 'if (!isSofLoggerEntryLine(line)) continue;')
+    require_contains(log_service, 'entry_index++ < session.decoded_entries_read')
+    assert 'config.trace = 1' not in decoder_c
+
+
 def assert_sof_test_ac_run_uses_getopt_long():
     ac_run = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'ac-run-cmds.c')
     assert '#include <getopt.h>' in ac_run
     assert 'getopt_long' in ac_run
     assert 'ac_run_option_value' not in ac_run
     assert 'ac_run_has_option' not in ac_run
+
+
+def assert_rv32_log_datalink_files_are_session_scoped():
+    simulator_pipe = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'simulator_pipe_datalink_device.cpp')
+    rv32_ac_platform = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'platform' / 'rv32qemu' / 'ac_platform.c')
+
+    assert 'if (::lstat(path.c_str(), &st) != 0) {' not in simulator_pipe
+    assert 'O_CREAT | O_TRUNC | O_RDWR' not in simulator_pipe
+    require_contains(simulator_pipe, 'O_CREAT | O_RDWR')
+    require_contains(rv32_ac_platform, 'open(pipe->tx_path, O_RDWR | O_CREAT | O_TRUNC, 0666)')
+
+
+def assert_rv32_audio_controller_log_uses_regular_trace_source():
+    rv32_runner = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+    rv32_ac_platform = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'platform' / 'rv32qemu' / 'ac_platform.c')
+
+    require_contains(rv32_runner, 'ensure_data_file(log_fifo_path)')
+    assert 'ensure_fifo(log_fifo_path)' not in rv32_runner
+    assert 'if (count == 0 || (count < 0 && errno != EAGAIN &&' not in rv32_ac_platform
+    require_contains(rv32_ac_platform, 'if (timeout_ms == 0u || waited_ms >= timeout_ms)')
 
 
 def assert_default_rpc_endpoint_can_be_omitted_for_as_log():
@@ -485,7 +576,12 @@ def main():
     assert_as_log_cli_is_transport_neutral()
     assert_framework_build_config_is_modular()
     assert_audio_controller_transport_channels_are_layered()
+    assert_simulator_audio_transport_channels_are_stream_scoped()
+    assert_audio_cli_lets_server_select_default_driver()
+    assert_sof_logger_follow_ignores_decoder_footer()
     assert_sof_test_ac_run_uses_getopt_long()
+    assert_rv32_log_datalink_files_are_session_scoped()
+    assert_rv32_audio_controller_log_uses_regular_trace_source()
     assert_default_rpc_endpoint_can_be_omitted_for_as_log()
     assert_rv32_log_timeout_is_not_fatal_for_follow()
 

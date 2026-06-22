@@ -102,9 +102,12 @@ void RpcSocketServer::serve(const std::string& host, uint16_t port, RpcServerLim
 
     std::thread worker([this, limits, client = std::move(client), &handled, &error_mutex, &first_error]() mutable {
       try {
+        const uint32_t idle_timeout_ms = limits.max_requests == 0
+                                             ? std::numeric_limits<uint32_t>::max()
+                                             : limits.timeout_ms;
         while (limits.max_requests == 0 || handled.load() < limits.max_requests) {
           std::string prefix;
-          if (!readPrefix(*client, limits.timeout_ms, prefix)) break;
+          if (!readPrefix(*client, idle_timeout_ms, prefix)) break;
 
           if (prefix == "ASRP") {
             const std::vector<uint8_t> binary_prefix(prefix.begin(), prefix.end());

@@ -41,6 +41,7 @@ struct AudioStream {
 struct AudioServiceConfig {
   std::string driver_factory = defaultAudioDriverFactory();
   std::string default_device_name = "default";
+  std::map<std::string, std::string> options;
 };
 
 struct AudioIoStats {

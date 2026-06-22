@@ -35,6 +35,33 @@ bool containsToken(const std::string& line, const std::string& token) {
   return line.find(token) != std::string::npos;
 }
 
+bool startsWith(const std::string& line, const std::string& prefix) {
+  return line.rfind(prefix, 0) == 0;
+}
+
+bool isSofLoggerDiagnosticLine(const std::string& line) {
+  return containsToken(line, "Skipped ") ||
+         containsToken(line, "Potential mailbox wrap") ||
+         startsWith(line, "Found valid LDC address") ||
+         containsToken(line, "Seeking forward 4 bytes") ||
+         containsToken(line, "Re-opening trace input file") ||
+         containsToken(line, "negative DELTA");
+}
+
+bool isSofLoggerEntryLine(const std::string& line) {
+  if (line.empty()) return false;
+  if (isSofLoggerDiagnosticLine(line)) return false;
+  if (containsToken(line, " TIMESTAMP") && containsToken(line, "CONTENT")) return false;
+  return containsToken(line, " ERROR ") ||
+         containsToken(line, " ERR ") ||
+         containsToken(line, " WARNING ") ||
+         containsToken(line, " WARN ") ||
+         containsToken(line, " INFO ") ||
+         containsToken(line, " DEBUG ") ||
+         containsToken(line, " VERBOSE ") ||
+         containsToken(line, " UNKNOWN ");
+}
+
 } // namespace
 
 void LogService::configureDeviceRegistry(drivers::log::LogDeviceRegistry* registry) {
@@ -103,7 +130,7 @@ framework::Status LogService::configureSession(const std::string& id, const LogS
     if (session->decoded_trace_path.empty()) {
       session->decoded_trace_path = "/tmp/audio_studio_" + safePathToken(session->config.session_id) + ".trace.log";
     }
-    session->decoded_lines_read = 0;
+    session->decoded_entries_read = 0;
   }
   if ((!config.source.empty() && config.source != session->config.source) || !config.options.empty()) {
     if (!config.source.empty()) session->config.source = config.source;
@@ -357,17 +384,17 @@ framework::Status LogService::decodeSofTrace(Session& session, size_t max_entrie
   if (!decoded) return framework::Status::unavailable("failed to open SOF decoded trace file: " + session.decoded_trace_path);
 
   std::string line;
-  size_t line_index = 0;
+  size_t entry_index = 0;
   while (entries.size() < max_entries && std::getline(decoded, line)) {
-    if (line.empty()) continue;
-    if (line_index++ < session.decoded_lines_read) continue;
+    if (!isSofLoggerEntryLine(line)) continue;
+    if (entry_index++ < session.decoded_entries_read) continue;
     auto entry = decodeSofLoggerLine(next_sequence_++, line);
     if (!passesLevel(entry.level, session.config.min_level)) continue;
     entries.push_back(entry);
     entries_.push_back(entry);
     ++session.entries_read;
   }
-  session.decoded_lines_read = line_index;
+  session.decoded_entries_read = entry_index;
   return framework::Status::success();
 }
 

@@ -49,6 +49,12 @@ struct ServerOptions {
   std::string log_datalink_tx;
   uint32_t log_datalink_mtu = 0;
   std::string log_trace_ldc;
+  std::string audio_driver_factory;
+  std::string audio_device_name;
+  std::string audio_datalink_endpoint;
+  std::string audio_datalink_rx;
+  std::string audio_datalink_tx;
+  uint32_t audio_datalink_mtu = 0;
   std::vector<std::string> rpc_args;
 };
 
@@ -72,6 +78,12 @@ int parseServerOptions(int argc, char** argv, ServerOptions& options) {
   app.add_option("--log-datalink-tx", options.log_datalink_tx, "Default log data-link TX file");
   app.add_option("--log-datalink-mtu", options.log_datalink_mtu, "Default log data-link MTU");
   app.add_option("--log-trace-ldc", options.log_trace_ldc, "Default SOF trace LDC dictionary for log decoding");
+  app.add_option("--audio-driver-factory", options.audio_driver_factory, "Default audio driver factory for RPC audio sessions");
+  app.add_option("--audio-device", options.audio_device_name, "Default audio stream/device name for RPC audio sessions");
+  app.add_option("--audio-datalink-endpoint", options.audio_datalink_endpoint, "Default audio data-link endpoint prefix");
+  app.add_option("--audio-datalink-rx", options.audio_datalink_rx, "Default audio data-link RX file");
+  app.add_option("--audio-datalink-tx", options.audio_datalink_tx, "Default audio data-link TX file");
+  app.add_option("--audio-datalink-mtu", options.audio_datalink_mtu, "Default audio data-link MTU");
   app.add_option("rpc-args", options.rpc_args, "Optional transport and positional transport args");
   app.allow_extras(false);
 
@@ -138,6 +150,17 @@ audio_studio::framework::log::LogSessionConfig defaultLogConfigFromOptions(const
   return config;
 }
 #endif
+
+audio_studio::framework::audio::AudioServiceConfig defaultAudioConfigFromOptions(const ServerOptions& options) {
+  audio_studio::framework::audio::AudioServiceConfig config;
+  config.driver_factory = options.audio_driver_factory;
+  config.default_device_name = options.audio_device_name;
+  if (!options.audio_datalink_endpoint.empty()) config.options["endpoint"] = options.audio_datalink_endpoint;
+  if (!options.audio_datalink_rx.empty()) config.options["rx_path"] = options.audio_datalink_rx;
+  if (!options.audio_datalink_tx.empty()) config.options["tx_path"] = options.audio_datalink_tx;
+  if (options.audio_datalink_mtu > 0) config.options["mtu"] = std::to_string(options.audio_datalink_mtu);
+  return config;
+}
 
 struct RpcEndpointBundle {
   audio_studio::rpc::JsonRpcEndpoint endpoint;
@@ -306,6 +329,9 @@ int main(int argc, char** argv) {
 #if defined(CONFIG_FRAMEWORK_CONFIG)
     configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
 #endif
+#if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
+    audioService().configureDeviceRegistry(&drivers.audioRegistry(), defaultAudioConfigFromOptions(options));
+#endif
 #if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
     logService().configureDeviceRegistry(&drivers.logRegistry());
 #endif
@@ -332,7 +358,7 @@ int main(int argc, char** argv) {
       audio_studio::rpc::RpcStreamDefaults stream_defaults;
       const std::string transport = positionalOr(options.rpc_args, 0, "socket");
 #if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
-      audioService().configureDeviceRegistry(&drivers.audioRegistry());
+      audioService().configureDeviceRegistry(&drivers.audioRegistry(), defaultAudioConfigFromOptions(options));
 #endif
 #if defined(CONFIG_FRAMEWORK_CONFIG) && defined(CONFIG_DRIVER_FILESYSTEM) && defined(CONFIG_DRIVER_OS) && defined(CONFIG_DRIVER_DYNLIB)
       configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());

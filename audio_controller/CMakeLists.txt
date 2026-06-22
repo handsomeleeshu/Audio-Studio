@@ -13,6 +13,7 @@ set(CMAKE_C_EXTENSIONS ON)
 
 add_library(audio_controller STATIC
   src/ac_audio_controller.c
+  src/ac_audio.c
   src/ac_datalink.c
   src/ac_log.c
   src/ac_transport.c
@@ -47,7 +48,10 @@ if(AUDIO_CONTROLLER_BUILD_TESTS)
   add_executable(audio_controller_transport_tests
     tests/ac_transport_tests.c)
   target_include_directories(audio_controller_transport_tests PRIVATE
-    "${CMAKE_CURRENT_LIST_DIR}/src")
+    "${CMAKE_CURRENT_LIST_DIR}/src"
+    "${SOF_ROOT}/client/include"
+    "${SOF_ROOT}/client/src/include"
+    "${SOF_ROOT}/src/include")
   target_link_libraries(audio_controller_transport_tests PRIVATE audio_controller)
   add_test(NAME audio_controller_transport_tests
     COMMAND audio_controller_transport_tests)
