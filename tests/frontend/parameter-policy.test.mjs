@@ -20,6 +20,8 @@ function assertNoKey(value, key, path = '$') {
 
 assertNoKey(builtin, 'kcontrol');
 assert.equal(indexHtml.includes('p.kcontrol'), false, 'Inspector UI must not depend on kcontrol metadata');
+assert.ok(indexHtml.includes('function displayIconForModuleIcon'), 'Library UI must map ui.icon keys to display glyphs');
+assert.equal(indexHtml.includes('icon: ui.icon || iconForModule'), false, 'Library UI must not render ui.icon keys as raw text');
 
 const volumeType = builtin.module_types.find(mt => mt.type_id === 'gain.volume');
 assert.ok(volumeType, 'built-in catalog must expose real compile-time gain.volume type');

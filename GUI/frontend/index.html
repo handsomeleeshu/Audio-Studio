@@ -441,23 +441,34 @@
     .component .ico {
       width: 20px;
       height: 20px;
+      flex: 0 0 20px;
       border-radius: 5px;
       display: grid;
       place-items: center;
       background: rgba(0, 216, 255, .12);
       color: var(--cyan);
-      font-size: 13px
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1;
+      overflow: hidden;
+      white-space: nowrap
     }
 
     .component span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       font-size: 12px;
       font-weight: 700
     }
 
     .component small {
+      flex: 0 0 auto;
       margin-left: auto;
       color: #9eb0ca;
-      font-size: 10px
+      font-size: 10px;
+      white-space: nowrap
     }
 
     .hint {
@@ -784,11 +795,17 @@
     .node-title .nicon {
       width: 24px;
       height: 24px;
+      flex: 0 0 24px;
       border-radius: 7px;
       display: grid;
       place-items: center;
       background: rgba(0, 216, 255, .15);
-      color: var(--cyan)
+      color: var(--cyan);
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1;
+      overflow: hidden;
+      white-space: nowrap
     }
 
     .alive {
@@ -4134,25 +4151,63 @@
       addLog('info', 'Selection box', `${selectedNodeIds.size} node(s), ${selectedEdgeKeys.size} connection(s) selected`);
       backendEdit('selection_box', { nodes: [...selectedNodeIds], edges: [...selectedEdgeKeys] });
     }
+    const MODULE_ICON_GLYPHS = {
+      file: '▣',
+      mic: '◉',
+      out: '↗',
+      output: '↗',
+      speaker: '↗',
+      map: '⇄',
+      remap: '⇄',
+      delay: '◷',
+      filter: '∿',
+      src: '⟳',
+      asrc: '⟲',
+      fader: '☰',
+      volume: '◒',
+      vol: '◒',
+      gain: '◒',
+      mix: '▦',
+      mixer: '▦',
+      eq: '≋',
+      drc: '▰',
+      aec: '◌',
+      beam: '⌁',
+      ns: '∿',
+      noise: '∿',
+      agc: '↕',
+      derev: '⌬',
+      kpb: '◎',
+      kws: '◎',
+      ai: '✹',
+      neural: '✹'
+    };
+    function displayIconForModuleIcon(iconKey = '', typeId = '', category = '', name = '') {
+      const raw = String(iconKey || '').trim();
+      const key = raw.toLowerCase();
+      if (MODULE_ICON_GLYPHS[key]) return MODULE_ICON_GLYPHS[key];
+      if (raw && raw.length <= 2 && !/^[a-z0-9_-]+$/i.test(raw)) return raw;
+      return iconForModule(typeId, category, name);
+    }
     function iconForModule(typeId = '', category = '', name = '') {
       const s = `${typeId} ${category} ${name}`.toLowerCase();
-      if (s.includes('file') || s.includes('source')) return '📄';
-      if (s.includes('mic')) return '🎙';
-      if (s.includes('sink') || s.includes('output') || s.includes('speaker')) return '🔊';
-      if (s.includes('aec')) return '◌';
-      if (s.includes('beam')) return '⌁';
-      if (s.includes('noise') || s.includes('ns')) return '≋';
-      if (s.includes('agc')) return '↕';
+      if (s.includes('file') || s.includes('source')) return MODULE_ICON_GLYPHS.file;
+      if (s.includes('mic')) return MODULE_ICON_GLYPHS.mic;
+      if (s.includes('sink') || s.includes('output') || s.includes('speaker')) return MODULE_ICON_GLYPHS.out;
+      if (s.includes('aec')) return MODULE_ICON_GLYPHS.aec;
+      if (s.includes('beam')) return MODULE_ICON_GLYPHS.beam;
+      if (s.includes('noise') || s.includes('ns')) return MODULE_ICON_GLYPHS.noise;
+      if (s.includes('agc')) return MODULE_ICON_GLYPHS.agc;
       if (s.includes('vad')) return '⏻';
-      if (s.includes('kws')) return '◎';
-      if (s.includes('drc')) return '▰';
-      if (s.includes('mix')) return '▦';
-      if (s.includes('eq') || s.includes('filter')) return '≋';
-      if (s.includes('volume') || s.includes('gain')) return '◀';
-      if (s.includes('asrc')) return '⟲';
-      if (s.includes('src')) return '⟳';
-      if (s.includes('delay')) return '⏱';
-      if (s.includes('neural') || s.includes('ai')) return '✹';
+      if (s.includes('kws')) return MODULE_ICON_GLYPHS.kws;
+      if (s.includes('drc')) return MODULE_ICON_GLYPHS.drc;
+      if (s.includes('mix')) return MODULE_ICON_GLYPHS.mix;
+      if (s.includes('eq') || s.includes('filter')) return MODULE_ICON_GLYPHS.eq;
+      if (s.includes('volume') || s.includes('gain')) return MODULE_ICON_GLYPHS.volume;
+      if (s.includes('asrc')) return MODULE_ICON_GLYPHS.asrc;
+      if (s.includes('src')) return MODULE_ICON_GLYPHS.src;
+      if (s.includes('delay')) return MODULE_ICON_GLYPHS.delay;
+      if (s.includes('neural') || s.includes('ai')) return MODULE_ICON_GLYPHS.ai;
       return '≋';
     }
     function friendlyName(typeId = '') {
@@ -4195,7 +4250,7 @@
       return {
         cat,
         type: ui.library_type || mt.library_type || inferredType,
-        icon: ui.icon || iconForModule(mt.type_id, mt.category || categoryRaw, name),
+        icon: displayIconForModuleIcon(ui.icon || mt.icon, mt.type_id, mt.category || categoryRaw, name),
         name,
         moduleTypeId: mt.type_id,
         source: ui.source || mt.source || 'platform',
