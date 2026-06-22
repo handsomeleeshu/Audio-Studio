@@ -170,10 +170,10 @@ platform_config() {
   local platform="$1"
   case "$platform" in
     a2)
-      PLATFORM_CONFIG="${ROOT}/configs/platform/a2_defconfig"
+      PLATFORM_CONFIG="${ROOT}/configs/platform/a2/a2_defconfig"
       ;;
     simulator)
-      PLATFORM_CONFIG="${ROOT}/configs/platform/simulator_defconfig"
+      PLATFORM_CONFIG="${ROOT}/configs/platform/simulator/simulator_defconfig"
       ;;
     *)
       die 'unknown platform: %s\n' "$platform"

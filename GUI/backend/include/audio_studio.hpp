@@ -71,7 +71,7 @@ public:
 
 
 struct TargetConfigSnapshot {
-  std::string project_file = "A2.json";
+  std::string project_file = "a2/A2.json";
   std::string dsp_target = "HiFi5s";
   int cores = 4;
   int dsp_frequency_mhz = 600;
@@ -93,7 +93,7 @@ public:
   std::string updateTargetConfig(const std::string& request_json) override;
 private:
   std::string targetJsonLocked(const std::string& mode) const;
-  std::string project_file_ = "A2.json";
+  std::string project_file_ = "a2/A2.json";
   std::string dsp_target_ = "HiFi5s";
   int cores_ = 4;
   int dsp_frequency_mhz_ = 600;

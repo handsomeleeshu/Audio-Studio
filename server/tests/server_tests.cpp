@@ -530,7 +530,7 @@ int main() {
   {
     audio_studio::framework::config::ConfigService config_service(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
     audio_studio::framework::config::ConfigCompileRequest request;
-    request.input_path = std::string(AUDIO_STUDIO_TEST_ROOT) + "/config/A2.json";
+    request.input_path = std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json";
     request.output_dir = drivers.filesystem().joinPath({
       drivers.os().system().temporaryDirectory(),
       "audio-studio-config-test-" + std::to_string(static_cast<long long>(getpid())),
@@ -543,10 +543,10 @@ int main() {
     audio_studio::framework::config::ConfigCompileOutput output;
     assert(config_service.compile(request, output).ok());
     assert(output.ok);
-    assert(output.module_type_count == 7);
+    assert(output.module_type_count == 20);
     assert(output.module_instance_count == 8);
     assert(output.pipeline_count == 3);
-    assert(output.runtime_control_count == 7);
+    assert(output.runtime_control_count == 19);
     assert(output.install_param_count == 0);
     assert(output.preset_count == 2);
     assert(output.plugin_count == 1);
@@ -575,8 +575,8 @@ int main() {
     const std::string ids = readFileText(output.ids_header_path);
     assert(ids.find("AS_MODULE_TYPE_RATE_SRC") != std::string::npos);
     assert(ids.find("AS_MODULE_TYPE_SERVICE_ASRC") == std::string::npos);
-    assert(ids.find("#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu") != std::string::npos);
-    assert(ids.find("AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOL_DB") != std::string::npos);
+    assert(ids.find("#define AS_PARAM_GAIN_VOLUME_VOLUME_DB 0x7B6FD765u") != std::string::npos);
+    assert(ids.find("AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOLUME_DB") != std::string::npos);
     const std::string presets = readFileText(output.preset_header_path);
     assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
     const std::string conf = readFileText(output.conf_path);

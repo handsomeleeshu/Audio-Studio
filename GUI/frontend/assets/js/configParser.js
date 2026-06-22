@@ -112,17 +112,32 @@ function normalizeModuleTypeForLibrary(moduleType) {
   return { ...moduleType, category: normalizedLibraryCategory(moduleType) };
 }
 
-export function buildRegistry(productConfig) {
+function importedCatalogModuleTypes(options = {}) {
+  const catalogs = Array.isArray(options.catalogs) ? options.catalogs : [];
+  return catalogs.flatMap(catalog => Array.isArray(catalog && catalog.module_types) ? catalog.module_types : []);
+}
+
+function addModuleType(moduleTypes, moduleType, source) {
+  if (!moduleType || !moduleType.type_id) return;
+  if (moduleTypes.has(moduleType.type_id)) {
+    throw new Error(`Duplicate module_type ${moduleType.type_id} from ${source}`);
+  }
+  moduleTypes.set(moduleType.type_id, normalizeModuleTypeForLibrary(moduleType));
+}
+
+export function buildRegistry(productConfig, options = {}) {
   const moduleTypes = new Map();
   const instances = new Map();
 
   // Audio Studio front-end virtual I/O controls are always available.
   // They are intentionally independent from product JSON so a project can always
   // use local file input, browser microphone input, and browser/output render nodes.
-  for (const mt of VIRTUAL_IO_MODULE_TYPES) moduleTypes.set(mt.type_id, deepClone(mt));
+  for (const mt of VIRTUAL_IO_MODULE_TYPES) addModuleType(moduleTypes, deepClone(mt), 'virtual I/O');
+
+  for (const mt of importedCatalogModuleTypes(options)) addModuleType(moduleTypes, mt, 'imported catalog');
 
   for (const mt of productConfig.module_types || []) {
-    moduleTypes.set(mt.type_id, normalizeModuleTypeForLibrary(mt));
+    addModuleType(moduleTypes, mt, 'project config');
   }
   for (const inst of productConfig.module_instances || []) instances.set(inst.inst_id, inst);
   return { moduleTypes, instances };
@@ -142,8 +157,8 @@ export function resolveModuleForNode(productConfig, registry, node) {
   return { inst: null, moduleType: null, displayName: node.node_id, presetValues: {} };
 }
 
-export function convertPipeline(productConfig, pipeId) {
-  const registry = buildRegistry(productConfig);
+export function convertPipeline(productConfig, pipeId, options = {}) {
+  const registry = buildRegistry(productConfig, options);
   const pipelines = productConfig.pipelines || [];
   const pipe = pipelines.find(p => p.pipe_id === pipeId) || pipelines[0];
   if (!pipe) throw new Error('No pipeline in product config');

@@ -32,9 +32,9 @@ constexpr uint32_t kFnvPrime = 16777619u;
 
 struct RangeInfo {
   bool present = false;
-  int64_t min = 0;
-  int64_t max = 0;
-  int64_t step = 1;
+  double min = 0.0;
+  double max = 0.0;
+  double step = 1.0;
 };
 
 struct ParameterInfo {
@@ -444,10 +444,10 @@ RangeInfo parseRange(const JsonValue& param) {
   if (!param.isObject() || !param.has("range") || param.at("range").isNull()) return range;
   const auto& object = requiredObject(param, "range");
   range.present = true;
-  range.min = object.has("min") ? object.at("min").asInt64() : 0;
-  range.max = object.has("max") ? object.at("max").asInt64() : 0;
-  range.step = object.has("step") ? object.at("step").asInt64() : 1;
-  if (range.step <= 0) range.step = 1;
+  range.min = object.has("min") ? object.at("min").asDouble() : 0.0;
+  range.max = object.has("max") ? object.at("max").asDouble() : 0.0;
+  range.step = object.has("step") ? object.at("step").asDouble() : 1.0;
+  if (range.step <= 0.0) range.step = 1.0;
   if (range.max < range.min) std::swap(range.max, range.min);
   return range;
 }
@@ -1045,10 +1045,71 @@ ModuleTypeInfo parseModuleType(const JsonValue& object) {
   return type;
 }
 
-ProjectIr parseProject(const JsonValue& root, const std::string& project_name) {
+bool fileExists(drivers::filesystem::IFileSystemDriver& fs, const std::string& path) {
+  drivers::filesystem::FileInfo info;
+  return fs.stat(path, info).ok() && !info.directory;
+}
+
+std::string resolveImportPath(drivers::filesystem::IFileSystemDriver& fs,
+                              const std::string& input_path,
+                              const std::string& import_path) {
+  if (import_path.empty()) throw std::runtime_error("module catalog import path is empty");
+  const std::filesystem::path import_fs_path(import_path);
+  if (import_fs_path.is_absolute()) return import_fs_path.lexically_normal().string();
+
+  std::vector<std::string> candidates;
+  candidates.push_back(fs.absolutePath(import_path));
+
+  auto input_dir = std::filesystem::path(input_path).parent_path();
+  if (!input_dir.empty()) {
+    while (!input_dir.empty()) {
+      candidates.push_back((input_dir / import_fs_path).lexically_normal().string());
+      const auto parent = input_dir.parent_path();
+      if (parent == input_dir) break;
+      input_dir = parent;
+    }
+  }
+
+  for (const auto& candidate : candidates) {
+    if (fileExists(fs, candidate)) return candidate;
+  }
+  return candidates.empty() ? import_path : candidates.front();
+}
+
+std::vector<JsonValue> loadImportedModuleTypes(drivers::filesystem::IFileSystemDriver& fs,
+                                               const JsonValue& root,
+                                               const std::string& input_path) {
+  std::vector<JsonValue> module_types;
+  if (!root.isObject() || !root.has("imports") || root.at("imports").isNull()) return module_types;
+  const auto& imports = requiredArray(root, "imports").asArray();
+  for (const auto& item : imports) {
+    if (!item.isObject()) throw std::runtime_error("imports entries must be objects");
+    if (stringValue(item, "kind") != "module_catalog") continue;
+    const auto import_path = resolveImportPath(fs, input_path, stringValue(item, "path"));
+    std::string catalog_text;
+    auto status = readText(fs, import_path, catalog_text);
+    if (!status.ok()) throw std::runtime_error(status.message());
+    const auto catalog = audio_studio::rpc::parseJson(catalog_text);
+    for (const auto& module_type : requiredArray(catalog, "module_types").asArray()) {
+      module_types.push_back(module_type);
+    }
+  }
+  return module_types;
+}
+
+ProjectIr parseProject(const JsonValue& root,
+                       const std::string& project_name,
+                       const std::vector<JsonValue>& imported_module_types) {
   ProjectIr ir;
   ir.project_name = project_name.empty() ? "a2" : project_name;
   const auto resource_catalog = parseResourceCatalog(root);
+
+  for (const auto& item : imported_module_types) {
+    auto type = parseModuleType(item);
+    if (!ir.module_types.emplace(type.type_id, std::move(type)).second) {
+      throw std::runtime_error("duplicate imported module type");
+    }
+  }
 
   for (const auto& item : requiredArray(root, "module_types").asArray()) {
     auto type = parseModuleType(item);
@@ -1497,7 +1558,7 @@ std::string controlConf(const ControlInfo& control) {
   int64_t max_value = is_bool ? 1 : 100;
   if (control.range.present) {
     const auto span = control.range.max - control.range.min;
-    max_value = std::max<int64_t>(1, span / std::max<int64_t>(1, control.range.step));
+    max_value = std::max<int64_t>(1, static_cast<int64_t>(std::llround(span / std::max(0.000001, control.range.step))));
   } else if (control.value_type == "uint8") {
     max_value = 255;
   } else if (control.value_type == "uint16") {
@@ -1507,8 +1568,8 @@ std::string controlConf(const ControlInfo& control) {
   if (control.range.present && !is_bool) {
     const std::string tlv_name = topologyQuote(control.control_name + " TLV");
     out << "SectionTLV." << tlv_name << " {\n";
-    out << "  scale { min " << topologyQuote(std::to_string(control.range.min * 100))
-        << " step " << topologyQuote(std::to_string(control.range.step * 100)) << " mute \"0\" }\n";
+    out << "  scale { min " << topologyQuote(std::to_string(static_cast<int64_t>(std::llround(control.range.min * 100.0))))
+        << " step " << topologyQuote(std::to_string(static_cast<int64_t>(std::llround(control.range.step * 100.0)))) << " mute \"0\" }\n";
     out << "}\n";
   }
 
@@ -2499,7 +2560,7 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
   ProjectIr ir;
   try {
     const auto root = audio_studio::rpc::parseJson(json_text);
-    ir = parseProject(root, request.project_name);
+    ir = parseProject(root, request.project_name, loadImportedModuleTypes(*filesystem_, root, request.input_path));
     status = parseModuleTypesWithHandlers(ir, module_configs_);
     if (!status.ok()) return status;
     status = buildParameterTables(ir, module_configs_);

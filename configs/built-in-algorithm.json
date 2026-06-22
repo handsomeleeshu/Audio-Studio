@@ -1,0 +1,1987 @@
+{
+  "meta": {
+    "schema_id": "com.vsi.audio_studio.built_in_algorithms",
+    "schema_version": "2.0.0",
+    "description": "Common built-in Audio Studio algorithm library. This file is loaded before platform JSON and is not treated as a project.",
+    "build": {
+      "config_name": "Audio_Studio_Built_In_Algorithms"
+    }
+  },
+  "module_types": [
+    {
+      "type_id": "builtin.file_input",
+      "category": "builtin/input_output",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "File Input",
+        "library_category": "INPUT / OUTPUT",
+        "library_type": "input",
+        "icon": "file",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.2,
+        "mem_kb": 96,
+        "latency_ms": 0.1
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "file_path",
+          "param_name": "File Path",
+          "value_type": "string",
+          "default": "",
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "loop",
+          "param_name": "Loop Playback",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "start_offset_ms",
+          "param_name": "Start Offset",
+          "value_type": "uint16",
+          "default": 0,
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 5000,
+            "step": 100
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Local or staged audio file source used to feed a pipeline with repeatable test content.",
+      "notes": {
+        "summary": "Local or staged audio file source used to feed a pipeline with repeatable test content.",
+        "use_cases": [
+          "Offline algorithm tuning",
+          "Regression playback"
+        ],
+        "configuration_tips": [
+          "Enable Loop Playback for continuous probe visualization."
+        ]
+      }
+    },
+    {
+      "type_id": "builtin.mic_input",
+      "category": "builtin/input_output",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Mic Input",
+        "library_category": "INPUT / OUTPUT",
+        "library_type": "input",
+        "icon": "mic",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.3,
+        "mem_kb": 96,
+        "latency_ms": 0.1
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "gain_db",
+          "param_name": "Input Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -24,
+            "max": 24,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "highpass_hz",
+          "param_name": "High-pass Filter",
+          "value_type": "enum",
+          "default": "80",
+          "unit": "Hz",
+          "enum": [
+            "Off",
+            "60",
+            "80",
+            "120",
+            "160"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "dc_block",
+          "param_name": "DC Block",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Microphone input source for live capture and voice processing.",
+      "notes": {
+        "summary": "Microphone input source for live capture and voice processing."
+      }
+    },
+    {
+      "type_id": "builtin.audio_output",
+      "category": "builtin/input_output",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Audio Output",
+        "library_category": "INPUT / OUTPUT",
+        "library_type": "output",
+        "icon": "out",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": []
+      },
+      "performance": {
+        "cpu_percent": 0.3,
+        "mem_kb": 96,
+        "latency_ms": 0.1
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "gain_db",
+          "param_name": "Output Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -60,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "limiter_enable",
+          "param_name": "Safety Limiter",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "fade_ms",
+          "param_name": "Fade Time",
+          "value_type": "uint16",
+          "default": 20,
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Audio output sink for playback, render, or virtual speaker targets.",
+      "notes": {
+        "summary": "Audio output sink for playback, render, or virtual speaker targets."
+      }
+    },
+    {
+      "type_id": "filter.channel_remap",
+      "category": "builtin/utilities",
+      "abi_version": 3,
+      "ui": {
+        "display_name": "Channel Remap",
+        "library_category": "UTILITIES",
+        "library_type": "util",
+        "icon": "map",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.2,
+        "mem_kb": 64,
+        "latency_ms": 0.05
+      },
+      "parameters": [
+        {
+          "param_id": "layout",
+          "param_name": "Channel Layout",
+          "value_type": "enum",
+          "default": "stereo_passthrough",
+          "enum": [
+            "mono_passthrough",
+            "mono_to_stereo",
+            "stereo_to_mono",
+            "stereo_passthrough"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Channel Remap converts between common mono and stereo channel layouts.",
+      "notes": {
+        "summary": "Channel Remap converts between common mono and stereo channel layouts.",
+        "configuration_tips": [
+          "Use Channel Layout instead of editing the underlying mix matrix."
+        ]
+      }
+    },
+    {
+      "type_id": "delay.line",
+      "category": "builtin/utilities",
+      "abi_version": 3,
+      "ui": {
+        "display_name": "Delay",
+        "library_category": "UTILITIES",
+        "library_type": "util",
+        "icon": "delay",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.4,
+        "mem_kb": 128,
+        "latency_ms": 0.2
+      },
+      "parameters": [
+        {
+          "param_id": "delay_ms",
+          "param_name": "Delay",
+          "value_type": "float",
+          "default": 0,
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 250,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "max_delay_ms",
+          "param_name": "Max Delay",
+          "value_type": "uint16",
+          "default": 250,
+          "unit": "ms",
+          "range": {
+            "min": 1,
+            "max": 1000,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "ramp_ms",
+          "param_name": "Ramp Time",
+          "value_type": "uint16",
+          "default": 50,
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 500,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Delay Line applies per-stream delay with a ramped transition.",
+      "notes": {
+        "summary": "Delay Line applies per-stream delay with a ramped transition."
+      }
+    },
+    {
+      "type_id": "mix.fader_balance",
+      "category": "builtin/effects",
+      "abi_version": 3,
+      "ui": {
+        "display_name": "Fader Balance",
+        "library_category": "EFFECTS",
+        "library_type": "effect",
+        "icon": "fader",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.3,
+        "mem_kb": 96,
+        "latency_ms": 0.1
+      },
+      "parameters": [
+        {
+          "param_id": "fader",
+          "param_name": "Fader",
+          "value_type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.05
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "balance",
+          "param_name": "Balance",
+          "value_type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.05
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "ramp_ms",
+          "param_name": "Ramp Time",
+          "value_type": "uint16",
+          "default": 50,
+          "unit": "ms",
+          "range": {
+            "min": 0,
+            "max": 500,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Fader Balance controls front/back fader and left/right balance.",
+      "notes": {
+        "summary": "Fader Balance controls front/back fader and left/right balance."
+      }
+    },
+    {
+      "type_id": "filter.dsp_filter",
+      "category": "builtin/utilities",
+      "abi_version": 3,
+      "ui": {
+        "display_name": "DSP Filter",
+        "library_category": "UTILITIES",
+        "library_type": "util",
+        "icon": "filter",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.6,
+        "mem_kb": 128,
+        "latency_ms": 0.2
+      },
+      "parameters": [
+        {
+          "param_id": "filter_preset",
+          "param_name": "Filter Preset",
+          "value_type": "enum",
+          "default": "passthrough",
+          "enum": [
+            "passthrough",
+            "lowpass",
+            "highpass"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "DSP Filter applies a selected built-in FIR filter preset.",
+      "notes": {
+        "summary": "DSP Filter applies a selected built-in FIR filter preset.",
+        "configuration_tips": [
+          "Use Filter Preset for Inspector-friendly tuning; coefficient tables remain internal templates."
+        ]
+      }
+    },
+    {
+      "type_id": "gain.volume",
+      "category": "builtin/effects",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Volume",
+        "library_category": "EFFECTS",
+        "library_type": "effect",
+        "icon": "vol",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.2,
+        "mem_kb": 64,
+        "latency_ms": 0.05
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "volume_db",
+          "param_name": "Volume",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -90,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "mute",
+          "param_name": "Mute",
+          "value_type": "bool",
+          "default": false,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "immediate"
+          }
+        }
+      ],
+      "description": "Volume applies runtime gain and mute control.",
+      "notes": {
+        "summary": "Volume applies runtime gain and mute control.",
+        "use_cases": [
+          "Final playback gain",
+          "Per-branch attenuation"
+        ],
+        "configuration_tips": [
+          "Use Mute for safe A/B testing without deleting connections."
+        ]
+      }
+    },
+    {
+      "type_id": "rate.src",
+      "category": "builtin/utilities",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "SRC",
+        "library_category": "UTILITIES",
+        "library_type": "util",
+        "icon": "src",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.7,
+        "mem_kb": 128,
+        "latency_ms": 0.3
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "output_rate_hz",
+          "param_name": "Output Rate",
+          "value_type": "enum",
+          "default": "48000",
+          "enum": [
+            "44100",
+            "48000",
+            "96000",
+            "192000"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "quality",
+          "param_name": "Quality",
+          "value_type": "enum",
+          "default": "Balanced",
+          "enum": [
+            "Low Latency",
+            "Balanced",
+            "High"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "dither",
+          "param_name": "Dither",
+          "value_type": "bool",
+          "default": false,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Sample Rate Converter adapts PCM streams to a target output rate.",
+      "notes": {
+        "summary": "Sample Rate Converter adapts PCM streams to a target output rate."
+      }
+    },
+    {
+      "type_id": "rate.asrc",
+      "category": "builtin/utilities",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "ASRC",
+        "library_category": "UTILITIES",
+        "library_type": "util",
+        "icon": "asrc",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.9,
+        "mem_kb": 160,
+        "latency_ms": 0.4
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "mode",
+          "param_name": "Clock Mode",
+          "value_type": "enum",
+          "default": "async",
+          "enum": [
+            "async",
+            "sync"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        },
+        {
+          "param_id": "drift_ppm",
+          "param_name": "Clock Drift",
+          "value_type": "int16",
+          "default": 0,
+          "unit": "ppm",
+          "range": {
+            "min": -500,
+            "max": 500,
+            "step": 10
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "tracking",
+          "param_name": "Tracking",
+          "value_type": "enum",
+          "default": "Adaptive",
+          "enum": [
+            "Fixed",
+            "Adaptive"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Asynchronous SRC tracks clock drift between domains.",
+      "notes": {
+        "summary": "Asynchronous SRC tracks clock drift between domains."
+      }
+    },
+    {
+      "type_id": "mix.mixer",
+      "category": "builtin/effects",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Mixer",
+        "library_category": "EFFECTS",
+        "library_type": "effect",
+        "icon": "mix",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in0",
+            "max_ch": 2
+          },
+          {
+            "name": "in1",
+            "max_ch": 2
+          },
+          {
+            "name": "in2",
+            "max_ch": 2
+          },
+          {
+            "name": "in3",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 0.7,
+        "mem_kb": 128,
+        "latency_ms": 0.2
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "gain_db",
+          "param_name": "Mix Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -60,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "normalize",
+          "param_name": "Normalize Mix",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "active_inputs",
+          "param_name": "Active Inputs",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 8,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Mixer combines multiple streams into one output bus.",
+      "notes": {
+        "summary": "Mixer combines multiple streams into one output bus."
+      }
+    },
+    {
+      "type_id": "eq.iir",
+      "category": "builtin/effects",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "EQ",
+        "library_category": "EFFECTS",
+        "library_type": "effect",
+        "icon": "eq",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 1.1,
+        "mem_kb": 160,
+        "latency_ms": 0.4
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "preset",
+          "param_name": "Preset",
+          "value_type": "enum",
+          "default": "Flat",
+          "enum": [
+            "Flat",
+            "Voice",
+            "Music",
+            "Bass Boost",
+            "Treble Boost"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "low_gain_db",
+          "param_name": "Low Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "mid_gain_db",
+          "param_name": "Mid Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "high_gain_db",
+          "param_name": "High Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": -12,
+            "max": 12,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "bands",
+          "param_name": "Bands",
+          "value_type": "uint8",
+          "default": 10,
+          "range": {
+            "min": 1,
+            "max": 16,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [],
+            "mode": "on_install"
+          }
+        }
+      ],
+      "description": "Equalizer shapes playback or voice frequency response.",
+      "notes": {
+        "summary": "Equalizer shapes playback or voice frequency response."
+      }
+    },
+    {
+      "type_id": "dyn.drc",
+      "category": "builtin/effects",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "DRC",
+        "library_category": "EFFECTS",
+        "library_type": "effect",
+        "icon": "drc",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 1.5,
+        "mem_kb": 192,
+        "latency_ms": 0.4
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "threshold_db",
+          "param_name": "Threshold",
+          "value_type": "float",
+          "default": -12,
+          "unit": "dB",
+          "range": {
+            "min": -60,
+            "max": 0,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "ratio",
+          "param_name": "Ratio",
+          "value_type": "float",
+          "default": 3,
+          "range": {
+            "min": 1,
+            "max": 10,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "makeup_gain_db",
+          "param_name": "Makeup Gain",
+          "value_type": "float",
+          "default": 0,
+          "unit": "dB",
+          "range": {
+            "min": 0,
+            "max": 18,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Dynamic Range Compression controls loudness and protects downstream output.",
+      "notes": {
+        "summary": "Dynamic Range Compression controls loudness and protects downstream output."
+      }
+    },
+    {
+      "type_id": "vavs.aec",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "AEC",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "aec",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 6.1,
+        "mem_kb": 384,
+        "latency_ms": 1.2
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "tail_ms",
+          "param_name": "Tail Length",
+          "value_type": "uint16",
+          "default": 128,
+          "unit": "ms",
+          "range": {
+            "min": 32,
+            "max": 256,
+            "step": 16
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "erle_target_db",
+          "param_name": "ERLE Target",
+          "value_type": "uint8",
+          "default": 30,
+          "unit": "dB",
+          "range": {
+            "min": 10,
+            "max": 60,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "adapt_speed",
+          "param_name": "Adapt Speed",
+          "value_type": "float",
+          "default": 0.25,
+          "range": {
+            "min": 0.05,
+            "max": 1,
+            "step": 0.05
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Acoustic Echo Cancellation removes playback echo from microphone capture.",
+      "notes": {
+        "summary": "Acoustic Echo Cancellation removes playback echo from microphone capture."
+      }
+    },
+    {
+      "type_id": "vavs.beamformer",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Beamformer",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "beam",
+        "channels": "4ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 4
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 7.8,
+        "mem_kb": 512,
+        "latency_ms": 1.5
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "mode",
+          "param_name": "Mode",
+          "value_type": "enum",
+          "default": "fixed",
+          "enum": [
+            "fixed",
+            "half_adaptive",
+            "full_adaptive"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "look_direction_deg",
+          "param_name": "Look Direction",
+          "value_type": "int16",
+          "default": 0,
+          "unit": "deg",
+          "range": {
+            "min": -90,
+            "max": 90,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "dereverb_enable",
+          "param_name": "Dereverb",
+          "value_type": "bool",
+          "default": false,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Beamformer focuses a microphone array toward a selected look direction.",
+      "notes": {
+        "summary": "Beamformer focuses a microphone array toward a selected look direction."
+      }
+    },
+    {
+      "type_id": "vavs.ns",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Noise Suppression",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "ns",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 2.4,
+        "mem_kb": 256,
+        "latency_ms": 0.8
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "level",
+          "param_name": "Suppress Level",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 0,
+            "max": 3,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "aggressiveness",
+          "param_name": "Aggressiveness",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "speech_protect",
+          "param_name": "Speech Protect",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Noise Suppression reduces stationary and non-stationary background noise.",
+      "notes": {
+        "summary": "Noise Suppression reduces stationary and non-stationary background noise."
+      }
+    },
+    {
+      "type_id": "vavs.agc",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "AGC",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "agc",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 1.9,
+        "mem_kb": 192,
+        "latency_ms": 0.5
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "target_dbfs",
+          "param_name": "Target Level",
+          "value_type": "float",
+          "default": -18,
+          "unit": "dBFS",
+          "range": {
+            "min": -36,
+            "max": 0,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "max_gain_db",
+          "param_name": "Max Gain",
+          "value_type": "float",
+          "default": 24,
+          "unit": "dB",
+          "range": {
+            "min": 0,
+            "max": 36,
+            "step": 0.5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "attack_ms",
+          "param_name": "Attack",
+          "value_type": "uint16",
+          "default": 10,
+          "unit": "ms",
+          "range": {
+            "min": 1,
+            "max": 100,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "release_ms",
+          "param_name": "Release",
+          "value_type": "uint16",
+          "default": 120,
+          "unit": "ms",
+          "range": {
+            "min": 20,
+            "max": 500,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Automatic Gain Control keeps speech near a target loudness.",
+      "notes": {
+        "summary": "Automatic Gain Control keeps speech near a target loudness."
+      }
+    },
+    {
+      "type_id": "vavs.dereverb",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Dereverb",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "derev",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 2.2,
+        "mem_kb": 224,
+        "latency_ms": 0.6
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "strength",
+          "param_name": "Strength",
+          "value_type": "uint8",
+          "default": 50,
+          "unit": "%",
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Dereverb reduces room reverberation in voice capture.",
+      "notes": {
+        "summary": "Dereverb reduces room reverberation in voice capture."
+      }
+    },
+    {
+      "type_id": "voice.kpb",
+      "category": "builtin/voice",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "KPB",
+        "library_category": "VOICE",
+        "library_type": "voice",
+        "icon": "kpb",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 3.5,
+        "mem_kb": 320,
+        "latency_ms": 0.7
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "threshold",
+          "param_name": "Threshold",
+          "value_type": "uint8",
+          "default": 50,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "wake_word",
+          "param_name": "Wake Word",
+          "value_type": "enum",
+          "default": "Hey VASS",
+          "enum": [
+            "Hey VASS",
+            "Hi Car",
+            "Computer",
+            "Custom"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "sensitivity",
+          "param_name": "Sensitivity",
+          "value_type": "uint8",
+          "default": 50,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Keyword phrase buffer detects wake words and preserves pre-roll audio.",
+      "notes": {
+        "summary": "Keyword phrase buffer detects wake words and preserves pre-roll audio."
+      }
+    },
+    {
+      "type_id": "ai.neural_denoiser",
+      "category": "builtin/ai",
+      "abi_version": 2,
+      "ui": {
+        "display_name": "Neural Denoiser",
+        "library_category": "AI",
+        "library_type": "voice",
+        "icon": "ai",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "performance": {
+        "cpu_percent": 10.5,
+        "mem_kb": 1024,
+        "latency_ms": 2.5
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "model",
+          "param_name": "Model",
+          "value_type": "enum",
+          "default": "lite",
+          "enum": [
+            "lite",
+            "quality"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "strength",
+          "param_name": "Strength",
+          "value_type": "uint8",
+          "default": 60,
+          "unit": "%",
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 5
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "npu_delegate",
+          "param_name": "NPU Delegate",
+          "value_type": "enum",
+          "default": "Auto",
+          "enum": [
+            "Auto",
+            "CPU",
+            "NPU"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        }
+      ],
+      "description": "Neural Denoiser is a UI catalog entry for AI-based speech enhancement.",
+      "notes": {
+        "summary": "Neural Denoiser is a UI catalog entry for AI-based speech enhancement."
+      }
+    }
+  ]
+}

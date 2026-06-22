@@ -3,8 +3,9 @@ import fs from 'fs';
 import { convertPipeline } from '../../GUI/frontend/assets/js/configParser.js';
 import { autoLayout, checkMinDistance, getPortPosition, edgePath, MIN_X_DISTANCE, NODE_WIDTH } from '../../GUI/frontend/assets/js/layout.js';
 
-const cfg = JSON.parse(fs.readFileSync(new URL('../../config/A2.json', import.meta.url), 'utf8'));
-const graph = convertPipeline(cfg, 'PLAY_MAIN');
+const cfg = JSON.parse(fs.readFileSync(new URL('../../configs/platform/a2/A2.json', import.meta.url), 'utf8'));
+const builtin = JSON.parse(fs.readFileSync(new URL('../../configs/built-in-algorithm.json', import.meta.url), 'utf8'));
+const graph = convertPipeline(cfg, 'PLAYBACK_MAIN', { catalogs: [builtin] });
 autoLayout(graph.nodes, graph.edges);
 assert.ok(checkMinDistance(graph.nodes), 'auto layout must keep minimum distance');
 assert.equal(NODE_WIDTH, 128, 'legacy pipeline node width should match uploaded HTML style');

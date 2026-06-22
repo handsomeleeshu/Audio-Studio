@@ -19,6 +19,9 @@ target_link_libraries(audio_studio_server PRIVATE audio_studio_core)
 
 add_executable(audio_studio_backend_tests tests/backend_tests.cpp)
 target_link_libraries(audio_studio_backend_tests PRIVATE audio_studio_core)
+target_compile_definitions(audio_studio_backend_tests PRIVATE
+  AUDIO_STUDIO_TEST_ROOT="${CMAKE_SOURCE_DIR}"
+)
 
 enable_testing()
 add_test(NAME backend_tests COMMAND audio_studio_backend_tests)
