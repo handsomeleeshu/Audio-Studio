@@ -1,5 +1,4 @@
 #include "log_device.hpp"
-#include "simulator_pipe_datalink_device.hpp"
 #include "transport_manager.hpp"
 #include "ac_transport_channel.h"
 
@@ -13,19 +12,6 @@ namespace audio_studio::platform::simulator {
 namespace {
 
 constexpr uint32_t kLogControllerReadTimeoutMs = 100;
-
-std::string optionString(const drivers::log::LogDeviceConfig& config,
-                         const std::string& key,
-                         const std::string& fallback = {}) {
-  const auto it = config.options.find(key);
-  return it == config.options.end() || it->second.empty() ? fallback : it->second;
-}
-
-bool hasTransportEndpoint(const drivers::log::LogDeviceConfig& config) {
-  return !optionString(config, "endpoint").empty() ||
-         !optionString(config, "rx_path").empty() ||
-         !optionString(config, "tx_path").empty();
-}
 
 bool isTransportReadTimeout(const framework::Status& status) {
   return status.code() == framework::StatusCode::kUnavailable &&
@@ -42,14 +28,6 @@ drivers::log::LogResult transportPayloadStatus(const framework::transport::Trans
   }
   const std::string message(response.payload.begin(), response.payload.end());
   return drivers::log::LogResult::unavailable(message.empty() ? "transport log command failed" : message);
-}
-
-drivers::datalink::DataLinkDeviceConfig transportConfigFromLogConfig(const drivers::log::LogDeviceConfig& config) {
-  drivers::datalink::DataLinkDeviceConfig transport_config;
-  transport_config.name = "rv32qemu-log-datalink";
-  transport_config.endpoint = optionString(config, "endpoint");
-  transport_config.options = config.options;
-  return transport_config;
 }
 
 std::vector<uint8_t> sampleLogBytes(const std::string& source) {
@@ -89,32 +67,35 @@ public:
   drivers::log::LogResult start() override {
     if (!open_) return drivers::log::LogResult::unavailable("rv32qemu log device is not open");
     chunks_.clear();
-    if (!hasTransportEndpoint(config_)) {
+    manager_ = &framework::transport::TransportManager::instance();
+    if (!manager_->isDataLinkConfigured()) {
+      manager_ = nullptr;
       chunks_.push_back({next_sequence_++, sampleLogBytes(config_.source)});
       ++chunks_written_;
       running_ = true;
       return drivers::log::LogResult::success();
     }
 
-    datalink_ = std::make_unique<SimulatorPipeDataLinkDevice>();
-    auto status = datalink_->open(transportConfigFromLogConfig(config_));
-    if (!status.ok()) return status;
-
-    manager_ = std::make_unique<framework::transport::TransportManager>();
-    framework::transport::DataLinkManagerConfig datalink_config;
-    datalink_config.ack_timeout_ms = 1000;
-    datalink_config.max_retries = 3;
-    status = manager_->bindDataLinkDevice(*datalink_, datalink_config);
-    if (!status.ok()) return status;
-    status = manager_->openChannel(AC_TRANSPORT_CHANNEL_LOG, "log");
-    if (!status.ok()) return status;
+    auto status = manager_->openChannel(AC_TRANSPORT_CHANNEL_LOG, "log");
+    if (!status.ok()) {
+      manager_ = nullptr;
+      return status;
+    }
 
     framework::transport::TransportFrame response;
     const std::vector<uint8_t> source(config_.source.begin(), config_.source.end());
     status = manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_OPEN, source, response, 1000);
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      (void)manager_->closeChannel(AC_TRANSPORT_CHANNEL_LOG);
+      manager_ = nullptr;
+      return status;
+    }
     status = transportPayloadStatus(response);
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      (void)manager_->closeChannel(AC_TRANSPORT_CHANNEL_LOG);
+      manager_ = nullptr;
+      return status;
+    }
     if (!response.payload.empty()) {
       chunks_.push_back({next_sequence_++, response.payload});
       ++chunks_written_;
@@ -132,11 +113,7 @@ public:
         (void)manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_CLOSE, {}, response, 500);
       }
       (void)manager_->closeChannel(AC_TRANSPORT_CHANNEL_LOG);
-      manager_.reset();
-    }
-    if (datalink_) {
-      datalink_->close();
-      datalink_.reset();
+      manager_ = nullptr;
     }
     transport_ready_ = false;
     running_ = false;
@@ -197,8 +174,7 @@ private:
   size_t chunks_written_ = 0;
   size_t chunks_read_ = 0;
   std::vector<drivers::log::LogRawChunk> chunks_;
-  std::unique_ptr<SimulatorPipeDataLinkDevice> datalink_;
-  std::unique_ptr<framework::transport::TransportManager> manager_;
+  framework::transport::TransportManager* manager_ = nullptr;
 };
 
 class Rv32QemuLogDeviceFactory final : public drivers::log::ILogDeviceFactory {

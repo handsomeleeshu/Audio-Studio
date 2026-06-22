@@ -26,15 +26,22 @@ class TransportManager {
 public:
   using AsyncCallback = std::function<void(const framework::Status&, const TransportFrame&)>;
 
-  TransportManager();
-  explicit TransportManager(drivers::datalink::IDataLinkDevice& device);
+  static TransportManager& instance();
+
+  TransportManager(const TransportManager&) = delete;
+  TransportManager& operator=(const TransportManager&) = delete;
   ~TransportManager();
 
+  framework::Status configureDataLinkDevice(const std::string& factory_name,
+                                            const drivers::datalink::DataLinkDeviceConfig& config,
+                                            DataLinkManagerConfig manager_config = {});
   framework::Status bindDataLinkDevice(drivers::datalink::IDataLinkDevice& device,
                                        DataLinkManagerConfig config = {});
+  bool isDataLinkConfigured() const;
   framework::Status openChannel(uint16_t id, std::string service);
   framework::Status closeChannel(uint16_t id);
   void shutdown();
+  void resetForTesting();
   framework::Status recordTx(const TransportFrame& frame);
   framework::Status recordRx(const TransportFrame& frame);
   framework::Status getChannel(uint16_t id, LogicalChannel& out) const;
@@ -57,6 +64,8 @@ public:
 private:
   struct ChannelRuntime;
 
+  TransportManager();
+
   framework::Status requireChannel(uint16_t id, std::shared_ptr<ChannelRuntime>& out) const;
   void channelWorker(const std::shared_ptr<ChannelRuntime>& runtime);
 
@@ -64,7 +73,12 @@ private:
   mutable std::mutex io_mutex_;
   std::map<uint16_t, std::shared_ptr<ChannelRuntime>> channels_;
   std::unique_ptr<DataLinkManager> datalink_;
+  std::unique_ptr<drivers::datalink::IDataLinkDevice> owned_device_;
   drivers::datalink::IDataLinkDevice* device_ = nullptr;
+  bool owns_device_ = false;
+  std::string data_link_factory_;
+  drivers::datalink::DataLinkDeviceConfig data_link_config_;
+  DataLinkManagerConfig data_link_manager_config_;
   std::atomic<uint32_t> next_sequence_ {1};
 };
 

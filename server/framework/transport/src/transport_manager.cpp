@@ -8,6 +8,18 @@
 #include "frame_codec.hpp"
 
 namespace audio_studio::framework::transport {
+namespace {
+
+bool sameManagerConfig(const DataLinkManagerConfig& lhs, const DataLinkManagerConfig& rhs) {
+  return lhs.ack_timeout_ms == rhs.ack_timeout_ms && lhs.max_retries == rhs.max_retries;
+}
+
+bool sameDeviceConfig(const drivers::datalink::DataLinkDeviceConfig& lhs,
+                      const drivers::datalink::DataLinkDeviceConfig& rhs) {
+  return lhs.name == rhs.name && lhs.endpoint == rhs.endpoint && lhs.options == rhs.options;
+}
+
+} // namespace
 
 struct TransportManager::ChannelRuntime {
   struct AsyncRequest {
@@ -31,21 +43,68 @@ struct TransportManager::ChannelRuntime {
 
 TransportManager::TransportManager() = default;
 
-TransportManager::TransportManager(drivers::datalink::IDataLinkDevice& device) {
-  (void)bindDataLinkDevice(device);
+TransportManager& TransportManager::instance() {
+  static TransportManager manager;
+  return manager;
 }
 
 TransportManager::~TransportManager() {
-  shutdown();
+  resetForTesting();
+}
+
+framework::Status TransportManager::configureDataLinkDevice(const std::string& factory_name,
+                                                            const drivers::datalink::DataLinkDeviceConfig& config,
+                                                            DataLinkManagerConfig manager_config) {
+  if (factory_name.empty()) return framework::Status::invalidArgument("transport data-link factory is empty");
+  std::lock_guard<std::mutex> lock(io_mutex_);
+  if (datalink_ || device_) {
+    if (owns_device_ &&
+        data_link_factory_ == factory_name &&
+        sameDeviceConfig(data_link_config_, config) &&
+        sameManagerConfig(data_link_manager_config_, manager_config) &&
+        device_ != nullptr &&
+        device_->isConnected()) {
+      return framework::Status::success();
+    }
+    return framework::Status::invalidArgument("transport data-link is already bound to a different device");
+  }
+
+  auto device = drivers::datalink::DataLinkDeviceRegistry::instance().create(factory_name, config);
+  if (!device) return framework::Status::unavailable("failed to create transport data-link device: " + factory_name);
+  if (!device->isConnected()) return framework::Status::unavailable("transport data-link device is not connected");
+
+  owned_device_ = std::move(device);
+  device_ = owned_device_.get();
+  owns_device_ = true;
+  data_link_factory_ = factory_name;
+  data_link_config_ = config;
+  data_link_manager_config_ = manager_config;
+  datalink_ = std::make_unique<DataLinkManager>(*device_, manager_config);
+  return framework::Status::success();
 }
 
 framework::Status TransportManager::bindDataLinkDevice(drivers::datalink::IDataLinkDevice& device,
                                                        DataLinkManagerConfig config) {
   if (!device.isConnected()) return framework::Status::unavailable("data-link device is not connected");
   std::lock_guard<std::mutex> lock(io_mutex_);
+  if (datalink_ || device_) {
+    if (!owns_device_ && device_ == &device && sameManagerConfig(data_link_manager_config_, config)) {
+      return framework::Status::success();
+    }
+    return framework::Status::invalidArgument("transport data-link is already bound to a different device");
+  }
   device_ = &device;
+  owns_device_ = false;
+  data_link_factory_.clear();
+  data_link_config_ = {};
+  data_link_manager_config_ = config;
   datalink_ = std::make_unique<DataLinkManager>(device, config);
   return framework::Status::success();
+}
+
+bool TransportManager::isDataLinkConfigured() const {
+  std::lock_guard<std::mutex> lock(io_mutex_);
+  return datalink_ != nullptr && device_ != nullptr && device_->isConnected();
 }
 
 framework::Status TransportManager::openChannel(uint16_t id, std::string service) {
@@ -83,6 +142,22 @@ void TransportManager::shutdown() {
     for (const auto& item : channels_) ids.push_back(item.first);
   }
   for (const auto id : ids) (void)closeChannel(id);
+}
+
+void TransportManager::resetForTesting() {
+  shutdown();
+  std::lock_guard<std::mutex> lock(io_mutex_);
+  datalink_.reset();
+  if (owned_device_) {
+    owned_device_->close();
+    owned_device_.reset();
+  }
+  device_ = nullptr;
+  owns_device_ = false;
+  data_link_factory_.clear();
+  data_link_config_ = {};
+  data_link_manager_config_ = {};
+  next_sequence_.store(1);
 }
 
 framework::Status TransportManager::recordTx(const TransportFrame& frame) {

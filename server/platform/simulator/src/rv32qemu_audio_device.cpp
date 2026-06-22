@@ -1,5 +1,4 @@
 #include "audio_device.hpp"
-#include "simulator_pipe_datalink_device.hpp"
 #include "transport_manager.hpp"
 #include "ac_transport.h"
 #include "ac_transport_channel.h"
@@ -8,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,13 +17,6 @@ namespace {
 
 constexpr uint32_t kAudioControlTimeoutMs = 1000;
 constexpr uint32_t kAudioDataTimeoutMs = 5000;
-
-std::string optionString(const drivers::audio::AudioOpenParams& params,
-                         const std::string& key,
-                         const std::string& fallback = {}) {
-  const auto it = params.options.find(key);
-  return it == params.options.end() || it->second.empty() ? fallback : it->second;
-}
 
 void writeLe16(std::vector<uint8_t>& out, uint16_t value) {
   out.push_back(static_cast<uint8_t>(value & 0xffu));
@@ -49,13 +42,33 @@ uint32_t readLe32(const std::vector<uint8_t>& in, size_t offset) {
          (static_cast<uint32_t>(in[offset + 3u]) << 24u);
 }
 
-drivers::datalink::DataLinkDeviceConfig transportConfigFromAudioParams(
-    const drivers::audio::AudioOpenParams& params) {
-  drivers::datalink::DataLinkDeviceConfig transport_config;
-  transport_config.name = "rv32qemu-audio-datalink";
-  transport_config.endpoint = optionString(params, "endpoint");
-  transport_config.options = params.options;
-  return transport_config;
+std::mutex& audioControlChannelMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+size_t& audioControlChannelRefs() {
+  static size_t refs = 0;
+  return refs;
+}
+
+framework::Status acquireAudioControlChannel(framework::transport::TransportManager& manager) {
+  std::lock_guard<std::mutex> lock(audioControlChannelMutex());
+  auto& refs = audioControlChannelRefs();
+  if (refs == 0) {
+    auto status = manager.openChannel(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, "audio-control");
+    if (!status.ok()) return status;
+  }
+  ++refs;
+  return framework::Status::success();
+}
+
+void releaseAudioControlChannel(framework::transport::TransportManager& manager) {
+  std::lock_guard<std::mutex> lock(audioControlChannelMutex());
+  auto& refs = audioControlChannelRefs();
+  if (refs == 0) return;
+  --refs;
+  if (refs == 0) (void)manager.closeChannel(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL);
 }
 
 drivers::audio::AudioResult transportPayloadStatus(
@@ -85,27 +98,20 @@ public:
 
   drivers::audio::AudioResult open(const drivers::audio::AudioOpenParams& params) {
     if (params.device_name.empty()) return drivers::audio::AudioResult::invalidArgument("rv32qemu audio stream name is empty");
-    if (optionString(params, "endpoint").empty() &&
-        optionString(params, "rx_path").empty() &&
-        optionString(params, "tx_path").empty()) {
-      return drivers::audio::AudioResult::invalidArgument("rv32qemu audio data-link endpoint is empty");
-    }
     close();
-    open_params_ = params;
     stream_name_ = params.device_name;
 
-    datalink_ = std::make_unique<SimulatorPipeDataLinkDevice>();
-    auto status = datalink_->open(transportConfigFromAudioParams(open_params_));
-    if (!status.ok()) return status;
-
-    manager_ = std::make_unique<framework::transport::TransportManager>();
-    framework::transport::DataLinkManagerConfig datalink_config;
-    datalink_config.ack_timeout_ms = 1000;
-    datalink_config.max_retries = 3;
-    status = manager_->bindDataLinkDevice(*datalink_, datalink_config);
-    if (!status.ok()) return status;
-    status = manager_->openChannel(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, "audio-control");
-    if (!status.ok()) return status;
+    manager_ = &framework::transport::TransportManager::instance();
+    if (!manager_->isDataLinkConfigured()) {
+      manager_ = nullptr;
+      return drivers::audio::AudioResult::unavailable("rv32qemu transport data-link is not configured");
+    }
+    auto status = acquireAudioControlChannel(*manager_);
+    if (!status.ok()) {
+      manager_ = nullptr;
+      return status;
+    }
+    control_channel_acquired_ = true;
 
     std::vector<uint8_t> payload;
     writeLe32(payload, direction_);
@@ -114,10 +120,23 @@ public:
     framework::transport::TransportFrame response;
     status = manager_->sendSync(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, AC_TRANSPORT_AUDIO_OPEN,
                                 payload, response, kAudioControlTimeoutMs);
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      releaseAudioControlChannel(*manager_);
+      control_channel_acquired_ = false;
+      manager_ = nullptr;
+      return status;
+    }
     status = transportPayloadStatus(response, "audio open failed");
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      releaseAudioControlChannel(*manager_);
+      control_channel_acquired_ = false;
+      manager_ = nullptr;
+      return status;
+    }
     if (response.payload.size() < 4u) {
+      releaseAudioControlChannel(*manager_);
+      control_channel_acquired_ = false;
+      manager_ = nullptr;
       return drivers::audio::AudioResult::unavailable("audio open response is too small");
     }
     stream_id_ = readLe32(response.payload, 0);
@@ -163,7 +182,15 @@ public:
     }
     data_channel_id_ = readLe16(response.payload, 4u);
     status = manager_->openChannel(data_channel_id_, "audio-data");
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      std::vector<uint8_t> stop_payload;
+      writeLe32(stop_payload, stream_id_);
+      framework::transport::TransportFrame stop_response;
+      (void)manager_->sendSync(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, AC_TRANSPORT_AUDIO_STOP,
+                               stop_payload, stop_response, kAudioControlTimeoutMs);
+      data_channel_id_ = 0;
+      return status;
+    }
     running_ = true;
     return drivers::audio::AudioResult::success();
   }
@@ -246,6 +273,10 @@ public:
   void close() {
     if (manager_) {
       if (running_) (void)stop();
+      if (data_channel_id_ != 0) {
+        (void)manager_->closeChannel(data_channel_id_);
+        data_channel_id_ = 0;
+      }
       if (stream_id_ != 0) {
         std::vector<uint8_t> payload;
         writeLe32(payload, stream_id_);
@@ -253,12 +284,11 @@ public:
         (void)manager_->sendSync(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, AC_TRANSPORT_AUDIO_CLOSE,
                                  payload, response, kAudioControlTimeoutMs);
       }
-      (void)manager_->closeChannel(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL);
-      manager_.reset();
-    }
-    if (datalink_) {
-      datalink_->close();
-      datalink_.reset();
+      if (control_channel_acquired_) {
+        releaseAudioControlChannel(*manager_);
+        control_channel_acquired_ = false;
+      }
+      manager_ = nullptr;
     }
     open_ = false;
     prepared_ = false;
@@ -274,7 +304,6 @@ public:
 
 private:
   uint32_t direction_ = 0;
-  drivers::audio::AudioOpenParams open_params_;
   drivers::audio::AudioStreamParams params_;
   std::string stream_name_;
   uint32_t stream_id_ = 0;
@@ -285,8 +314,8 @@ private:
   bool open_ = false;
   bool prepared_ = false;
   bool running_ = false;
-  std::unique_ptr<SimulatorPipeDataLinkDevice> datalink_;
-  std::unique_ptr<framework::transport::TransportManager> manager_;
+  bool control_channel_acquired_ = false;
+  framework::transport::TransportManager* manager_ = nullptr;
 };
 
 class Rv32QemuPlaybackDevice final : public drivers::audio::IAudioPlaybackDevice {

@@ -35,6 +35,10 @@ const bool kSimulatorPipeDataLinkDeviceRegistered = [] {
 
 } // namespace
 
+void ensureSimulatorPipeDataLinkDeviceRegistered() {
+  (void)kSimulatorPipeDataLinkDeviceRegistered;
+}
+
 size_t SimulatorPipeDataLinkDevice::optionSize(const drivers::datalink::DataLinkDeviceConfig& config,
                                                const std::string& key,
                                                size_t fallback) {

@@ -327,9 +327,21 @@ int main() {
     ScriptedDataLinkDevice device(256);
     assert(device.open({"transport-sync"}).ok());
     device.enableTransportAck();
-    TransportManager manager;
+    auto& manager = TransportManager::instance();
+    manager.resetForTesting();
+    assert(&manager == &TransportManager::instance());
     assert(manager.bindDataLinkDevice(device).ok());
     assert(manager.openChannel(6, "log").ok());
+    assert(!manager.openChannel(6, "audio-data").ok());
+    assert(manager.openChannel(3, "audio-control").ok());
+    assert(!manager.openChannel(3, "audio-control").ok());
+    assert(!manager.openChannel(3, "audio-data").ok());
+    assert(manager.closeChannel(3).ok());
+    assert(manager.openChannel(3, "audio-control").ok());
+    assert(manager.closeChannel(3).ok());
+    ScriptedDataLinkDevice second_device(256);
+    assert(second_device.open({"transport-second"}).ok());
+    assert(!manager.bindDataLinkDevice(second_device).ok());
     TransportFrame response;
     auto sync_status = manager.sendSync(6, 1, {0x01, 0x02}, response, 100);
     if (!sync_status.ok()) std::cerr << "sendSync failed: " << sync_status.message() << "\n";
@@ -351,6 +363,7 @@ int main() {
       assert(callback_called);
     }
     assert(manager.closeChannel(6).ok());
+    manager.resetForTesting();
   }
 
   using audio_studio::rpc::InProcessJsonRpcTransport;

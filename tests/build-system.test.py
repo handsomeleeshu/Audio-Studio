@@ -248,6 +248,7 @@ def assert_as_log_cli_is_transport_neutral():
     require_contains(log_service_header, 'setDefaultSessionConfig')
     require_contains(rv32_helper, '"--log-driver-factory", "rv32qemu"')
     require_contains(rv32_helper, '"--log-datalink-endpoint", datalink_endpoint')
+    require_contains(rv32_helper, '"--log-datalink-mtu", "512"')
     require_contains(rv32_helper, '"--log-trace-ldc", trace_ldc')
 
     as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
@@ -299,6 +300,10 @@ def assert_simulator_audio_transport_channels_are_stream_scoped():
     channel_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport_channel.h')
     ac_audio_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_audio.c')
     simulator_cmake = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'CMakeLists.txt')
+    transport_manager_h = read_text(ROOT / 'server' / 'framework' / 'transport' / 'include' / 'transport_manager.hpp')
+    transport_manager_cpp = read_text(ROOT / 'server' / 'framework' / 'transport' / 'src' / 'transport_manager.cpp')
+    rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
+    rv32_audio_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_audio_device.cpp')
 
     require_contains(channel_h, 'AC_TRANSPORT_CHANNEL_AUDIO_CONTROL 3u')
     require_contains(channel_h, 'AC_TRANSPORT_AUDIO_MAX_STREAMS 16u')
@@ -322,6 +327,24 @@ def assert_simulator_audio_transport_channels_are_stream_scoped():
     require_contains(data_handler, 'AC_TRANSPORT_AUDIO_READ')
     require_contains(data_handler, 'AC_TRANSPORT_AUDIO_DRAIN')
     require_contains(simulator_cmake, 'rv32qemu_audio_device.cpp')
+    require_contains(transport_manager_h, 'static TransportManager& instance()')
+    require_contains(transport_manager_h, 'TransportManager(const TransportManager&) = delete')
+    require_contains(transport_manager_cpp, 'transport channel already exists')
+    require_contains(transport_manager_h, 'bool isDataLinkConfigured() const')
+    assert 'acquireSharedChannel' not in transport_manager_h
+    assert 'TransportChannelMode' not in transport_manager_h
+    assert 'configureDataLinkDevice("simulator-pipe"' not in rv32_log_device
+    assert 'configureDataLinkDevice("simulator-pipe"' not in rv32_audio_device
+    assert 'optionString' not in rv32_audio_device
+    assert 'rx_path' not in rv32_audio_device
+    assert 'tx_path' not in rv32_audio_device
+    assert 'make_unique<framework::transport::TransportManager>' not in rv32_log_device
+    assert 'make_unique<framework::transport::TransportManager>' not in rv32_audio_device
+    require_contains(rv32_log_device, 'TransportManager::instance()')
+    require_contains(rv32_audio_device, 'TransportManager::instance()')
+    require_contains(rv32_audio_device, 'isDataLinkConfigured()')
+    require_contains(rv32_audio_device, 'audioControlChannelRefs')
+    require_contains(rv32_audio_device, 'releaseAudioControlChannel')
 
 
 def assert_audio_cli_lets_server_select_default_driver():
@@ -343,6 +366,12 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(audio_service_h, 'std::map<std::string, std::string> options')
     require_contains(as_server, '--audio-driver-factory')
     require_contains(as_server, '--audio-datalink-endpoint')
+    require_contains(as_server, 'configureTransportDataLinkFromOptions')
+    require_contains(as_server, 'TransportManager::instance().configureDataLinkDevice')
+    default_audio_config = as_server.split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[1].split('bool hasLogDataLinkOptions', 1)[0]
+    assert 'config.options["endpoint"]' not in default_audio_config
+    default_log_config = as_server.split('LogSessionConfig defaultLogConfigFromOptions', 1)[1].split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[0]
+    assert 'config.options["endpoint"]' not in default_log_config
     require_contains(rv32_helper, '"--audio-driver-factory", "rv32qemu"')
     require_contains(rv32_helper, '"--audio-datalink-endpoint", datalink_endpoint')
     require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')

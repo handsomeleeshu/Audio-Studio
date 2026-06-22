@@ -1844,7 +1844,7 @@ server/framework/transport/src/frame_codec.cpp
 server/framework/transport/src/transport_manager.cpp
 ```
 
-该阶段提供 frame encode/decode、logical channel 状态统计、每 channel worker、同步/异步发送 API，以及基于 DataLinkManager 的可靠 data-link 搬运。TransportManager 不直接访问 socket/pipe/USB/PCIe/semihost OS API；真实 IO 必须通过 `IDataLinkDevice` 接入。
+该阶段提供 frame encode/decode、logical channel 状态统计、每 channel worker、同步/异步发送 API，以及基于 DataLinkManager 的可靠 data-link 搬运。TransportManager 在 `as_server` 进程内是平台 transport 单例，不是每个 log/audio/control/dump driver 私有创建的 helper；它维护唯一的 channel 表、唯一的 DataLinkManager、唯一的 data-link device 绑定和统一 IO mutex。TransportManager 不直接访问 socket/pipe/USB/PCIe/semihost OS API；真实 IO 必须通过 `IDataLinkDevice` 接入。
 
 本阶段补齐 TransportManager 与 Audio Controller 对端的双层传输模型：
 
@@ -1934,15 +1934,17 @@ payload_crc32  32
 header_crc32   32
 ```
 
-同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞。
+同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞；所有 channel 最终通过同一个 DataLinkManager 和同一把 data-link IO mutex 排队进入物理链路。
+
+TransportManager 的 channel 管理只做一件事：保证同一时刻同一个 `channel_id` 只能 open 一次。它不关心该 channel 属于 log、audio control、audio data 还是其他业务，也不提供 shared channel 语义。需要复用固定 control channel 的业务，例如 rv32qemu audio driver 复用 audio control channel 3，必须在该 driver 内部维护引用计数和生命周期，确保只向 TransportManager open 一次，最后一个使用者退出时再 close。不同 driver 或不同 stream 必须使用不同 transport channel，重复 open 应返回明确错误。
 
 Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`，audio 使用 `ac_audio_control_transport_handler()` 和 `ac_audio_data_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
 
-TransportManager 本身只被 controller 类 driver implementation 使用；`framework/log`、`framework/dump`、`framework/audio`、`framework/control` 仍只依赖各自的 `I*Device` interface。
+TransportManager 本身只被 controller 类 driver implementation 使用；`framework/log`、`framework/dump`、`framework/audio`、`framework/control` 仍只依赖各自的 `I*Device` interface。controller 类 driver 只能获取 `TransportManager::instance()`，不能私有构造 TransportManager 或私有打开第二条 data-link。data-link endpoint/rx/tx/mtu 属于 `as_server` 的平台 transport 配置，只有 as_server 启动阶段可以调用 `TransportManager::configureDataLinkDevice()` 完成绑定；log/audio driver 不解析 endpoint，也不把 session 参数转换成 data-link config。
 
 #### 4.11.4 Simulator audio controller channel
 
-Simulator audio controller 使用一个固定 control channel 和最多 16 个独立 data channel，保证多路 stream 的音频数据互不串流：
+Simulator audio controller 使用一个固定 control channel 和最多 16 个独立 data channel，保证多路 stream 的音频数据互不串流。host 侧 rv32qemu audio driver 内部负责 audio control channel 的引用计数：第一个 audio session 打开 channel 3，后续 session 复用该已打开 channel，最后一个 session 关闭时才关闭 channel 3；TransportManager 仍然只看到 channel 3 被 open 一次。
 
 ```text
 AC_TRANSPORT_CHANNEL_AUDIO_CONTROL = 3
@@ -2543,7 +2545,7 @@ as_play/as_record
 
 A2/controller profile 后续沿用同一 `IAudioPlaybackDevice` / `IAudioCaptureDevice` interface，只替换 registry 中的 factory implementation。
 
-Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --audio-datalink-endpoint <endpoint>` 提供默认 driver 与 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
+Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --audio-datalink-endpoint <endpoint>` 提供默认 driver 与 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。rv32qemu log/audio driver 都使用同一个 `TransportManager::instance()` 和同一个由 as_server 预先绑定的 `simulator-pipe` data-link；如果同时提供 `--log-datalink-*` 与 `--audio-datalink-*`，两组配置必须一致。driver session 内不得再解析或覆盖 endpoint。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
 
 ### 7.2 as_control：A2 直连 Controller 模式
 
@@ -6156,7 +6158,7 @@ drivers/log/controller/ControllerLogDevice
 
 这样 A2 direct、DSP simulator、其他 Audio Controller 平台不需要各自实现 log driver。
 
-rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`datalink_endpoint`、`datalink_rx`/`datalink_tx` 是 `as_server` 与 audio controller 之间约定的运行期链路信息，应由 `as_server --log-datalink-*` 参数或 server 配置提供。该 log device 会创建 `simulator-pipe` data-link device，绑定标准 `TransportManager`，打开 Log channel 并通过 transport command 读取 raw log chunk；未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
+rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`datalink_endpoint`、`datalink_rx`/`datalink_tx` 是 `as_server` 与 audio controller 之间约定的运行期链路信息，应由 `as_server --log-datalink-*` 参数或 server 配置提供。as_server 在启动阶段配置 `TransportManager::instance()` 的 `simulator-pipe` data-link；该 log device 只打开 Log channel 并通过 transport command 读取 raw log chunk。未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
 
 `as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。`.ldc` 仍是 raw SOF trace 解码必需字典，但它属于 `as_server` 的 log session 默认配置，应由 `as_server --log-trace-ldc` 或 server 配置提供；`as_log` CLI 不暴露外部 SOF logger executable，也不携带 log driver factory、data-link endpoint 或 `.ldc`。`as_log` 负责连接 `as_server`、请求 log session、标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
 
