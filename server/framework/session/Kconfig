@@ -1,0 +1,4 @@
+config FRAMEWORK_SESSION
+  bool "Build session framework library"
+  default n
+  depends on FRAMEWORK_COMMON

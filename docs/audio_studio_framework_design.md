@@ -75,7 +75,7 @@ Audio-Studio/audio_controller/          # Audio Controller peer 参考实现
 server/platform/a2/                    # 正式 as_server 的 A2 platform 目录
 config/A2.json                         # 当前 A2 示例 project
 configs/a2_*.defconfig                 # 后续新增 defconfig 时使用
-audio_controller/platform/a2/           # 后续 A2 controller peer 适配目录
+Misc/sof_test/platform/a2/             # 后续 A2 sof_test/controller driver ops 适配目录
 文档中 A2 平台说明章节
 ```
 
@@ -151,7 +151,7 @@ platform:
   选择 profile、注册平台特定 backend/driver、定义平台默认配置。
 
 audio_controller:
-  Audio Studio 对端 controller 参考实现，承接 controller 协议。A2 直连和 simulator 都可复用 controller 类协议，差异在 transport driver。
+  Audio Studio 对端 controller 参考实现，承接 controller 协议。A2 直连和 simulator 都可复用 controller 类协议，差异在 data-link driver。
 ```
 
 ---
@@ -213,7 +213,7 @@ drivers/dump
 platform/a2
 TransportManager
 Audio Controller protocol implementation
-A2 physical transport driver
+A2 physical data-link driver
 as_server session registry
 ```
 
@@ -1317,7 +1317,7 @@ Audio-Studio/
 | `rpc/` | JSON-RPC codec、单点 API registry、typed facade、client/server helper、socket/pipe/http/ws transport adapter | C++/JavaScript facade | 不包含平台特化 |
 | `drivers/` | Driver interface、singleton registry、默认 Linux host 实现、后续平台实现入口 | C++ | 可包含 platform/host driver implementation |
 | `server/` | 正式 as_server、framework、platform adapter，并链接 rpc/drivers | C++ | `server/platform/*` 包含 |
-| `audio_controller/` | Audio Studio 对端 controller 参考实现 | C | `audio_controller/platform/*` 包含 |
+| `audio_controller/` | Audio Studio 对端 controller 参考实现，只接收初始化传入的 driver ops | C | 不包含 platform 目录 |
 | `scripts/` | Kconfig、build_all.sh、cmake、toolchain、代码生成、打包脚本 | Python/Shell/CMake | 不直接包含业务逻辑 |
 | `config/` | 当前产品 JSON 示例，例如 A2.json | JSON | 可包含平台示例 |
 | `configs/` | defconfig/profile 示例 | Kconfig defconfig/TOML/JSON | 可包含平台配置 |
@@ -1373,10 +1373,12 @@ Audio-Studio/rpc/
 Audio-Studio/drivers/
   include/
   src/
-  os/ socket/ filesystem/ pipe/ dynlib/ transport/ audio/ control/ log/ dump/
+  os/ socket/ filesystem/ pipe/ dynlib/ datalink/ audio/ control/ log/ dump/
   Kconfig
   CMakeLists.txt
 ```
+
+`server/` 采用和顶层 `drivers/` 相同的分散式构建管理：`server/CMakeLists.txt` 只组合 `main/`、`framework/`、`platform/` 等上层 target；`server/framework/CMakeLists.txt` 与 `server/platform/CMakeLists.txt` 只做子目录聚合；每个 framework/platform 子模块在自己的 `CMakeLists.txt` 和 `Kconfig` 内声明 source、include、feature switch 和依赖。新增 `framework/log`、`framework/transport` 或 `platform/simulator` 能力时，不允许继续把 source list 堆进 `server/CMakeLists.txt`。
 
 ### 3.4 GUI/backend 不等于 server
 
@@ -1844,7 +1846,118 @@ server/framework/transport/src/frame_codec.cpp
 server/framework/transport/src/transport_manager.cpp
 ```
 
-该阶段提供基础 frame encode/decode 和 logical channel 状态统计，用于先验证 TransportManager 的服务边界、构建开关和 CTest；不启动 TX/RX worker，不访问 socket/pipe/USB/PCIe，也不直接调用 OS API。真实 IO 必须通过后续 drivers/transport 与 drivers/os 接入。
+该阶段提供 frame encode/decode、logical channel 状态统计、每 channel worker、同步/异步发送 API，以及基于 DataLinkManager 的可靠 data-link 搬运。TransportManager 不直接访问 socket/pipe/USB/PCIe/semihost OS API；真实 IO 必须通过 `IDataLinkDevice` 接入。
+
+本阶段补齐 TransportManager 与 Audio Controller 对端的双层传输模型：
+
+```text
+framework/log、framework/dump、framework/audio、framework/control
+  -> controller 类 I*Device driver
+    -> TransportManager
+      -> DataLinkManager
+        -> IDataLinkDevice
+          -> platform data-link implementation
+            -> Audio Controller transport controller
+              -> ac_datalink
+              -> ac_transport
+              -> log/dump/audio/control/config service
+```
+
+#### 4.11.1 IDataLinkDevice
+
+`IDataLinkDevice` 是 Audio Studio host 侧最小数据链路设备接口。它只维护链路打开/关闭、MTU 能力和基础数据块读写，不理解 TransportManager channel、log/dump/audio 业务语义，也不负责传输层 ACK。平台或 driver implementation 负责实现它：
+
+```cpp
+struct DataLinkDeviceCaps {
+    size_t mtu = 256;
+    bool reliable = false;
+    bool ordered = true;
+};
+
+class IDataLinkDevice {
+public:
+    virtual ~IDataLinkDevice() = default;
+    virtual Status open(const DataLinkDeviceConfig& config) = 0;
+    virtual void close() = 0;
+    virtual Status writeBlock(const uint8_t* data, size_t size, uint32_t timeout_ms) = 0;
+    virtual Status readBlock(uint8_t* buffer, size_t capacity, size_t& actual_size,
+                             uint32_t timeout_ms) = 0;
+    virtual Status flush() = 0;
+    virtual bool isConnected() const = 0;
+    virtual DataLinkDeviceCaps caps() const = 0;
+    virtual std::string name() const = 0;
+};
+```
+
+`drivers/datalink` 中的 linux-host/macos 默认实现只实现 `IDataLinkDevice` 的基础块读写能力，方便 host 测试和工具链回归；rv32qemu/simulator host 侧实现放在 `server/platform/simulator/`，controller 侧 rv32qemu 文件链路 ops 放在 `Misc/sof_test/platform/rv32qemu/`，由 `ac_run` 初始化 audio controller 时传入。
+
+#### 4.11.2 Data link frame
+
+Data link 层只负责可靠搬运一段 transport payload，不解释业务 channel。所有多字节字段使用 little-endian：
+
+```text
+magic              32  "ASDL"
+version            8   当前为 1
+header_size        8   当前为 36
+flags              16  DATA/ACK/NAK/END
+link_seq           32  data-link sequence
+transport_len      32  完整 transport payload 长度
+fragment_offset    32  当前切片在 transport payload 内的偏移
+fragment_len       32  当前切片长度
+fragment_index     16
+fragment_count     16
+payload_crc32      32  当前切片 CRC32
+header_crc32       32  header_crc32 字段置零后的 header CRC32
+```
+
+规则：
+
+1. DataLinkManager 根据 `IDataLinkDevice::caps().mtu` 自动切片，切片 payload 不超过 `mtu - header_size`。
+2. 每个 DATA frame 必须收到同 `link_seq`、同 `fragment_index` 的 ACK。收到 NAK、CRC 错误、超时或 read/write 错误时重传该切片。
+3. 超过 `max_retries` 后，DataLinkManager 才把错误上报给 TransportManager。
+4. 接收端校验 header CRC 与 payload CRC，错误时返回 NAK；完整收齐所有切片后重组为一个 transport payload。
+5. Data link ACK 只确认链路切片已可靠到达，不等价于 TransportManager 同步请求 ACK。
+
+#### 4.11.3 Transport frame
+
+Transport 层负责业务 channel、同步/异步请求、传输层 ACK 和 channel 生命周期。Transport frame 仍由 DataLinkManager 作为不透明 payload 搬运：
+
+```text
+magic          32  "ASTM"
+version        16  当前为 1
+header_size    16  当前为 36
+channel_id     16  当前 Log=1，后续 Dump/Audio/Control 继续分配
+command_id     16  service 私有命令
+flags          32  REQUEST/RESPONSE/ACK/ASYNC/OPEN/CLOSE/ERROR
+seq_id         32  TransportManager sequence
+session_id     32  framework session 或 controller session
+payload_len    32
+payload_crc32  32
+header_crc32   32
+```
+
+同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞。
+
+Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
+
+TransportManager 本身只被 controller 类 driver implementation 使用；`framework/log`、`framework/dump`、`framework/audio`、`framework/control` 仍只依赖各自的 `I*Device` interface。
+
+当前落地文件：
+
+```text
+server/framework/transport/include/datalink_frame.hpp
+server/framework/transport/include/datalink_manager.hpp
+server/framework/transport/include/transport_checksum.hpp
+server/platform/simulator/include/simulator_pipe_datalink_device.hpp
+server/platform/simulator/src/simulator_pipe_datalink_device.cpp
+server/platform/simulator/src/rv32qemu_log_device.cpp
+audio_controller/src/ac_transport_channel.h
+audio_controller/src/ac_datalink.c
+audio_controller/src/ac_transport.c
+audio_controller/src/ac_log.c
+Misc/sof_test/ac-run-cmds.c
+Misc/sof_test/platform/rv32qemu/ac_platform.c
+```
 
 ### 4.12 顶层 drivers
 
@@ -1909,11 +2022,11 @@ drivers/dynlib/src/linux_host_dynlib_driver.cpp
 drivers/dynlib/src/macos_dynlib_driver.hpp
 drivers/dynlib/src/macos_dynlib_driver.cpp
 
-drivers/transport/include/transport_driver.hpp
-drivers/transport/src/linux_host_transport_driver.hpp
-drivers/transport/src/linux_host_transport_driver.cpp
-drivers/transport/src/macos_transport_driver.hpp
-drivers/transport/src/macos_transport_driver.cpp
+drivers/datalink/include/datalink_device.hpp
+drivers/datalink/src/linux_host_datalink_device.hpp
+drivers/datalink/src/linux_host_datalink_device.cpp
+drivers/datalink/src/macos_datalink_device.hpp
+drivers/datalink/src/macos_datalink_device.cpp
 
 drivers/audio/include/audio_device.hpp
 drivers/audio/src/alsa_audio_device.hpp
@@ -1960,8 +2073,8 @@ Audio-Studio/server/platform/
     a2_profile.hpp
     a2_profile.cpp
     transport/
-      a2_physical_transport_driver.cpp
-      a2_physical_transport_factory.cpp
+      a2_physical_datalink_device.cpp
+      a2_physical_datalink_factory.cpp
       a2_transport_profile.cpp
     audio/
       a2_7870_tinyalsa_fifo_playback_device.cpp
@@ -2064,6 +2177,27 @@ Config Service:  receive/install config binary/query topology/capability
 Heartbeat:       ping/status/version/capability
 ```
 
+`audio_controller_create()` 必须像初始化 topology 子模块一样初始化 transport controller 子模块。平台层通过 `audio_controller_driver_ops_t` 注册最小 data-link device ops，common code 中的 `ac_transport.c` 管理业务 channel，`ac_datalink.c` 管理 data-link frame 收发、CRC、ACK/NAK、重传、切片和重组。平台层只提供基础 open/close/read/write/caps 能力，不写 log/dump/audio/control 业务逻辑。
+
+当前 C 参考实现中，`audio_controller_driver_ops_t::datalink` 注册 `open/close/read/write/mtu`。如果平台同时提供 `thread_create/thread_join`，`ac_transport_init()` 会启动 transport worker，循环调用 `ac_datalink_poll()` 等待 host 侧 TransportManager 发起 channel/数据交互；如果平台不提供线程能力，则仍完成 data-link 初始化，供 sof_test 或平台主循环显式轮询。
+
+controller 侧线程模型：
+
+```text
+audio_controller_create
+  -> ac_topology_init
+  -> ac_transport_init
+     -> ac_datalink_init
+     -> optional transport worker thread
+
+transport worker thread
+  -> ac_datalink_receive_packet
+  -> ac_transport_dispatch(channel_id, payload)
+  -> channel service thread / callback
+```
+
+每个业务 channel 由 `ac_transport_open_channel()` 建立。Log channel 对应 Audio Studio host 侧 `ControllerLogDevice`，启动后持续把 raw SOF log chunk 作为异步 transport frame 上行；host 侧 `framework/log` 只通过 `ILogDevice` 读取 raw chunk，再由 LogDecoder/Formatter 输出明文。sof_test 中创建 audio controller 后不主动退出 transport worker，而是等待 host TransportManager 发起 channel open/start/read/stop/close。
+
 
 ## 5. UML：整体组件调用关系
 
@@ -2146,7 +2280,7 @@ flowchart LR
   ControllerLog --> TM
   ControllerDump --> TM
 
-  TM --> TDrv[drivers/transport selected driver]
+  TM --> TDrv[drivers/datalink selected driver]
 ```
 
 重点：
@@ -2178,7 +2312,7 @@ classDiagram
     +socket() ISocketDriver
     +pipe() IPipeDriver
     +dynlib() IDynlibDriver
-    +transportRegistry() TransportDriverRegistry
+    +datalinkRegistry() DataLinkDeviceRegistry
     +audioRegistry() AudioDeviceRegistry
     +controlRegistry() ControlDeviceRegistry
     +logRegistry() LogDeviceRegistry
@@ -2211,7 +2345,7 @@ classDiagram
   DriverManager --> ControlDeviceRegistry
   DriverManager --> LogDeviceRegistry
   DriverManager --> DumpDeviceRegistry
-  DriverManager --> TransportDriverRegistry
+  DriverManager --> DataLinkDeviceRegistry
 ```
 
 ### 6.2 Audio / Control / Log / Dump Service 与 Device Interface
@@ -2554,7 +2688,7 @@ A2 直连模式和 DSP simulator 模式默认使用通用 controller control dri
 ControlService
   -> ControllerControlDevice
   -> TransportManager
-  -> selected transport driver
+  -> selected data-link driver
   -> Audio Controller peer
 ```
 
@@ -2891,7 +3025,7 @@ Platform 层主要职责是：
 ```text
 选择默认 profile
 注册平台特定 backend
-注册平台特定 transport driver
+注册平台特定 data-link driver
 定义平台默认配置
 定义平台能力查询、握手、remote command 等平台策略
 ```
@@ -3075,7 +3209,7 @@ CONFIG 系统不是 Transport 的配置系统，而是整个 Audio Studio 工程
 是否编译 as_server
 是否编译 as_log / as_dump / as_play / as_record
 是否启用 Plugin SDK
-是否启用 TCP transport driver
+是否启用 TCP data-link driver
 是否启用 FIFO / pipe driver
 是否启用 Audio Controller audio/log/dump driver
 是否启用 A2 platform
@@ -4825,7 +4959,7 @@ public:
     IPipeDriver& pipe();
     IDynlibDriver& dynlib();
 
-    TransportDriverRegistry& transportRegistry();
+    DataLinkDeviceRegistry& datalinkRegistry();
     AudioDeviceRegistry& audioRegistry();
     ControlDeviceRegistry& controlRegistry();
     LogDeviceRegistry& logRegistry();
@@ -5062,7 +5196,7 @@ OsError / OsResult
 
 #### 9.1 职责
 
-`drivers/socket` 提供跨平台 TCP/UDP socket 基础能力，主要给 `drivers/transport/tcp`、server local TCP、simulator TCP 通信使用。
+`drivers/socket` 提供跨平台 TCP/UDP socket 基础能力，主要给 `drivers/datalink/tcp`、server local TCP、simulator TCP 通信使用。
 
 它不负责：
 
@@ -5191,7 +5325,7 @@ public:
 主要服务：
 
 ```text
-drivers/transport/fifo
+drivers/datalink/fifo
 platform/a2/audio 7870 tinyalsa + FIFO
 simulator FIFO transport
 server local IPC pipe 模式
@@ -5295,7 +5429,7 @@ public:
 
 ---
 
-### 12.13 framework/transport 与 drivers/transport
+### 12.13 framework/transport 与 drivers/datalink
 
 #### 13.1 TransportManager 定位
 
@@ -5310,35 +5444,35 @@ TX/RX/Dispatch worker 管理
 request serialize
 event dispatch
 flow control
-transport driver 选择与绑定
+data-link driver 选择与绑定
 ```
 
 #### 13.2 TransportManager 不直接访问 OS API
 
 TransportManager 内部线程、事件、锁、时间都通过 `drivers/os`。
 
-它通过 `drivers/transport` 访问底层 transport driver。
+它通过 `drivers/datalink` 访问底层 data-link driver。
 
-#### 13.3 ITransportDriver
+#### 13.3 IDataLinkDevice
 
 ```cpp
-class ITransportDriver {
+class IDataLinkDevice {
 public:
-    virtual ~ITransportDriver() = default;
+    virtual ~IDataLinkDevice() = default;
 
-    virtual TransportResult open(const TransportConfig& config) = 0;
+    virtual DataLinkResult open(const DataLinkDeviceConfig& config) = 0;
     virtual void close() = 0;
 
-    virtual TransportResult write(const uint8_t* data,
-                                  size_t size,
-                                  uint32_t timeout_ms) = 0;
-    virtual TransportResult read(uint8_t* buffer,
-                                 size_t capacity,
-                                 size_t& actual_size,
-                                 uint32_t timeout_ms) = 0;
-    virtual TransportResult flush() = 0;
+    virtual DataLinkResult writeBlock(const uint8_t* data,
+                                      size_t size,
+                                      uint32_t timeout_ms) = 0;
+    virtual DataLinkResult readBlock(uint8_t* buffer,
+                                     size_t capacity,
+                                     size_t& actual_size,
+                                     uint32_t timeout_ms) = 0;
+    virtual DataLinkResult flush() = 0;
     virtual bool isConnected() const = 0;
-    virtual TransportCaps caps() const = 0;
+    virtual DataLinkDeviceCaps caps() const = 0;
     virtual std::string name() const = 0;
 };
 ```
@@ -5463,19 +5597,19 @@ drivers/audio/controller/AudioControllerCaptureDevice
 drivers/audio/controller/AudioControllerProtocol
 ```
 
-区别只在 TransportManager 选择的 transport driver：
+区别只在 TransportManager 选择的 data-link driver：
 
 ```text
 A2 direct:
   AudioControllerDevice
     -> TransportManager
-      -> A2 physical transport driver
+      -> A2 physical data-link driver
         -> A2 RISC-V Audio Controller
 
 DSP simulator:
   AudioControllerDevice
     -> TransportManager
-      -> FIFO / pipe / TCP simulator transport driver
+      -> FIFO / pipe / TCP simulator data-link driver
         -> DSP Simulator Audio Controller
 ```
 
@@ -5531,7 +5665,7 @@ framework/transport           pipe/process/filesystem     OS audio API
 TransportManager              + remote tinyalsa
         |
         v
-drivers/transport
+drivers/datalink
 physical / FIFO / TCP / USB / PCIe
         |
         v
@@ -5754,7 +5888,7 @@ framework/control
   -> IControlDevice
   -> drivers/control/controller/ControllerControlDevice
   -> framework/transport/TransportManager
-  -> platform selected transport driver
+  -> platform selected data-link driver
   -> Audio Controller peer
 ```
 
@@ -5768,10 +5902,10 @@ CONFIG_DRIVER_CONTROL_CONTROLLER=y
 
 ```text
 A2 direct:
-  TransportManager -> A2 physical transport driver -> A2 RISC-V Audio Controller
+  TransportManager -> A2 physical data-link driver -> A2 RISC-V Audio Controller
 
 DSP simulator:
-  TransportManager -> FIFO/pipe/TCP transport driver -> Simulator Audio Controller
+  TransportManager -> FIFO/pipe/TCP data-link driver -> Simulator Audio Controller
 ```
 
 Controller control protocol 建议覆盖：
@@ -5977,11 +6111,62 @@ Audio Controller 类平台可以复用默认实现：
 ```text
 drivers/log/controller/ControllerLogDevice
   -> TransportManager
-  -> platform-selected transport driver
+  -> platform-selected data-link driver
   -> Audio Controller peer
 ```
 
 这样 A2 direct、DSP simulator、其他 Audio Controller 平台不需要各自实现 log driver。
+
+rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`datalink_endpoint`、`datalink_rx`/`datalink_tx` 是 `as_server` 与 audio controller 之间约定的运行期链路信息，应由 `as_server --log-datalink-*` 参数或 server 配置提供。该 log device 会创建 `simulator-pipe` data-link device，绑定标准 `TransportManager`，打开 Log channel 并通过 transport command 读取 raw log chunk；未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
+
+`as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。`.ldc` 仍是 raw SOF trace 解码必需字典，但它属于 `as_server` 的 log session 默认配置，应由 `as_server --log-trace-ldc` 或 server 配置提供；`as_log` CLI 不暴露外部 SOF logger executable，也不携带 log driver factory、data-link endpoint 或 `.ldc`。`as_log` 负责连接 `as_server`、请求 log session、标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
+
+rv32qemu 端到端验证路径：
+
+```text
+Misc/sof_test:
+  ac_run --endpoint as_datalink --mtu 512
+  trace on
+  pipeinstall ...
+
+SOF rv32qemu simulator:
+  trace on
+    -> SOF normal rv32qemu trace path
+    -> sof_trace.fifo
+
+Misc/sof_test/platform/rv32qemu:
+  ac_log_platform_init("sof_trace.fifo")
+    -> audio_controller log source ops
+    -> ac_transport Log channel
+    -> ac_datalink common frame/ack/retry logic
+    -> platform data-link endpoint files
+
+Audio-Studio host:
+  as_server --rpc
+            --log-driver-factory rv32qemu
+            --log-datalink-endpoint <sof_test cwd>/as_datalink
+            --log-trace-ldc application/rv32qemu/build/sof.ldc
+
+  as_log --level debug --follow
+```
+
+`audio_controller` 本体不包含 rv32qemu platform 概念；`Misc/sof_test/ac-run-cmds.c` 只负责 common 命令解析和 audio controller 生命周期管理。平台差异由 `Misc/sof_test/platform/<platform>/ac_platform.c` 提供：`ac_datalink_platform_init/deinit()` 注册 data-link ops，`ac_log_platform_init/deinit()` 注册 log source ops。rv32qemu 中 data-link endpoint 文件只用于 Audio Studio host 与 audio controller 通信；`sof_trace.fifo` 只用于 SOF simulator 输出 raw trace，两者不能混用。
+
+rv32qemu helper 脚本的 audio-controller-log 模式负责准备两类文件、启动 `as_server` 和 QEMU/sof_test。用户另开一行 `as_log` 实时查看：
+
+```bash
+python3 application/rv32qemu/sof-build-test.py \
+  -t Misc/sof_test/simple_test/rv32qemu-as-log-test-lists.txt \
+  --audio-controller-log \
+  --trace-ldc application/rv32qemu/build/sof.ldc
+
+Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
+  --level debug --follow
+```
+
+`as_server` 与 CLI 默认使用 `127.0.0.1:9900`，两边同时省略 `--host/--port` 时必须能通信。`--log-datalink-endpoint` 和 `--log-trace-ldc` 是 `as_server` 与 audio controller/log decoder 的运行期约定，不属于 `as_log` 用户命令参数。`as_log --follow --count N` 正常退出时必须关闭 log session；测试中不要用外层 `timeout` 强杀 CLI 作为正常 close 验证，因为 SIGTERM 可能跳过 close RPC，导致 controller 侧 log source 仍持有 `sof_trace.fifo`，进而影响 simulator trace writer。
+
+rv32qemu data-link endpoint 使用普通 host 文件模拟双向链路，session open 时打开、session close 时关闭，read/write 块不做每块 open/close。host 侧打开 RX 文件时从当前 EOF 开始读取，避免新 session 误读上一次运行遗留的 ACK/response；controller 侧也维护 stream offset。data-link 的 retry/ACK/CRC/切片仍由 `DataLinkManager` 和 `ac_datalink` common code 负责，platform ops 只提供最基础的文件读写和 MTU。
 
 #### 15.6 非 Audio Controller 平台
 
@@ -6072,7 +6257,7 @@ Audio Controller 类平台共用：
 ```text
 drivers/dump/controller/ControllerDumpDevice
   -> TransportManager
-  -> platform-selected transport driver
+  -> platform-selected data-link driver
   -> Audio Controller peer
 ```
 
@@ -6719,7 +6904,7 @@ as_control set "Playback Main Volume" -6
   -> framework/control
   -> ControllerControlDevice
   -> TransportManager
-  -> A2 physical transport driver
+  -> A2 physical data-link driver
   -> A2 Audio Controller
 ```
 
@@ -6860,7 +7045,7 @@ platform/a2/
 
   transport/
     a2_transport_profile.cpp
-    a2_physical_transport_driver.cpp
+    a2_physical_datalink_device.cpp
 
   audio/
     a2_7870_tinyalsa_fifo_playback_device.cpp
@@ -6970,7 +7155,7 @@ CONFIG_PLATFORM_A2=y
 CONFIG_PROFILE_A2_DIRECT=y
 
 CONFIG_FRAMEWORK_TRANSPORT=y
-CONFIG_DRIVER_TRANSPORT_A2_PHYSICAL=y
+CONFIG_DRIVER_DATALINK_A2_PHYSICAL=y
 
 CONFIG_FRAMEWORK_AUDIO=y
 CONFIG_DRIVER_AUDIO=y
@@ -6996,7 +7181,7 @@ CONFIG_PLATFORM_SIMULATOR=y
 CONFIG_PROFILE_SIMULATOR=y
 
 CONFIG_FRAMEWORK_TRANSPORT=y
-CONFIG_DRIVER_TRANSPORT_FIFO=y
+CONFIG_DRIVER_DATALINK_FIFO=y
 CONFIG_DRIVER_PIPE_POSIX_FIFO=y
 
 CONFIG_DRIVER_AUDIO_CONTROLLER=y
@@ -7047,7 +7232,7 @@ as_play
   -> IAudioPlaybackDevice
   -> drivers/audio/controller AudioControllerPlaybackDevice
   -> TransportManager
-  -> platform/a2 transport driver
+  -> platform/a2 data-link driver
   -> A2 RISC-V Audio Controller
   -> DSP/VASS
 ```
@@ -7062,7 +7247,7 @@ as_play
   -> IAudioPlaybackDevice
   -> drivers/audio/controller AudioControllerPlaybackDevice
   -> TransportManager
-  -> FIFO/pipe/TCP transport driver
+  -> FIFO/pipe/TCP data-link driver
   -> Simulator Audio Controller
 ```
 
@@ -7093,7 +7278,7 @@ as_control
   -> IControlDevice
   -> drivers/control/controller ControllerControlDevice
   -> TransportManager
-  -> A2 physical transport driver
+  -> A2 physical data-link driver
   -> A2 RISC-V Audio Controller
 ```
 
@@ -7181,7 +7366,7 @@ as_dump
 
 6. framework/audio 不直接调用 TransportManager，只调用 IAudioPlaybackDevice / IAudioCaptureDevice。
 
-7. A2 direct 与 DSP simulator 在 audio/log/dump 方面都可复用 Audio Controller 类默认 driver，差异在 transport driver。
+7. A2 direct 与 DSP simulator 在 audio/log/dump 方面都可复用 Audio Controller 类默认 driver，差异在 data-link driver。
 
 8. 7870 互联模式不走 Audio Controller audio path，它使用 platform/a2/audio 下的 tinyalsa + FIFO device。
 

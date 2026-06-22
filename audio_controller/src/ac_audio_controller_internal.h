@@ -2,12 +2,16 @@
 #define AC_AUDIO_CONTROLLER_INTERNAL_H_
 
 #include "audio_controller.h"
+#include "ac_log.h"
+#include "ac_transport.h"
 #include "ac_topology_parser.h"
 
 struct audio_controller {
     audio_controller_driver_ops_t driver;
     ac_allocator_t allocator;
     ac_topology_t topology;
+    ac_transport_controller_t transport;
+    ac_log_controller_t log;
     char last_error[256];
     int verbose;
 };

@@ -1,0 +1,18 @@
+menu "Data-Link Driver"
+
+config DRIVER_DATALINK
+  bool "Build data-link device interface"
+  default n
+  depends on DRIVERS_CORE
+
+config DRIVER_DATALINK_LINUX_HOST
+  bool "Build Linux host data-link device implementation"
+  default n
+  depends on DRIVER_DATALINK
+
+config DRIVER_DATALINK_MACOS
+  bool "Build macOS data-link device implementation"
+  default n
+  depends on DRIVER_DATALINK
+
+endmenu

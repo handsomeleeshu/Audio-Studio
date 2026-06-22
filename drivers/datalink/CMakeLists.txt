@@ -1,0 +1,15 @@
+set(AUDIO_STUDIO_DRIVER_DATALINK_SOURCES)
+if(CONFIG_DRIVER_DATALINK_LINUX_HOST)
+  list(APPEND AUDIO_STUDIO_DRIVER_DATALINK_SOURCES src/linux_host_datalink_device.cpp)
+endif()
+if(CONFIG_DRIVER_DATALINK_MACOS)
+  list(APPEND AUDIO_STUDIO_DRIVER_DATALINK_SOURCES src/macos_datalink_device.cpp)
+endif()
+audio_studio_require_sources(audio_studio_driver_datalink "${AUDIO_STUDIO_DRIVER_DATALINK_SOURCES}")
+
+add_library(audio_studio_driver_datalink OBJECT
+  ${AUDIO_STUDIO_DRIVER_DATALINK_SOURCES}
+)
+target_include_directories(audio_studio_driver_datalink PUBLIC include)
+target_link_libraries(audio_studio_driver_datalink PUBLIC audio_studio_framework_common)
+target_compile_features(audio_studio_driver_datalink PUBLIC cxx_std_17)

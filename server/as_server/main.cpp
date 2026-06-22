@@ -24,6 +24,9 @@
 #if defined(CONFIG_FRAMEWORK_CONFIG)
 #include "config_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+#include "log_service.hpp"
+#endif
 #endif
 
 namespace {
@@ -38,6 +41,14 @@ struct ServerOptions {
   std::string request_pipe;
   std::string response_pipe;
   size_t max_requests = 0;
+  std::string log_driver_factory;
+  std::string log_source;
+  std::string log_level;
+  std::string log_datalink_endpoint;
+  std::string log_datalink_rx;
+  std::string log_datalink_tx;
+  uint32_t log_datalink_mtu = 0;
+  std::string log_trace_ldc;
   std::vector<std::string> rpc_args;
 };
 
@@ -53,6 +64,14 @@ int parseServerOptions(int argc, char** argv, ServerOptions& options) {
   app.add_option("--request-pipe", options.request_pipe, "RPC request FIFO path");
   app.add_option("--response-pipe", options.response_pipe, "RPC response FIFO path");
   app.add_option("--max-requests", options.max_requests, "Stop after N requests. Zero means forever");
+  app.add_option("--log-driver-factory", options.log_driver_factory, "Default log driver factory for RPC log sessions");
+  app.add_option("--log-source", options.log_source, "Default log source for RPC log sessions");
+  app.add_option("--log-level", options.log_level, "Default minimum log level for RPC log sessions");
+  app.add_option("--log-datalink-endpoint", options.log_datalink_endpoint, "Default log data-link endpoint prefix");
+  app.add_option("--log-datalink-rx", options.log_datalink_rx, "Default log data-link RX file");
+  app.add_option("--log-datalink-tx", options.log_datalink_tx, "Default log data-link TX file");
+  app.add_option("--log-datalink-mtu", options.log_datalink_mtu, "Default log data-link MTU");
+  app.add_option("--log-trace-ldc", options.log_trace_ldc, "Default SOF trace LDC dictionary for log decoding");
   app.add_option("rpc-args", options.rpc_args, "Optional transport and positional transport args");
   app.allow_extras(false);
 
@@ -97,6 +116,26 @@ audio_studio::framework::audio::AudioService& audioService() {
 audio_studio::framework::config::ConfigService& configService() {
   static audio_studio::framework::config::ConfigService service;
   return service;
+}
+#endif
+
+#if defined(CONFIG_FRAMEWORK_LOG)
+audio_studio::framework::log::LogService& logService() {
+  static audio_studio::framework::log::LogService service;
+  return service;
+}
+
+audio_studio::framework::log::LogSessionConfig defaultLogConfigFromOptions(const ServerOptions& options) {
+  audio_studio::framework::log::LogSessionConfig config;
+  config.driver_factory = options.log_driver_factory;
+  config.source = options.log_source;
+  config.min_level = options.log_level;
+  if (!options.log_datalink_endpoint.empty()) config.options["endpoint"] = options.log_datalink_endpoint;
+  if (!options.log_datalink_rx.empty()) config.options["rx_path"] = options.log_datalink_rx;
+  if (!options.log_datalink_tx.empty()) config.options["tx_path"] = options.log_datalink_tx;
+  if (options.log_datalink_mtu > 0) config.options["mtu"] = std::to_string(options.log_datalink_mtu);
+  if (!options.log_trace_ldc.empty()) config.options["trace_ldc"] = options.log_trace_ldc;
+  return config;
 }
 #endif
 
@@ -202,6 +241,9 @@ audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefa
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   context->setConfigService(&configService());
 #endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+  context->setLogService(&logService());
+#endif
   audio_studio::rpc::registerAudioStudioRpcMethods(endpoint, context);
 #else
   audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
@@ -215,6 +257,9 @@ RpcEndpointBundle makeEndpointBundle(audio_studio::rpc::RpcStreamDefaults stream
   bundle.context = std::make_shared<audio_studio::rpc::RpcRuntimeContext>(audioService(), std::move(stream_defaults));
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   bundle.context->setConfigService(&configService());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+  bundle.context->setLogService(&logService());
 #endif
   audio_studio::rpc::registerAudioStudioRpcMethods(bundle.endpoint, bundle.context);
   return bundle;
@@ -251,14 +296,22 @@ int main(int argc, char** argv) {
   }
 #if defined(CONFIG_RPC)
   if (!options.rpc_once.empty()) {
-#if defined(CONFIG_DRIVERS_CORE) && defined(CONFIG_FRAMEWORK_CONFIG)
+#if defined(CONFIG_DRIVERS_CORE) && (defined(CONFIG_FRAMEWORK_CONFIG) || defined(CONFIG_FRAMEWORK_LOG))
     auto& drivers = audio_studio::drivers::DriverManager::instance();
     auto status = drivers.initialize();
     if (!status.ok()) {
       std::cerr << status.toJson() << "\n";
       return 1;
     }
+#if defined(CONFIG_FRAMEWORK_CONFIG)
     configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
+    logService().configureDeviceRegistry(&drivers.logRegistry());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+    logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
+#endif
     std::cout << handleRpcOnce(options.rpc_once) << "\n";
     drivers.shutdown();
     return 0;
@@ -283,6 +336,12 @@ int main(int argc, char** argv) {
 #endif
 #if defined(CONFIG_FRAMEWORK_CONFIG) && defined(CONFIG_DRIVER_FILESYSTEM) && defined(CONFIG_DRIVER_OS) && defined(CONFIG_DRIVER_DYNLIB)
       configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
+      logService().configureDeviceRegistry(&drivers.logRegistry());
+#endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+      logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {

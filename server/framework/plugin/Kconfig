@@ -1,0 +1,4 @@
+config FRAMEWORK_PLUGIN
+  bool "Build plugin framework library"
+  default n
+  depends on FRAMEWORK_COMMON

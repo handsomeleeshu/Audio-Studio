@@ -10,6 +10,9 @@
 #if defined(CONFIG_FRAMEWORK_CONFIG)
 #include "config_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_LOG)
+#include "log_service.hpp"
+#endif
 #include "rpc_runtime_context.hpp"
 
 namespace audio_studio::rpc {
@@ -258,6 +261,188 @@ JsonValue getStats(RpcRuntimeContext& context, const JsonValue& params) {
   return result;
 }
 
+#if defined(CONFIG_FRAMEWORK_LOG)
+JsonValue logSessionJson(const framework::log::LogSessionInfo& session) {
+  JsonValue value = JsonValue::object();
+  value["session_id"] = session.session_id;
+  value["driver_factory"] = session.driver_factory;
+  value["source"] = session.source;
+  value["min_level"] = session.min_level;
+  value["running"] = session.running;
+  value["entries_read"] = static_cast<uint32_t>(session.entries_read);
+  value["raw_chunks_read"] = static_cast<uint32_t>(session.raw_chunks_read);
+  return value;
+}
+
+JsonValue logEntryJson(const framework::log::LogEntry& entry) {
+  JsonValue value = JsonValue::object();
+  value["sequence"] = static_cast<uint32_t>(entry.sequence);
+  value["level"] = entry.level;
+  value["tag"] = entry.tag;
+  value["message"] = entry.message;
+  value["text"] = entry.text;
+  return value;
+}
+
+framework::log::LogSessionConfig logSessionConfigFromParams(const JsonValue& params) {
+  const auto object = requireObjectParams(params, "log.createSession");
+  framework::log::LogSessionConfig config;
+  config.session_id = optionalStringParam(object, "session_id", "");
+  config.driver_factory = optionalStringParam(object, "driver_factory", "");
+  config.source = optionalStringParam(object, "source", "");
+  config.min_level = optionalStringParam(object, "min_level", optionalStringParam(object, "level", ""));
+  config.raw = optionalBoolParam(object, "raw", false);
+  if (object.has("datalink_endpoint")) {
+    config.options["endpoint"] = optionalStringParam(object, "datalink_endpoint", "");
+  }
+  if (object.has("datalink_rx")) {
+    config.options["rx_path"] = optionalStringParam(object, "datalink_rx", "");
+  }
+  if (object.has("datalink_tx")) {
+    config.options["tx_path"] = optionalStringParam(object, "datalink_tx", "");
+  }
+  if (object.has("datalink_mtu")) {
+    config.options["mtu"] = std::to_string(optionalUInt32Param(object, "datalink_mtu", 512));
+  }
+  if (object.has("trace_ldc")) {
+    config.options["trace_ldc"] = optionalStringParam(object, "trace_ldc", "");
+  }
+  if (object.has("raw_trace_path")) {
+    config.options["raw_trace_path"] = optionalStringParam(object, "raw_trace_path", "");
+  }
+  if (object.has("decoded_trace_path")) {
+    config.options["decoded_trace_path"] = optionalStringParam(object, "decoded_trace_path", "");
+  }
+  if (object.has("options")) {
+    const auto& options = object.at("options");
+    if (!options.isObject()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "param must be object: options");
+    for (const auto& item : options.asObject()) {
+      if (!item.second.isString()) {
+        throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, "log option must be string: " + item.first);
+      }
+      config.options[item.first] = item.second.asString();
+    }
+  }
+  return config;
+}
+
+JsonValue logSessionResult(const framework::log::LogSessionInfo& session) {
+  JsonValue result = JsonValue::object();
+  result["session"] = logSessionJson(session);
+  return result;
+}
+
+std::string logSessionId(const JsonValue& params) {
+  return requireStringParam(params, "session_id");
+}
+
+JsonValue createLogSession(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  framework::log::LogSessionInfo session;
+  auto status = context.log().createSession(logSessionConfigFromParams(params), session);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  return logSessionResult(session);
+}
+
+JsonValue configureLogSession(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  framework::log::LogSessionInfo session;
+  auto status = context.log().configureSession(id, logSessionConfigFromParams(params), session);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  return logSessionResult(session);
+}
+
+JsonValue startLog(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  auto status = context.log().start(id);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  framework::log::LogSessionInfo session;
+  (void)context.log().getSession(id, session);
+  return logSessionResult(session);
+}
+
+JsonValue stopLog(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  auto status = context.log().stop(id);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  framework::log::LogSessionInfo session;
+  (void)context.log().getSession(id, session);
+  return logSessionResult(session);
+}
+
+JsonValue closeLogSession(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  auto status = context.log().closeSession(id);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  JsonValue result = JsonValue::object();
+  result["session_id"] = id;
+  result["closed"] = true;
+  return result;
+}
+
+JsonValue readLogEntries(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  const uint32_t max_entries = optionalUInt32Param(params, "max_entries", 32);
+  std::vector<framework::log::LogEntry> entries;
+  auto status = context.log().readEntries(id, max_entries, entries);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  JsonValue array = JsonValue::array();
+  for (const auto& entry : entries) array.pushBack(logEntryJson(entry));
+  JsonValue result = JsonValue::object();
+  result["session_id"] = id;
+  result["entries"] = std::move(array);
+  return result;
+}
+
+JsonValue readLogRaw(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  const uint32_t max_chunks = optionalUInt32Param(params, "max_chunks", 1);
+  std::vector<drivers::log::LogRawChunk> chunks;
+  auto status = context.log().readRaw(id, max_chunks, chunks);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  JsonValue array = JsonValue::array();
+  for (const auto& chunk : chunks) {
+    JsonValue item = JsonValue::object();
+    item["sequence"] = chunk.sequence;
+    item["bytes"] = std::string(chunk.bytes.begin(), chunk.bytes.end());
+    array.pushBack(std::move(item));
+  }
+  JsonValue result = JsonValue::object();
+  result["session_id"] = id;
+  result["chunks"] = std::move(array);
+  return result;
+}
+
+JsonValue logStats(RpcRuntimeContext& context, const JsonValue& params) {
+  if (!context.hasLogService()) throw JsonRpcError(JsonRpcErrorCode::kInternalError, "log service is not configured");
+  const std::string id = logSessionId(params);
+  framework::log::LogSessionStats stats;
+  auto status = context.log().getStats(id, stats);
+  if (!status.ok()) throw JsonRpcError(JsonRpcErrorCode::kInvalidParams, status.message());
+  JsonValue result = JsonValue::object();
+  result["session_id"] = id;
+  result["running"] = stats.running;
+  result["entries_read"] = static_cast<uint32_t>(stats.entries_read);
+  result["raw_chunks_read"] = static_cast<uint32_t>(stats.raw_chunks_read);
+  return result;
+}
+
+JsonValue logCreateParamsExample() {
+  JsonValue params = JsonValue::object();
+  params["session_id"] = "log_1";
+  params["driver_factory"] = "linux-host";
+  params["source"] = "firmware";
+  params["min_level"] = "info";
+  return params;
+}
+#endif
+
 JsonValue listDevices(RpcRuntimeContext&, const JsonValue&) {
   JsonValue devices = JsonValue::array();
   JsonValue host = JsonValue::object();
@@ -358,6 +543,12 @@ JsonValue compileParamsExample() {
 }
 #endif
 
+JsonValue logSessionParamsExample() {
+  JsonValue params = JsonValue::object();
+  params["session_id"] = "log_1";
+  return params;
+}
+
 JsonValue audioParamsExample() {
   JsonValue params = JsonValue::object();
   params["sample_rate"] = 48000;
@@ -445,6 +636,44 @@ RpcApiRegistry& audioStudioRpcApiRegistry() {
     api.addMethod({"audio.getStats", "Get audio session stats", "audio", "1.0",
                    sessionParamsExample(), JsonValue::object(),
                    {{}, ""}, {false, JsonValue::object()}, getStats});
+
+#if defined(CONFIG_FRAMEWORK_LOG)
+    api.addMethod({"log.createSession", "Create a log session", "log", "1.0",
+                   logCreateParamsExample(), JsonValue::object(),
+                   {{"as_log"}, "tail"}, {true, logCreateParamsExample()}, createLogSession});
+
+    api.addMethod({"log.configureSession", "Configure a log session", "log", "1.0",
+                   logCreateParamsExample(), JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, configureLogSession});
+
+    api.addMethod({"log.start", "Start a log session", "log", "1.0",
+                   logSessionParamsExample(), JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, startLog});
+
+    api.addMethod({"log.stop", "Stop a log session", "log", "1.0",
+                   logSessionParamsExample(), JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, stopLog});
+
+    api.addMethod({"log.closeSession", "Close a log session", "log", "1.0",
+                   logSessionParamsExample(), JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, closeLogSession});
+
+    api.addMethod({"log.getStats", "Get log session stats", "log", "1.0",
+                   logSessionParamsExample(), JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, logStats});
+
+    JsonValue read_entries_params = logSessionParamsExample();
+    read_entries_params["max_entries"] = 32;
+    api.addMethod({"log.readEntries", "Read decoded log entries", "log", "1.0",
+                   read_entries_params, JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, readLogEntries});
+
+    JsonValue read_raw_params = logSessionParamsExample();
+    read_raw_params["max_chunks"] = 1;
+    api.addMethod({"log.readRaw", "Read raw log chunks", "log", "1.0",
+                   read_raw_params, JsonValue::object(),
+                   {{}, ""}, {false, JsonValue::object()}, readLogRaw});
+#endif
 
     return api;
   }();

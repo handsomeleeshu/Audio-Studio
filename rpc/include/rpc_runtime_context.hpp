@@ -14,6 +14,10 @@ namespace audio_studio::framework::config {
 class ConfigService;
 }
 
+namespace audio_studio::framework::log {
+class LogService;
+}
+
 namespace audio_studio::rpc {
 
 struct RpcStreamDefaults {
@@ -35,6 +39,9 @@ public:
   void setConfigService(framework::config::ConfigService* config_service);
   bool hasConfigService() const;
   framework::config::ConfigService& config();
+  void setLogService(framework::log::LogService* log_service);
+  bool hasLogService() const;
+  framework::log::LogService& log();
   const RpcStreamDefaults& streamDefaults() const;
   void setStreamDefaults(RpcStreamDefaults defaults);
 
@@ -47,6 +54,7 @@ public:
 private:
   framework::audio::AudioService& audio_service_;
   framework::config::ConfigService* config_service_ = nullptr;
+  framework::log::LogService* log_service_ = nullptr;
   RpcStreamDefaults stream_defaults_;
   std::atomic<uint32_t> next_id_ {1};
   mutable std::mutex ids_mutex_;

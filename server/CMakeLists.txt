@@ -1,123 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 
-if(CONFIG_FRAMEWORK_COMMON)
-  add_library(audio_studio_framework_common
-    framework/common/src/service_registry.cpp
-    framework/common/src/status.cpp
-  )
-  target_include_directories(audio_studio_framework_common PUBLIC framework/common/include)
-  target_compile_features(audio_studio_framework_common PUBLIC cxx_std_17)
-endif()
+add_subdirectory(framework)
 
 if(CONFIG_DRIVERS_CORE OR CONFIG_DRIVER_DUMMY OR CONFIG_DRIVER_OS OR CONFIG_DRIVER_SOCKET OR
    CONFIG_DRIVER_FILESYSTEM OR CONFIG_DRIVER_PIPE OR CONFIG_DRIVER_DYNLIB OR
-   CONFIG_DRIVER_TRANSPORT OR CONFIG_DRIVER_AUDIO OR CONFIG_DRIVER_CONTROL OR
+   CONFIG_DRIVER_DATALINK OR CONFIG_DRIVER_AUDIO OR CONFIG_DRIVER_CONTROL OR
    CONFIG_DRIVER_LOG OR CONFIG_DRIVER_DUMP)
   add_subdirectory("${PROJECT_SOURCE_DIR}/drivers" "${CMAKE_BINARY_DIR}/drivers")
 endif()
 
-if(CONFIG_PLATFORM_CORE)
-  add_library(audio_studio_platform_core
-    platform/core/src/platform_registry.cpp
-  )
-  target_include_directories(audio_studio_platform_core PUBLIC platform/core/include)
-  target_link_libraries(audio_studio_platform_core PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_platform_core PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_PLATFORM_A2)
-  add_library(audio_studio_platform_a2
-    platform/a2/src/a2_platform.cpp
-  )
-  target_include_directories(audio_studio_platform_a2 PUBLIC platform/a2/include)
-  target_link_libraries(audio_studio_platform_a2 PUBLIC audio_studio_platform_core)
-  target_compile_features(audio_studio_platform_a2 PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_SESSION)
-  add_library(audio_studio_framework_session
-    framework/session/src/session_registry.cpp
-  )
-  target_include_directories(audio_studio_framework_session PUBLIC framework/session/include)
-  target_link_libraries(audio_studio_framework_session PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_session PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_CONTROL)
-  add_library(audio_studio_framework_control
-    framework/control/src/control_service.cpp
-  )
-  target_include_directories(audio_studio_framework_control PUBLIC framework/control/include)
-  target_link_libraries(audio_studio_framework_control PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_control PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_AUDIO)
-  add_library(audio_studio_framework_audio
-    framework/audio/src/audio_service.cpp
-  )
-  target_include_directories(audio_studio_framework_audio PUBLIC
-    framework/audio/include
-    "${PROJECT_SOURCE_DIR}/drivers/audio/include"
-  )
-  target_link_libraries(audio_studio_framework_audio PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_audio PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_CONFIG)
-  add_library(audio_studio_framework_config
-    framework/config/src/config_service.cpp
-  )
-  target_include_directories(audio_studio_framework_config PUBLIC
-    framework/config/include
-    "${PROJECT_SOURCE_DIR}/drivers/filesystem/include"
-    "${PROJECT_SOURCE_DIR}/drivers/os/include"
-    "${PROJECT_SOURCE_DIR}/drivers/dynlib/include"
-  )
-  target_link_libraries(audio_studio_framework_config PUBLIC
-    audio_studio_framework_common
-    audio_studio_json
-    AudioStudio::ModuleConfigSdk
-  )
-  target_compile_features(audio_studio_framework_config PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_LOG)
-  add_library(audio_studio_framework_log
-    framework/log/src/log_service.cpp
-  )
-  target_include_directories(audio_studio_framework_log PUBLIC framework/log/include)
-  target_link_libraries(audio_studio_framework_log PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_log PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_DUMP)
-  add_library(audio_studio_framework_dump
-    framework/dump/src/dump_service.cpp
-  )
-  target_include_directories(audio_studio_framework_dump PUBLIC framework/dump/include)
-  target_link_libraries(audio_studio_framework_dump PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_dump PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_PLUGIN)
-  add_library(audio_studio_framework_plugin
-    framework/plugin/src/plugin_manager.cpp
-  )
-  target_include_directories(audio_studio_framework_plugin PUBLIC framework/plugin/include)
-  target_link_libraries(audio_studio_framework_plugin PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_plugin PUBLIC cxx_std_17)
-endif()
-
-if(CONFIG_FRAMEWORK_TRANSPORT)
-  add_library(audio_studio_framework_transport
-    framework/transport/src/frame_codec.cpp
-    framework/transport/src/transport_manager.cpp
-  )
-  target_include_directories(audio_studio_framework_transport PUBLIC framework/transport/include)
-  target_link_libraries(audio_studio_framework_transport PUBLIC audio_studio_framework_common)
-  target_compile_features(audio_studio_framework_transport PUBLIC cxx_std_17)
-endif()
+add_subdirectory(platform)
 
 if(CONFIG_RPC)
   add_subdirectory("${PROJECT_SOURCE_DIR}/rpc" "${CMAKE_BINARY_DIR}/rpc")
@@ -145,8 +37,8 @@ endif()
 if(CONFIG_DRIVER_DYNLIB)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_dynlib)
 endif()
-if(CONFIG_DRIVER_TRANSPORT)
-  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_transport)
+if(CONFIG_DRIVER_DATALINK)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_datalink)
 endif()
 if(CONFIG_DRIVER_AUDIO)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_driver_audio)
@@ -168,6 +60,9 @@ if(CONFIG_PLATFORM_CORE)
 endif()
 if(CONFIG_PLATFORM_A2)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_a2)
+endif()
+if(CONFIG_PLATFORM_SIMULATOR)
+  list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_platform_simulator)
 endif()
 if(CONFIG_FRAMEWORK_SESSION)
   list(APPEND AUDIO_STUDIO_SERVER_LIBS audio_studio_framework_session)

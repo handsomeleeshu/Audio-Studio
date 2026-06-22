@@ -21,6 +21,7 @@ AUDIO_CONTROLLER_PROFILE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'audio_cont
 MODULE_CONFIG_EXAMPLE_BUILD_DIR = ROOT / 'out' / 'module-config-sdk-example'
 PREBUILT_ALSATPLG = ROOT / 'third_party' / 'alsatplg' / 'bin' / 'alsatplg'
 RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_socket' / 'Debug'
+RPC_SOCKET_SIMULATOR_BUILD_DIR = ROOT / 'out' / 'linux' / 'simulator' / 'rpc_socket' / 'Debug'
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
 WINDOWS_RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'rpc_socket' / 'Debug'
@@ -170,6 +171,157 @@ def require_contains(text, expected):
     assert expected in text, f'missing {expected!r}'
 
 
+def assert_datalink_driver_naming():
+    assert (ROOT / 'drivers' / 'datalink' / 'include' / 'datalink_device.hpp').exists()
+    assert not (ROOT / 'drivers' / 'transport' / 'include' / 'transport_driver.hpp').exists()
+    assert not (ROOT / 'audio_controller' / 'platform').exists()
+
+    forbidden = (
+        'ITransportDriver',
+        'ITransportDriverFactory',
+        'TransportDriverRegistry',
+        'linux_host_transport_driver',
+        'macos_transport_driver',
+        'CONFIG_DRIVER_TRANSPORT',
+    )
+    for root in (
+        ROOT / 'drivers',
+        ROOT / 'server',
+        ROOT / 'configs',
+        ROOT / 'audio_controller',
+    ):
+        for source in root.rglob('*'):
+            if source.is_dir() or source.suffix not in ('.cpp', '.hpp', '.h', '.c', '.txt', '.cmake', ''):
+                continue
+            text = source.read_text(errors='ignore')
+            for expected_absent in forbidden:
+                assert expected_absent not in text, (
+                    f'{expected_absent} still appears in {source.relative_to(ROOT)}')
+
+
+def assert_as_log_embeds_sof_decoder():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    rpc_api = read_text(ROOT / 'rpc' / 'api' / 'audio_studio_rpc_api.cpp')
+    log_service = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'log_service.cpp')
+    server_cmake = read_text(ROOT / 'server' / 'CMakeLists.txt')
+    log_cmake = read_text(ROOT / 'server' / 'framework' / 'log' / 'CMakeLists.txt')
+
+    assert '--sof-logger' not in cli_common
+    assert 'sof_logger' not in cli_common
+    assert 'sof_logger' not in rpc_api
+    assert 'std::system' not in log_service
+    assert 'tools/logger/convert.c' not in server_cmake
+    require_contains(log_cmake, 'tools/logger/convert.c')
+
+
+def assert_sof_test_ac_run_is_platform_neutral():
+    ac_run = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'ac-run-cmds.c')
+    forbidden = (
+        'rv32qemu',
+        'SOF_TEST_PLATFORM',
+        'ac_rv32qemu',
+        'sof_ipc_set_trace_bytes_sink',
+        'audio_controller_append_log_data',
+    )
+    for expected_absent in forbidden:
+        assert expected_absent not in ac_run
+
+
+def assert_as_log_cli_is_transport_neutral():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
+    log_service_header = read_text(ROOT / 'server' / 'framework' / 'log' / 'include' / 'log_service.hpp')
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+
+    assert 'if (tool == "as_log") options.driver_factory = "linux-host";' not in cli_common
+    assert 'if (tool != "as_log")' in cli_common
+    for forbidden_param in ('params["driver_factory"]', 'params["datalink_endpoint"]', 'params["trace_ldc"]'):
+        assert forbidden_param not in cli_common
+    require_contains(as_server, '--log-driver-factory')
+    require_contains(as_server, '--log-datalink-endpoint')
+    require_contains(as_server, '--log-trace-ldc')
+    require_contains(log_service_header, 'setDefaultSessionConfig')
+    require_contains(rv32_helper, '"--log-driver-factory", "rv32qemu"')
+    require_contains(rv32_helper, '"--log-datalink-endpoint", datalink_endpoint')
+    require_contains(rv32_helper, '"--log-trace-ldc", trace_ldc')
+
+    as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('--driver-factory', '--datalink-endpoint', '--trace-ldc'):
+        assert forbidden not in as_log_section
+
+
+def assert_framework_build_config_is_modular():
+    server_cmake = read_text(ROOT / 'server' / 'CMakeLists.txt')
+    framework_kconfig = read_text(ROOT / 'server' / 'framework' / 'Kconfig')
+    platform_kconfig = read_text(ROOT / 'server' / 'platform' / 'Kconfig')
+
+    for module in ['common', 'session', 'control', 'audio', 'config', 'log', 'dump', 'plugin', 'transport']:
+        assert (ROOT / 'server' / 'framework' / module / 'CMakeLists.txt').exists()
+        assert (ROOT / 'server' / 'framework' / module / 'Kconfig').exists()
+        assert f'source "server/framework/{module}/Kconfig"' in framework_kconfig
+        assert f'framework/{module}/src/' not in server_cmake
+
+    for module in ['core', 'a2', 'simulator']:
+        assert (ROOT / 'server' / 'platform' / module / 'CMakeLists.txt').exists()
+        assert (ROOT / 'server' / 'platform' / module / 'Kconfig').exists()
+        assert f'source "server/platform/{module}/Kconfig"' in platform_kconfig
+        assert f'platform/{module}/src/' not in server_cmake
+
+    assert 'add_subdirectory(framework)' in server_cmake
+    assert 'add_subdirectory(platform)' in server_cmake
+
+
+def assert_audio_controller_transport_channels_are_layered():
+    transport_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.c')
+    transport_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport.h')
+    log_c = read_text(ROOT / 'audio_controller' / 'src' / 'ac_log.c')
+    channel_h = read_text(ROOT / 'audio_controller' / 'src' / 'ac_transport_channel.h')
+    rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
+
+    assert 'ac_transport_handle_log' not in transport_c
+    assert 'ac_log_transport_handler' in log_c
+    assert 'ac_transport_register_channel' in transport_h
+    assert 'ac_transport_open_channel' in transport_h
+    assert 'AC_TRANSPORT_CHANNEL_LOG' in channel_h
+    assert 'AC_TRANSPORT_CHANNEL_DUMP' in channel_h
+    assert '#include "ac_transport_channel.h"' in rv32_log_device
+    assert 'kLogChannelId = 1' not in rv32_log_device
+
+
+def assert_sof_test_ac_run_uses_getopt_long():
+    ac_run = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'ac-run-cmds.c')
+    assert '#include <getopt.h>' in ac_run
+    assert 'getopt_long' in ac_run
+    assert 'ac_run_option_value' not in ac_run
+    assert 'ac_run_has_option' not in ac_run
+
+
+def assert_default_rpc_endpoint_can_be_omitted_for_as_log():
+    cli_common = read_text(ROOT / 'cli' / 'common' / 'src' / 'cli_common.cpp')
+    as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+
+    require_contains(cli_common, 'uint16_t port = 9900;')
+    require_contains(as_server, 'uint16_t port = 9900;')
+    require_contains(rv32_helper, 'DEFAULT_AS_SERVER_PORT = 9900')
+
+    as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('"--host"', '"--port"'):
+        assert forbidden not in as_log_section
+
+    server_cmd_section = rv32_helper.split('server_cmd = [', 1)[1].split(']', 1)[0]
+    for forbidden in ('"--host"', '"--port"'):
+        assert forbidden not in server_cmd_section
+
+
+def assert_rv32_log_timeout_is_not_fatal_for_follow():
+    rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
+    require_contains(rv32_log_device, 'isTransportReadTimeout')
+    require_contains(rv32_log_device, 'chunk.bytes.clear()')
+    read_chunk = rv32_log_device.split('readChunk(drivers::log::LogRawChunk& chunk', 1)[1].split('getStats', 1)[0]
+    assert 'if (!status.ok()) return status;' not in read_chunk
+
+
 def assert_as_config_decode_status(result, out_dir, project_name):
     decode_log = out_dir / f'{project_name}_decode.log'
     assert decode_log.exists(), f'missing as_config decode log: {decode_log}'
@@ -220,6 +372,11 @@ def assert_modular_kconfig_tree():
     require_contains(rpc_kconfig, 'config RPC_SERVER')
     require_contains(rpc_kconfig, 'config RPC_TRANSPORT_SOCKET')
     require_contains(rpc_kconfig, 'config RPC_TRANSPORT_PIPE')
+    platform_kconfig = read_text(ROOT / 'server' / 'platform' / 'Kconfig')
+    require_contains(platform_kconfig, 'source "server/platform/a2/Kconfig"')
+    require_contains(platform_kconfig, 'source "server/platform/simulator/Kconfig"')
+    simulator_kconfig = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'Kconfig')
+    require_contains(simulator_kconfig, 'config PLATFORM_SIMULATOR')
 
 
 def assert_driver_cmake_tree():
@@ -233,7 +390,7 @@ def assert_driver_cmake_tree():
         'os',
         'pipe',
         'socket',
-        'transport',
+        'datalink',
     ]:
         assert (ROOT / 'drivers' / module / 'CMakeLists.txt').exists()
         assert not (ROOT / 'drivers' / module / 'src' / 'CMakeLists.txt').exists()
@@ -309,6 +466,15 @@ def exercise_kconfig_targets():
 def main():
     assert_modular_kconfig_tree()
     assert_driver_cmake_tree()
+    assert_datalink_driver_naming()
+    assert_as_log_embeds_sof_decoder()
+    assert_sof_test_ac_run_is_platform_neutral()
+    assert_as_log_cli_is_transport_neutral()
+    assert_framework_build_config_is_modular()
+    assert_audio_controller_transport_channels_are_layered()
+    assert_sof_test_ac_run_uses_getopt_long()
+    assert_default_rpc_endpoint_can_be_omitted_for_as_log()
+    assert_rv32_log_timeout_is_not_fatal_for_follow()
 
     if LINUX_BUILD_DIR.exists():
         shutil.rmtree(LINUX_BUILD_DIR)
@@ -428,6 +594,7 @@ def main():
         '-B', str(AUDIO_CONTROLLER_BUILD_DIR),
     ])
     run(['cmake', '--build', str(AUDIO_CONTROLLER_BUILD_DIR)])
+    run(['ctest', '--test-dir', str(AUDIO_CONTROLLER_BUILD_DIR), '--output-on-failure'])
     audio_controller_lib = AUDIO_CONTROLLER_BUILD_DIR / 'libaudio_controller.a'
     assert audio_controller_lib.exists(), f'missing audio_controller library: {audio_controller_lib}'
     audio_controller_header = ROOT / 'audio_controller' / 'include' / 'audio_controller.h'
@@ -436,6 +603,7 @@ def main():
     if AUDIO_CONTROLLER_PROFILE_BUILD_DIR.exists():
         shutil.rmtree(AUDIO_CONTROLLER_PROFILE_BUILD_DIR)
     run([str(BUILD_ALL), '--profile', 'audio_controller', 'linux', 'a2'])
+    run(['ctest', '--test-dir', str(AUDIO_CONTROLLER_PROFILE_BUILD_DIR), '--output-on-failure'])
     profile_audio_controller_lib = AUDIO_CONTROLLER_PROFILE_BUILD_DIR / 'libaudio_controller.a'
     assert profile_audio_controller_lib.exists(), f'missing audio_controller profile library: {profile_audio_controller_lib}'
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
@@ -586,7 +754,7 @@ def main():
     if rpc_socket_record_wav.exists():
         rpc_socket_record_wav.unlink()
     socket_server = subprocess.Popen(
-        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '15'],
+        [str(RPC_SOCKET_BUILD_DIR / 'as_server'), '--rpc', '--host', '127.0.0.1', '--port', socket_port, '--max-requests', '20'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -601,6 +769,16 @@ def main():
         ])
         require_contains(socket_cli, '"ok":true')
         require_contains(socket_cli, '"platform":"a2"')
+        socket_log = retry_check_output([
+            str(RPC_SOCKET_BUILD_DIR / 'as_log'),
+            '--host', '127.0.0.1',
+            '--port', socket_port,
+            '--level', 'info',
+            '--count', '2',
+            '--no-color',
+        ])
+        require_contains(socket_log, '[INF] [FW] audio controller log online')
+        require_contains(socket_log, '[WRN] [FW] transport channel waiting for host')
         socket_play = retry_check_output([
             str(RPC_SOCKET_BUILD_DIR / 'as_play'),
             '--host', '127.0.0.1',
@@ -645,6 +823,46 @@ def main():
     finally:
         if socket_server.poll() is None:
             socket_server.terminate()
+
+    if RPC_SOCKET_SIMULATOR_BUILD_DIR.exists():
+        shutil.rmtree(RPC_SOCKET_SIMULATOR_BUILD_DIR)
+    run([str(BUILD_ALL), '--profile', 'rpc_socket', 'linux', 'simulator'])
+    rpc_socket_sim_config = read_text(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'generated' / '.config')
+    require_contains(rpc_socket_sim_config, 'CONFIG_TARGET_PLATFORM_SIMULATOR=y')
+    require_contains(rpc_socket_sim_config, 'CONFIG_PLATFORM_SIMULATOR=y')
+    assert (RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server').exists()
+    assert (RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_log').exists()
+    run(['ctest', '--test-dir', str(RPC_SOCKET_SIMULATOR_BUILD_DIR), '--output-on-failure'])
+    simulator_port = find_free_port()
+    simulator_server = subprocess.Popen(
+        [
+            str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_server'),
+            '--rpc',
+            '--host', '127.0.0.1',
+            '--port', simulator_port,
+            '--max-requests', '5',
+            '--log-driver-factory', 'rv32qemu-simulator',
+        ],
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        simulator_log = retry_check_output([
+            str(RPC_SOCKET_SIMULATOR_BUILD_DIR / 'as_log'),
+            '--host', '127.0.0.1',
+            '--port', simulator_port,
+            '--level', 'debug',
+            '--count', '2',
+            '--no-color',
+        ])
+        require_contains(simulator_log, '[INF] [FW] rv32qemu audio controller log channel open')
+        require_contains(simulator_log, '[DBG] [TRP] transport manager log read request')
+        assert simulator_server.wait(timeout=5) == 0
+    finally:
+        if simulator_server.poll() is None:
+            simulator_server.terminate()
 
     if shutil.which('pactl'):
         try:
@@ -712,7 +930,7 @@ def main():
         if path.exists():
             path.unlink()
     pipe_server = subprocess.Popen(
-        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '14'],
+        [str(RPC_PIPE_BUILD_DIR / 'as_server'), '--rpc', 'pipe', str(request_pipe), str(response_pipe), '--max-requests', '19'],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -729,6 +947,16 @@ def main():
         ])
         require_contains(pipe_cli, '"ok":true')
         require_contains(pipe_cli, '"platform":"a2"')
+        pipe_log = retry_check_output([
+            str(RPC_PIPE_BUILD_DIR / 'as_log'),
+            '--rpc', 'pipe',
+            '--request-pipe', str(request_pipe),
+            '--response-pipe', str(response_pipe),
+            '--level', 'warning',
+            '--count', '1',
+            '--no-color',
+        ])
+        require_contains(pipe_log, '[WRN] [FW] transport channel waiting for host')
         pipe_play = retry_check_output([
             str(RPC_PIPE_BUILD_DIR / 'as_play'),
             '--rpc', 'pipe',
