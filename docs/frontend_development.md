@@ -6,7 +6,7 @@
 
 ```text
 GUI/frontend/index.html
-GUI/frontend/config/built-in-algorithm.json
+configs/built-in-algorithm.json
 GUI/frontend/assets/verisilicon-logo.png
 ```
 
@@ -66,7 +66,7 @@ Runtime Dashboard
 
 1. `GET /api/projects` 获取可用 project。
 2. `GET /api/config?project=...` 加载产品 JSON。
-3. `module_types` 和 `GUI/frontend/config/built-in-algorithm.json` 生成算法库。
+3. `imports` 指向的 module catalog、项目私有 `module_types` 和 `configs/built-in-algorithm.json` 共同生成算法库。
 4. `pipelines` 生成节点、端口、连线和初始 layout。
 5. UI 编辑通过 `/api/pipeline/edit`、`/api/pipeline/tool`、`/api/node/action` 回调后端。
 6. Validate/Build/Run/Stop 调用对应 `/api/*`。
@@ -74,8 +74,9 @@ Runtime Dashboard
 
 ## 参数与运行态规则
 
-- `static_schema.fields`：仅 stopped 状态可改。
-- `runtime_params`：running/stopped 状态都可改，running 时调用 `/api/param/update`。
+- `parameters[]`：统一参数模型；没有 `RUNNING` settable state 的参数作为 install/static 参数处理。
+- 带 `RUNNING` settable state 的 `bool`、`enum`、`int/float` 参数会在 Inspector 自动显示为 toggle、select、slider 或 number input，running 时调用 `/api/param/update`。
+- `static_schema.fields` 和 `runtime_params` 只作为旧 catalog 的兼容输入，新 built-in catalog 不再以它们为主模型。
 - 节点新增、删除、移动、连线、删线：仅 stopped 状态允许。
 - buffer dump 和 real-time probe 数据必须来自后端接口，前端不生成 fake PCM 或 fake spectrum 数据。
 

@@ -38,7 +38,7 @@ int main() {
   assert(buffer_live.find("\"buffer\"") != std::string::npos);
   assert(buffer_live.find("\"pcm16\"") != std::string::npos);
 
-  audiostudio::HttpServer server(".", 0, engine, engine, engine, target_config, inspector);
+  audiostudio::HttpServer server(AUDIO_STUDIO_TEST_ROOT, 0, engine, engine, engine, target_config, inspector);
   audiostudio::HttpRequest req;
   req.method = "POST";
   req.path = "/api/project/save";
@@ -67,6 +67,29 @@ int main() {
   legacy_page.path = "/frontend/index.html";
   auto legacy_page_res = server.handle(legacy_page);
   assert(legacy_page_res.status == 200 || legacy_page_res.status == 404);
+
+  audiostudio::HttpRequest projects;
+  projects.method = "GET";
+  projects.path = "/api/projects";
+  auto projects_res = server.handle(projects);
+  assert(projects_res.status == 200);
+  assert(projects_res.body.find("a2/A2.json") != std::string::npos);
+  assert(projects_res.body.find("simulator/simulator.json") != std::string::npos);
+
+  audiostudio::HttpRequest project_config;
+  project_config.method = "GET";
+  project_config.path = "/api/config";
+  project_config.query = "project=a2%2FA2.json";
+  auto project_config_res = server.handle(project_config);
+  assert(project_config_res.status == 200);
+  assert(project_config_res.body.find("com.vsi.a2.audio_config") != std::string::npos);
+
+  audiostudio::HttpRequest builtin_catalog;
+  builtin_catalog.method = "GET";
+  builtin_catalog.path = "/configs/built-in-algorithm.json";
+  auto builtin_catalog_res = server.handle(builtin_catalog);
+  assert(builtin_catalog_res.status == 200);
+  assert(builtin_catalog_res.body.find("audio_studio_builtin") != std::string::npos);
 
   engine->stop("{\"session_id\":\"standalone_html_demo\"}");
   assert(!engine->running());

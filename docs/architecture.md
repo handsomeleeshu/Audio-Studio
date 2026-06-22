@@ -25,12 +25,11 @@ C++ Backend
 
 ## 前端核心数据流
 
-1. `GET /api/config` 加载 `config/A2.json`。
-2. `module_types` 自动生成左侧算法库。
+1. `GET /api/config` 加载 `configs/platform/a2/A2.json`。
+2. `imports[]` 和 `module_types` 自动生成左侧算法库。
 3. `module_instances + pipelines` 自动实例化 Pipeline 节点。
 4. `io.in_ports/out_ports` 自动生成节点端口。
-5. `static_schema.fields` 自动生成静态参数 UI。
-6. `runtime_params` 自动生成动态参数 UI。
+5. `parameters[]` 自动生成静态参数和运行态 Inspector UI。
 7. 用户手动连接端口后，前端更新 `edges`。
 8. Build/Run/Stop 调用后端 API。
 

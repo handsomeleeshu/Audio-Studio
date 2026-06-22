@@ -1,6 +1,6 @@
 {
   "meta": {
-    "schema_id": "com.vsi.a2.audio_config",
+    "schema_id": "com.vsi.simulator.audio_config",
     "schema_version": "1.4.0",
     "compiler_compat": {
       "min": "1.6.0",
@@ -12,10 +12,17 @@
       "module_abi_max": 3
     },
     "build": {
-      "config_name": "A2_AS_Config_RV32QEMU_FileIO_Play_Record",
+      "config_name": "Simulator_AS_Config_FileIO_Play_Record",
       "created_utc": "2026-06-20T00:00:00Z"
     }
   },
+  "imports": [
+    {
+      "kind": "module_catalog",
+      "catalog_id": "audio_studio_builtin",
+      "path": "configs/built-in-algorithm.json"
+    }
+  ],
   "naming": {
     "host_control": {
       "name_template_instance": "{inst_name} {param_name}",
@@ -156,349 +163,7 @@
       }
     ]
   },
-  "module_types": [
-    {
-      "type_id": "filter.channel_remap",
-      "category": "audio/basic",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "config",
-          "param_name": "Channel Remap",
-          "value_type": "channel_mix_matrix",
-          "default": {
-            "mappings": [
-              {
-                "name": "mono_passthrough",
-                "config_idx": 0,
-                "input": [
-                  "MONO"
-                ],
-                "output": [
-                  "MONO"
-                ],
-                "matrix": [
-                  [
-                    1.0
-                  ]
-                ]
-              },
-              {
-                "name": "mono_to_stereo",
-                "config_idx": 1,
-                "input": [
-                  "MONO"
-                ],
-                "output": [
-                  "FL",
-                  "FR"
-                ],
-                "matrix": [
-                  [
-                    1.0
-                  ],
-                  [
-                    1.0
-                  ]
-                ]
-              },
-              {
-                "name": "stereo_to_mono",
-                "config_idx": 2,
-                "input": [
-                  "FL",
-                  "FR"
-                ],
-                "output": [
-                  "MONO"
-                ],
-                "matrix": [
-                  [
-                    0.5,
-                    0.5
-                  ]
-                ]
-              },
-              {
-                "name": "stereo_passthrough",
-                "config_idx": 3,
-                "input": [
-                  "FL",
-                  "FR"
-                ],
-                "output": [
-                  "FL",
-                  "FR"
-                ],
-                "matrix": [
-                  [
-                    1.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0
-                  ]
-                ]
-              }
-            ]
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "mix.mixer",
-      "category": "audio/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": []
-    },
-    {
-      "type_id": "delay.line",
-      "category": "audio/basic",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "config",
-          "param_name": "Delay Line",
-          "value_type": "delay_line",
-          "unit": "ms",
-          "default": {
-            "max_delay_ms": 250,
-            "ramp_ms": 50,
-            "channels": 2,
-            "per_channel_ms": [
-              0,
-              0
-            ]
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "mix.fader_balance",
-      "category": "audio/basic",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "config",
-          "param_name": "Fader Balance",
-          "value_type": "fader_balance",
-          "default": {
-            "front_back_weight": 0.0,
-            "left_right_weight": 0.0,
-            "ramp": "linear",
-            "ramp_ms": 50
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "filter.dsp_filter",
-      "category": "audio/basic",
-      "abi_version": 3,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "config",
-          "param_name": "DSP Filter",
-          "value_type": "dsp_filter",
-          "default": {
-            "filters": [
-              {
-                "filter_id": "identity_fir",
-                "index": 0,
-                "type": "fir",
-                "coefficients": [
-                  1.0
-                ]
-              }
-            ],
-            "routes": [
-              {
-                "name": "stereo_passthrough",
-                "config_idx": 0,
-                "input": [
-                  "FL",
-                  "FR"
-                ],
-                "output": [
-                  "FL",
-                  "FR"
-                ],
-                "matrix": [
-                  [
-                    "identity_fir",
-                    null
-                  ],
-                  [
-                    null,
-                    "identity_fir"
-                  ]
-                ]
-              }
-            ]
-          },
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "safe_point"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "gain.volume",
-      "category": "audio/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": [
-        {
-          "param_id": "vol_db",
-          "param_name": "Volume",
-          "value_type": "int16",
-          "unit": "dB",
-          "range": {
-            "min": -64,
-            "max": 0,
-            "step": 1
-          },
-          "default": 0,
-          "apply": {
-            "settable_states": [
-              "PIPE_LOADED",
-              "RUNNING"
-            ],
-            "mode": "next_frame"
-          }
-        }
-      ]
-    },
-    {
-      "type_id": "rate.src",
-      "category": "audio/basic",
-      "abi_version": 2,
-      "io": {
-        "in_ports": [
-          {
-            "name": "in",
-            "max_ch": 2
-          }
-        ],
-        "out_ports": [
-          {
-            "name": "out",
-            "max_ch": 2
-          }
-        ]
-      },
-      "parameters": []
-    }
-  ],
+  "module_types": [],
   "module_instances": [
     {
       "inst_id": "PLAY_CHREMAP0",
@@ -757,7 +422,7 @@
           "pipeline_id": "PLAYBACK_MAIN",
           "node_id": "VOLUME",
           "values": {
-            "vol_db": 0
+            "volume_db": 0
           }
         }
       ]
@@ -771,7 +436,7 @@
           "pipeline_id": "CAPTURE_MAIN",
           "node_id": "VOLUME",
           "values": {
-            "vol_db": 0
+            "volume_db": 0
           }
         }
       ]

@@ -25,6 +25,11 @@ RPC_SOCKET_SIMULATOR_BUILD_DIR = ROOT / 'out' / 'linux' / 'simulator' / 'rpc_soc
 RPC_PIPE_BUILD_DIR = ROOT / 'out' / 'linux' / 'a2' / 'rpc_pipe' / 'Debug'
 WINDOWS_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'as_server_minimal' / 'Debug'
 WINDOWS_RPC_SOCKET_BUILD_DIR = ROOT / 'out' / 'windows' / 'a2' / 'rpc_socket' / 'Debug'
+A2_PLATFORM_DIR = ROOT / 'configs' / 'platform' / 'a2'
+SIMULATOR_PLATFORM_DIR = ROOT / 'configs' / 'platform' / 'simulator'
+A2_PROJECT_JSON = A2_PLATFORM_DIR / 'A2.json'
+SIMULATOR_PROJECT_JSON = SIMULATOR_PLATFORM_DIR / 'simulator.json'
+BUILTIN_ALGORITHM_JSON = ROOT / 'configs' / 'built-in-algorithm.json'
 
 
 def run(command, **kwargs):
@@ -464,6 +469,14 @@ def exercise_kconfig_targets():
 
 
 def main():
+    assert not (ROOT / 'config').exists(), 'top-level config/ must be folded into configs/'
+    assert not (ROOT / 'GUI' / 'frontend' / 'config').exists(), 'built-in catalog must live under configs/'
+    assert (A2_PLATFORM_DIR / 'a2_defconfig').exists(), 'missing a2 platform defconfig'
+    assert A2_PROJECT_JSON.exists(), 'missing a2 platform JSON config'
+    assert (SIMULATOR_PLATFORM_DIR / 'simulator_defconfig').exists(), 'missing simulator platform defconfig'
+    assert SIMULATOR_PROJECT_JSON.exists(), 'missing simulator platform JSON config'
+    assert BUILTIN_ALGORITHM_JSON.exists(), 'missing built-in algorithm catalog under configs/'
+
     assert_modular_kconfig_tree()
     assert_driver_cmake_tree()
     assert_datalink_driver_naming()
@@ -504,7 +517,7 @@ def main():
         text=True,
         stdout=subprocess.PIPE,
     ).stdout
-    assert 'PLATFORM_CONFIG=' in dry_run and 'configs/platform/a2_defconfig' in dry_run
+    assert 'PLATFORM_CONFIG=' in dry_run and 'configs/platform/a2/a2_defconfig' in dry_run
     assert 'OS=windows' in dry_run
     assert 'windows-mingw.cmake' in dry_run
 
@@ -550,11 +563,11 @@ def main():
         shutil.rmtree(as_config_out)
     as_config_result = check_output([
         str(AS_CONFIG_BUILD_DIR / 'as_config'),
-        '--input', str(ROOT / 'config' / 'A2.json'),
+        '--input', str(A2_PROJECT_JSON),
         '--out-dir', str(as_config_out),
         '--project-name', 'a2_test',
     ])
-    require_contains(as_config_result, '"runtime_control_count":7')
+    require_contains(as_config_result, '"runtime_control_count":19')
     require_contains(as_config_result, '"pipeline_count":3')
     require_contains(as_config_result, '"tplg_built":true')
     assert_as_config_decode_status(as_config_result, as_config_out, 'a2_test')
@@ -609,8 +622,8 @@ def main():
     ids_header = read_text(as_config_out / 'include' / 'as_config_ids.h')
     require_contains(ids_header, 'AS_MODULE_TYPE_RATE_SRC')
     assert 'AS_MODULE_TYPE_SERVICE_ASRC' not in ids_header
-    require_contains(ids_header, '#define AS_PARAM_GAIN_VOLUME_VOL_DB 0x172E41DCu')
-    require_contains(ids_header, 'AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOL_DB')
+    require_contains(ids_header, '#define AS_PARAM_GAIN_VOLUME_VOLUME_DB 0x7B6FD765u')
+    require_contains(ids_header, 'AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOLUME_DB')
     private_payload = (as_config_out / 'a2_test_private.bin').read_bytes()
     assert b'as-builtin-gain-volume-runtime-json-v1' in private_payload
     assert b'as-builtin-gain-volume-preset-json-v1' in private_payload
@@ -620,11 +633,20 @@ def main():
     assert b'"config_format":"sof-ipc3-bytes-v1"' in private_payload
     assert b'"codec_format"' not in private_payload
     assert b'"config_format"' in private_payload
-    a2_json_text = read_text(ROOT / 'config' / 'A2.json')
+    a2_json_text = read_text(A2_PROJECT_JSON)
+    simulator_json_text = read_text(SIMULATOR_PROJECT_JSON)
+    builtin_json_text = read_text(BUILTIN_ALGORITHM_JSON)
     assert 'param_encoding' not in a2_json_text
-    require_contains(a2_json_text, '"type_id": "filter.channel_remap"')
-    require_contains(a2_json_text, '"type_id": "mix.fader_balance"')
-    require_contains(a2_json_text, '"type_id": "filter.dsp_filter"')
+    require_contains(a2_json_text, '"path": "configs/built-in-algorithm.json"')
+    assert '"type_id": "filter.channel_remap"' not in a2_json_text
+    assert '"type_id": "mix.fader_balance"' not in a2_json_text
+    assert '"type_id": "filter.dsp_filter"' not in a2_json_text
+    require_contains(builtin_json_text, '"schema_version": "2.0.0"')
+    require_contains(simulator_json_text, '"path": "configs/built-in-algorithm.json"')
+    require_contains(builtin_json_text, '"type_id": "filter.channel_remap"')
+    require_contains(builtin_json_text, '"param_id": "layout"')
+    require_contains(builtin_json_text, '"type_id": "filter.dsp_filter"')
+    require_contains(builtin_json_text, '"param_id": "filter_preset"')
 
     as_config_no_tplg_out = ROOT / 'out' / 'as-config-no-tplg-test'
     if as_config_no_tplg_out.exists():
@@ -634,12 +656,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='as-config-no-tplg-cwd-') as no_tplg_cwd:
         no_tplg_result = check_output([
             str(AS_CONFIG_BUILD_DIR / 'as_config'),
-            '--input', str(ROOT / 'config' / 'A2.json'),
+            '--input', str(A2_PROJECT_JSON),
             '--out-dir', str(as_config_no_tplg_out),
             '--project-name', 'a2_no_tplg_test',
             '--no-tplg',
         ], cwd=no_tplg_cwd, env=no_tplg_env)
-    require_contains(no_tplg_result, '"runtime_control_count":7')
+    require_contains(no_tplg_result, '"runtime_control_count":19')
     require_contains(no_tplg_result, '"pipeline_count":3')
     require_contains(no_tplg_result, '"tplg_built":false')
     for path in [
@@ -667,7 +689,7 @@ def main():
         shutil.rmtree(builtin_config_out)
     check_output([
         str(AS_CONFIG_BUILD_DIR / 'as_config'),
-        '--input', str(ROOT / 'config' / 'A2.json'),
+        '--input', str(A2_PROJECT_JSON),
         '--out-dir', str(builtin_config_out),
         '--project-name', 'a2_builtin_module_config_test',
         '--plugin', str(builtin_module_config_plugin),
@@ -713,12 +735,12 @@ def main():
         str(AS_CONFIG_BUILD_DIR / 'as_server'),
         '--rpc-once',
         '{"jsonrpc":"2.0","id":2,"method":"config.compile","params":{'
-        f'"input_path":"{ROOT / "config" / "A2.json"}",'
+        f'"input_path":"{A2_PROJECT_JSON}",'
         f'"output_dir":"{rpc_config_out}",'
         '"project_name":"a2_rpc_test","build_tplg":true}}',
     ])
     require_contains(rpc_compile, '"jsonrpc":"2.0"')
-    require_contains(rpc_compile, '"runtime_control_count":7')
+    require_contains(rpc_compile, '"runtime_control_count":19')
     require_contains(rpc_compile, '"pipeline_count":3')
     assert_as_config_decode_status(rpc_compile, rpc_config_out, 'a2_rpc_test')
     assert (rpc_config_out / 'a2_rpc_test.tplg').exists()

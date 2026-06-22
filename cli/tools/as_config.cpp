@@ -18,7 +18,7 @@ struct ConfigCliOptions {
   bool no_tplg = false;
   bool strict = true;
   std::string target;
-  std::string input = "config/A2.json";
+  std::string input = "configs/platform/a2/A2.json";
   std::string output_dir = "out/as_config/a2";
   std::string project_name = "a2";
   std::string alsatplg = "alsatplg";

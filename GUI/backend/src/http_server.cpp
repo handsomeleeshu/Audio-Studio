@@ -128,16 +128,80 @@ std::string sanitizeConfigFileName(const std::string& input) {
   return out;
 }
 
+std::string defaultProjectConfigPath() {
+  return "a2/A2.json";
+}
+
+bool isSafeConfigPathComponent(const std::string& component) {
+  if (component.empty() || component == "." || component == "..") return false;
+  for (char c : component) {
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+    if (!ok) return false;
+  }
+  return true;
+}
+
+std::string sanitizeProjectConfigPath(const std::string& input) {
+  std::string normalized = input.empty() ? defaultProjectConfigPath() : input;
+  std::replace(normalized.begin(), normalized.end(), '\\', '/');
+  const std::string platform_prefix = "configs/platform/";
+  const std::string legacy_prefix = "config/";
+  if (normalized.rfind(platform_prefix, 0) == 0) normalized = normalized.substr(platform_prefix.size());
+  if (normalized.rfind(legacy_prefix, 0) == 0) normalized = normalized.substr(legacy_prefix.size());
+  while (!normalized.empty() && normalized.front() == '/') normalized.erase(normalized.begin());
+
+  if (normalized.empty() || normalized == "A2.json") return defaultProjectConfigPath();
+  if (normalized == "simulator.json") return "simulator/simulator.json";
+  if (normalized.size() < 5 || normalized.substr(normalized.size() - 5) != ".json") normalized += ".json";
+
+  std::vector<std::string> components;
+  std::string current;
+  for (size_t i = 0; i <= normalized.size(); ++i) {
+    const char c = (i == normalized.size()) ? '/' : normalized[i];
+    if (c == '/') {
+      if (!current.empty()) {
+        if (!isSafeConfigPathComponent(current)) return defaultProjectConfigPath();
+        components.push_back(current);
+        current.clear();
+      }
+    } else {
+      current.push_back(c);
+    }
+  }
+  if (components.empty()) return defaultProjectConfigPath();
+  std::ostringstream out;
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (i) out << "/";
+    out << components[i];
+  }
+  return out.str();
+}
+
+std::string projectConfigRelPath(const std::string& input) {
+  return std::string("configs/platform/") + sanitizeProjectConfigPath(input);
+}
+
 std::vector<std::string> listConfigJsonFiles(const std::string& root_dir) {
   std::vector<std::string> files;
-  const std::string dir_path = root_dir + "/config";
-  DIR* dir = opendir(dir_path.c_str());
-  if (!dir) return files;
-  while (auto* ent = readdir(dir)) {
-    std::string name = ent->d_name;
-    if (name.size() >= 5 && name.substr(name.size() - 5) == ".json" && name != "built-in-algorithm.json" && name != "projects.json") files.push_back(name);
+  const std::string platform_root = root_dir + "/configs/platform";
+  DIR* root = opendir(platform_root.c_str());
+  if (!root) return files;
+  while (auto* platform_ent = readdir(root)) {
+    std::string platform = platform_ent->d_name;
+    if (!isSafeConfigPathComponent(platform)) continue;
+    const std::string platform_dir = platform_root + "/" + platform;
+    DIR* dir = opendir(platform_dir.c_str());
+    if (!dir) continue;
+    while (auto* ent = readdir(dir)) {
+      std::string name = ent->d_name;
+      if (name.size() >= 5 && name.substr(name.size() - 5) == ".json" && name != "projects.json") {
+        files.push_back(platform + "/" + name);
+      }
+    }
+    closedir(dir);
   }
-  closedir(dir);
+  closedir(root);
   std::sort(files.begin(), files.end());
   return files;
 }
@@ -148,6 +212,8 @@ std::string configProjectListJson(const std::string& root_dir) {
   ss << "{\"projects\":[";
   for (size_t i = 0; i < files.size(); ++i) {
     std::string name = files[i];
+    const auto slash = name.find_last_of('/');
+    if (slash != std::string::npos) name = name.substr(slash + 1);
     if (name.size() >= 5) name = name.substr(0, name.size() - 5);
     if (i) ss << ",";
     ss << "{\"file\":\"" << jsonEscape(files[i]) << "\",\"name\":\"" << jsonEscape(name) << "\"}";
@@ -271,21 +337,29 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     return serveFrontendFile(req.path.substr(legacy_frontend_prefix.size()), "");
   }
   if (req.method == "GET" && startsWith(req.path, gui_config_prefix) && hasJsonSuffix(req.path)) {
-    return serveFrontendFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(gui_config_prefix.size())), "application/json; charset=utf-8");
+    return serveFile(std::string("configs/") + sanitizeConfigFileName(req.path.substr(gui_config_prefix.size())), "application/json; charset=utf-8");
   }
   if (req.method == "GET" && startsWith(req.path, legacy_config_prefix) && hasJsonSuffix(req.path)) {
-    return serveFrontendFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(legacy_config_prefix.size())), "application/json; charset=utf-8");
+    return serveFile(std::string("configs/") + sanitizeConfigFileName(req.path.substr(legacy_config_prefix.size())), "application/json; charset=utf-8");
   }
   if (req.method == "GET" && req.path == "/api/projects") {
     return {200, "application/json; charset=utf-8", configProjectListJson(root_dir_)};
   }
   if (req.method == "GET" && req.path == "/api/config") {
     auto q = parseQuery(req.query);
-    return serveFile(std::string("config/") + sanitizeConfigFileName(q["project"]), "application/json; charset=utf-8");
+    return serveFile(projectConfigRelPath(q["project"]), "application/json; charset=utf-8");
   }
   if (req.method == "GET" && req.path.rfind("/config/", 0) == 0 &&
       req.path.size() >= 12 && req.path.substr(req.path.size() - 5) == ".json") {
-    return serveFile(std::string("config/") + sanitizeConfigFileName(req.path.substr(8)), "application/json; charset=utf-8");
+    return serveFile(projectConfigRelPath(req.path.substr(8)), "application/json; charset=utf-8");
+  }
+  if (req.method == "GET" && req.path.rfind("/configs/platform/", 0) == 0 &&
+      req.path.size() >= 23 && req.path.substr(req.path.size() - 5) == ".json") {
+    return serveFile(projectConfigRelPath(req.path.substr(18)), "application/json; charset=utf-8");
+  }
+  if (req.method == "GET" && req.path.rfind("/configs/", 0) == 0 &&
+      req.path.size() >= 14 && req.path.substr(req.path.size() - 5) == ".json") {
+    return serveFile(std::string("configs/") + sanitizeConfigFileName(req.path.substr(9)), "application/json; charset=utf-8");
   }
   if (req.method == "GET" && req.path == "/api/target/config") {
     auto q = parseQuery(req.query);

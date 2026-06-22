@@ -532,7 +532,7 @@ JsonValue listModuleConfigs(RpcRuntimeContext& context, const JsonValue&) {
 
 JsonValue compileParamsExample() {
   JsonValue params = JsonValue::object();
-  params["input_path"] = "config/A2.json";
+  params["input_path"] = "configs/platform/a2/A2.json";
   params["output_dir"] = "out/as_config/a2";
   params["project_name"] = "a2";
   params["alsatplg"] = "alsatplg";

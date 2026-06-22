@@ -2,8 +2,10 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -122,13 +124,13 @@ public:
       const auto& value = values.at(request.parameter_id);
       std::vector<uint8_t> payload;
       if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
-        payload = packChannelRemap(value);
+        payload = packChannelRemap(request.parameter_id == "config" ? value : channelRemapPreset(value));
       } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
-        payload = packDelayLine(value);
+        payload = packDelayLine(request.parameter_id == "config" ? value : delayLineParam(request.parameter_id, value));
       } else if (module_type_ == "mix.fader_balance") {
-        payload = packFaderBalance(value);
+        payload = packFaderBalance(request.parameter_id == "config" ? value : faderBalanceParam(request.parameter_id, value));
       } else if (module_type_ == "filter.dsp_filter") {
-        payload = packDspFilter(value);
+        payload = packDspFilter(request.parameter_id == "config" ? value : dspFilterPreset(value));
       } else {
         return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
       }
@@ -208,6 +210,75 @@ private:
   static int32_t scaledWeight(double value, int32_t scale) {
     value = std::max(-1.0, std::min(1.0, value));
     return static_cast<int32_t>(std::llround(value * scale));
+  }
+
+  static std::string jsonNumber(double value) {
+    std::ostringstream out;
+    out << std::setprecision(12) << value;
+    return out.str();
+  }
+
+  static std::string scalarString(const JsonValue& value, const std::string& fallback) {
+    if (value.isString()) return lowerAscii(value.asString());
+    if (value.isNumber()) return std::to_string(value.asInt64());
+    return fallback;
+  }
+
+  static double scalarDouble(const JsonValue& value, double fallback) {
+    if (value.isNumber()) return value.asDouble();
+    if (value.isString()) {
+      try {
+        return std::stod(value.asString());
+      } catch (const std::exception&) {
+        return fallback;
+      }
+    }
+    return fallback;
+  }
+
+  static JsonValue channelRemapPreset(const JsonValue& value) {
+    const auto layout = scalarString(value, "stereo_passthrough");
+    if (layout == "mono_passthrough") {
+      return audio_studio::rpc::parseJson(R"({"mappings":[{"name":"mono_passthrough","config_idx":0,"input":["MONO"],"output":["MONO"],"matrix":[[1]]}]})");
+    }
+    if (layout == "mono_to_stereo") {
+      return audio_studio::rpc::parseJson(R"({"mappings":[{"name":"mono_to_stereo","config_idx":0,"input":["MONO"],"output":["FL","FR"],"matrix":[[1],[1]]}]})");
+    }
+    if (layout == "stereo_to_mono") {
+      return audio_studio::rpc::parseJson(R"({"mappings":[{"name":"stereo_to_mono","config_idx":0,"input":["FL","FR"],"output":["MONO"],"matrix":[[0.5,0.5]]}]})");
+    }
+    return audio_studio::rpc::parseJson(R"({"mappings":[{"name":"stereo_passthrough","config_idx":0,"input":["FL","FR"],"output":["FL","FR"],"matrix":[[1,0],[0,1]]}]})");
+  }
+
+  static JsonValue delayLineParam(const std::string& parameter_id, const JsonValue& value) {
+    const double delay_ms = parameter_id == "delay_ms" ? scalarDouble(value, 0.0) : 0.0;
+    const double max_delay_ms = parameter_id == "max_delay_ms" ? scalarDouble(value, 250.0) : 250.0;
+    const double ramp_ms = parameter_id == "ramp_ms" ? scalarDouble(value, 50.0) : 50.0;
+    const auto json = std::string("{\"max_delay_ms\":") + jsonNumber(max_delay_ms) +
+        ",\"ramp_ms\":" + jsonNumber(ramp_ms) +
+        ",\"channels\":2,\"per_channel_ms\":[" + jsonNumber(delay_ms) + "," + jsonNumber(delay_ms) + "]}";
+    return audio_studio::rpc::parseJson(json);
+  }
+
+  static JsonValue faderBalanceParam(const std::string& parameter_id, const JsonValue& value) {
+    const double fader = parameter_id == "fader" ? scalarDouble(value, 0.0) : 0.0;
+    const double balance = parameter_id == "balance" ? scalarDouble(value, 0.0) : 0.0;
+    const double ramp_ms = parameter_id == "ramp_ms" ? scalarDouble(value, 50.0) : 50.0;
+    const auto json = std::string("{\"front_back_weight\":") + jsonNumber(fader) +
+        ",\"left_right_weight\":" + jsonNumber(balance) +
+        ",\"ramp\":\"linear\",\"ramp_ms\":" + jsonNumber(ramp_ms) + "}";
+    return audio_studio::rpc::parseJson(json);
+  }
+
+  static JsonValue dspFilterPreset(const JsonValue& value) {
+    const auto preset = scalarString(value, "passthrough");
+    if (preset == "lowpass") {
+      return audio_studio::rpc::parseJson(R"({"filters":[{"filter_id":"lowpass_fir","index":0,"type":"fir","coefficients":[0.25,0.5,0.25]}],"routes":[{"name":"lowpass_stereo","config_idx":0,"input":["FL","FR"],"output":["FL","FR"],"matrix":[["lowpass_fir",null],[null,"lowpass_fir"]]}]})");
+    }
+    if (preset == "highpass") {
+      return audio_studio::rpc::parseJson(R"({"filters":[{"filter_id":"highpass_fir","index":0,"type":"fir","coefficients":[-0.25,0.5,-0.25]}],"routes":[{"name":"highpass_stereo","config_idx":0,"input":["FL","FR"],"output":["FL","FR"],"matrix":[["highpass_fir",null],[null,"highpass_fir"]]}]})");
+    }
+    return audio_studio::rpc::parseJson(R"({"filters":[{"filter_id":"identity_fir","index":0,"type":"fir","coefficients":[1]}],"routes":[{"name":"stereo_passthrough","config_idx":0,"input":["FL","FR"],"output":["FL","FR"],"matrix":[["identity_fir",null],[null,"identity_fir"]]}]})");
   }
 
   static double doubleAny(const JsonValue& object,

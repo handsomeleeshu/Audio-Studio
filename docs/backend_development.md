@@ -60,8 +60,8 @@ TlvParamEncoder
 ```json
 {
   "session_id": "sess_1234",
-  "node_id": "VOL",
-  "param_id": "vol_db",
+  "node_id": "VOLUME",
+  "param_id": "volume_db",
   "value": -6,
   "apply": { "mode": "next_frame" }
 }

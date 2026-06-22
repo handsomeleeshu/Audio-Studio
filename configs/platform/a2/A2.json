@@ -1,0 +1,445 @@
+{
+  "meta": {
+    "schema_id": "com.vsi.a2.audio_config",
+    "schema_version": "1.4.0",
+    "compiler_compat": {
+      "min": "1.6.0",
+      "max": "1.x"
+    },
+    "firmware_abi": {
+      "vass_runtime": "3.4",
+      "module_abi_min": 2,
+      "module_abi_max": 3
+    },
+    "build": {
+      "config_name": "A2_AS_Config_RV32QEMU_FileIO_Play_Record",
+      "created_utc": "2026-06-20T00:00:00Z"
+    }
+  },
+  "imports": [
+    {
+      "kind": "module_catalog",
+      "catalog_id": "audio_studio_builtin",
+      "path": "configs/built-in-algorithm.json"
+    }
+  ],
+  "naming": {
+    "host_control": {
+      "name_template_instance": "{inst_name} {param_name}",
+      "name_template_pipeline": "{pipe_name} {node_name} {param_name}"
+    }
+  },
+  "resource_catalog": {
+    "compute": [
+      {
+        "id": "audio_core0",
+        "role": "primary_audio",
+        "index": 0
+      }
+    ],
+    "audio_endpoints": [
+      {
+        "id": "host_playback0",
+        "kind": "host",
+        "stream_id": "as_config_playback",
+        "direction": "playback",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "fileio_playback0",
+        "kind": "file_io",
+        "stream_id": "as_config_playback",
+        "link_name": "FILE_IO_PLAYBACK_DAI0",
+        "device_id": "FILEIO0",
+        "direction": "playback",
+        "data_flow": "out",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "fileio_capture0",
+        "kind": "file_io",
+        "stream_id": "as_config_capture",
+        "link_name": "FILE_IO_CAPTURE_DAI0",
+        "device_id": "FILEIO0",
+        "direction": "capture",
+        "data_flow": "in",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "host_capture0",
+        "kind": "host",
+        "stream_id": "as_config_capture",
+        "direction": "capture",
+        "capabilities": {
+          "channels": {
+            "min": 1,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "host_dsp_filter0",
+        "kind": "host",
+        "stream_id": "as_config_dsp_filter",
+        "direction": "playback",
+        "capabilities": {
+          "channels": {
+            "min": 2,
+            "max": 2
+          },
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      },
+      {
+        "id": "fileio_dsp_filter1",
+        "kind": "file_io",
+        "stream_id": "as_config_dsp_filter",
+        "link_name": "FILE_IO_DSP_FILTER_DAI1",
+        "device_id": "FILEIO1",
+        "direction": "playback",
+        "data_flow": "out",
+        "capabilities": {
+          "channels": {
+            "min": 2,
+            "max": 2
+          },
+          "tdm_slots": 2,
+          "slot_width": 16,
+          "sample_bits": [
+            16
+          ],
+          "sample_rates": [
+            48000
+          ]
+        }
+      }
+    ]
+  },
+  "module_types": [],
+  "module_instances": [
+    {
+      "inst_id": "PLAY_CHREMAP0",
+      "name": "Playback Channel Remap",
+      "module_type": "filter.channel_remap"
+    },
+    {
+      "inst_id": "PLAY_DELAY0",
+      "name": "Playback Delay",
+      "module_type": "delay.line"
+    },
+    {
+      "inst_id": "PLAY_FADER0",
+      "name": "Playback Fader Balance",
+      "module_type": "mix.fader_balance"
+    },
+    {
+      "inst_id": "PLAY_DSP_FILTER0",
+      "name": "Playback DSP Filter",
+      "module_type": "filter.dsp_filter"
+    },
+    {
+      "inst_id": "PLAY_VOLUME0",
+      "name": "Playback Volume",
+      "module_type": "gain.volume"
+    },
+    {
+      "inst_id": "CAP_SRC0",
+      "name": "Capture SRC",
+      "module_type": "rate.src"
+    },
+    {
+      "inst_id": "CAP_CHREMAP0",
+      "name": "Capture Channel Remap",
+      "module_type": "filter.channel_remap"
+    },
+    {
+      "inst_id": "CAP_VOLUME0",
+      "name": "Capture Volume",
+      "module_type": "gain.volume"
+    }
+  ],
+  "pipelines": [
+    {
+      "pipe_id": "PLAYBACK_MAIN",
+      "name": "AS Config Playback",
+      "domain": "playback",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
+      },
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
+        {
+          "port_id": "PLAY_HOST",
+          "role": "source",
+          "resource_ref": "host_playback0"
+        },
+        {
+          "port_id": "PLAY_FILEIO",
+          "role": "sink",
+          "resource_ref": "fileio_playback0"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "HOST_IN",
+          "kind": "port",
+          "port_ref": "PLAY_HOST"
+        },
+        {
+          "node_id": "CHREMAP",
+          "kind": "module",
+          "inst_ref": "PLAY_CHREMAP0"
+        },
+        {
+          "node_id": "DELAY",
+          "kind": "module",
+          "inst_ref": "PLAY_DELAY0"
+        },
+        {
+          "node_id": "FADER",
+          "kind": "module",
+          "inst_ref": "PLAY_FADER0"
+        },
+        {
+          "node_id": "VOLUME",
+          "kind": "module",
+          "inst_ref": "PLAY_VOLUME0"
+        },
+        {
+          "node_id": "DAI_OUT",
+          "kind": "port",
+          "port_ref": "PLAY_FILEIO"
+        }
+      ],
+      "edges": [
+        {
+          "from": "HOST_IN:out",
+          "to": "CHREMAP:in"
+        },
+        {
+          "from": "CHREMAP:out",
+          "to": "DELAY:in"
+        },
+        {
+          "from": "DELAY:out",
+          "to": "FADER:in"
+        },
+        {
+          "from": "FADER:out",
+          "to": "VOLUME:in"
+        },
+        {
+          "from": "VOLUME:out",
+          "to": "DAI_OUT:in"
+        }
+      ]
+    },
+    {
+      "pipe_id": "CAPTURE_MAIN",
+      "name": "AS Config Capture",
+      "domain": "capture",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
+      },
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
+        {
+          "port_id": "CAP_FILEIO",
+          "role": "source",
+          "resource_ref": "fileio_capture0"
+        },
+        {
+          "port_id": "CAP_HOST",
+          "role": "sink",
+          "resource_ref": "host_capture0"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "DAI_IN",
+          "kind": "port",
+          "port_ref": "CAP_FILEIO"
+        },
+        {
+          "node_id": "VOLUME",
+          "kind": "module",
+          "inst_ref": "CAP_VOLUME0"
+        },
+        {
+          "node_id": "SRC",
+          "kind": "module",
+          "inst_ref": "CAP_SRC0"
+        },
+        {
+          "node_id": "CHREMAP",
+          "kind": "module",
+          "inst_ref": "CAP_CHREMAP0"
+        },
+        {
+          "node_id": "HOST_OUT",
+          "kind": "port",
+          "port_ref": "CAP_HOST"
+        }
+      ],
+      "edges": [
+        {
+          "from": "DAI_IN:out",
+          "to": "VOLUME:in"
+        },
+        {
+          "from": "VOLUME:out",
+          "to": "SRC:in"
+        },
+        {
+          "from": "SRC:out",
+          "to": "CHREMAP:in"
+        },
+        {
+          "from": "CHREMAP:out",
+          "to": "HOST_OUT:in"
+        }
+      ]
+    },
+    {
+      "pipe_id": "DSP_FILTER_COVERAGE",
+      "name": "AS Config DSP Filter Coverage",
+      "domain": "playback",
+      "frame": {
+        "rate": 48000,
+        "block_ms": 4
+      },
+      "runtime": {
+        "core_ref": "audio_core0",
+        "priority": 0,
+        "clock": "timer"
+      },
+      "ports": [
+        {
+          "port_id": "DSP_HOST",
+          "role": "source",
+          "resource_ref": "host_dsp_filter0"
+        },
+        {
+          "port_id": "DSP_FILEIO",
+          "role": "sink",
+          "resource_ref": "fileio_dsp_filter1"
+        }
+      ],
+      "nodes": [
+        {
+          "node_id": "HOST_IN",
+          "kind": "port",
+          "port_ref": "DSP_HOST"
+        },
+        {
+          "node_id": "DSP_FILTER",
+          "kind": "module",
+          "inst_ref": "PLAY_DSP_FILTER0"
+        },
+        {
+          "node_id": "DAI_OUT",
+          "kind": "port",
+          "port_ref": "DSP_FILEIO"
+        }
+      ],
+      "edges": [
+        {
+          "from": "HOST_IN:out",
+          "to": "DSP_FILTER:in"
+        },
+        {
+          "from": "DSP_FILTER:out",
+          "to": "DAI_OUT:in"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "preset_id": "playback.music",
+      "description": "Nominal playback gain for as_config FILE_IO validation.",
+      "load_mode": "bulk",
+      "node_values": [
+        {
+          "pipeline_id": "PLAYBACK_MAIN",
+          "node_id": "VOLUME",
+          "values": {
+            "volume_db": 0
+          }
+        }
+      ]
+    },
+    {
+      "preset_id": "capture.default",
+      "description": "Nominal capture gain for as_config FILE_IO validation.",
+      "load_mode": "bulk",
+      "node_values": [
+        {
+          "pipeline_id": "CAPTURE_MAIN",
+          "node_id": "VOLUME",
+          "values": {
+            "volume_db": 0
+          }
+        }
+      ]
+    }
+  ]
+}
