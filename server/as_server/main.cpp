@@ -51,17 +51,10 @@ struct ServerOptions {
   std::string log_driver_factory;
   std::string log_source;
   std::string log_level;
-  std::string log_datalink_endpoint;
-  std::string log_datalink_rx;
-  std::string log_datalink_tx;
-  uint32_t log_datalink_mtu = 0;
   std::string log_trace_ldc;
   std::string audio_driver_factory;
   std::string audio_device_name;
-  std::string audio_datalink_endpoint;
-  std::string audio_datalink_rx;
-  std::string audio_datalink_tx;
-  uint32_t audio_datalink_mtu = 0;
+  std::string datalink;
   std::vector<std::string> rpc_args;
 };
 
@@ -80,17 +73,10 @@ int parseServerOptions(int argc, char** argv, ServerOptions& options) {
   app.add_option("--log-driver-factory", options.log_driver_factory, "Default log driver factory for RPC log sessions");
   app.add_option("--log-source", options.log_source, "Default log source for RPC log sessions");
   app.add_option("--log-level", options.log_level, "Default minimum log level for RPC log sessions");
-  app.add_option("--log-datalink-endpoint", options.log_datalink_endpoint, "Default log data-link endpoint prefix");
-  app.add_option("--log-datalink-rx", options.log_datalink_rx, "Default log data-link RX file");
-  app.add_option("--log-datalink-tx", options.log_datalink_tx, "Default log data-link TX file");
-  app.add_option("--log-datalink-mtu", options.log_datalink_mtu, "Default log data-link MTU");
   app.add_option("--log-trace-ldc", options.log_trace_ldc, "Default SOF trace LDC dictionary for log decoding");
   app.add_option("--audio-driver-factory", options.audio_driver_factory, "Default audio driver factory for RPC audio sessions");
   app.add_option("--audio-device", options.audio_device_name, "Default audio stream/device name for RPC audio sessions");
-  app.add_option("--audio-datalink-endpoint", options.audio_datalink_endpoint, "Default audio data-link endpoint prefix");
-  app.add_option("--audio-datalink-rx", options.audio_datalink_rx, "Default audio data-link RX file");
-  app.add_option("--audio-datalink-tx", options.audio_datalink_tx, "Default audio data-link TX file");
-  app.add_option("--audio-datalink-mtu", options.audio_datalink_mtu, "Default audio data-link MTU");
+  app.add_option("--datalink", options.datalink, "Simulator data-link endpoint prefix");
   app.add_option("rpc-args", options.rpc_args, "Optional transport and positional transport args");
   app.allow_extras(false);
 
@@ -161,65 +147,20 @@ audio_studio::framework::audio::AudioServiceConfig defaultAudioConfigFromOptions
   return config;
 }
 
-bool hasLogDataLinkOptions(const ServerOptions& options) {
-  return !options.log_datalink_endpoint.empty() ||
-         !options.log_datalink_rx.empty() ||
-         !options.log_datalink_tx.empty() ||
-         options.log_datalink_mtu > 0;
-}
-
-bool hasAudioDataLinkOptions(const ServerOptions& options) {
-  return !options.audio_datalink_endpoint.empty() ||
-         !options.audio_datalink_rx.empty() ||
-         !options.audio_datalink_tx.empty() ||
-         options.audio_datalink_mtu > 0;
-}
-
 #if defined(CONFIG_FRAMEWORK_TRANSPORT)
-audio_studio::drivers::datalink::DataLinkDeviceConfig dataLinkConfigFromOptions(const std::string& endpoint,
-                                                                                const std::string& rx_path,
-                                                                                const std::string& tx_path,
-                                                                                uint32_t mtu) {
+audio_studio::drivers::datalink::DataLinkDeviceConfig dataLinkConfigFromEndpoint(const std::string& endpoint) {
   audio_studio::drivers::datalink::DataLinkDeviceConfig config;
   config.name = "rv32qemu-datalink";
   config.endpoint = endpoint;
   if (!endpoint.empty()) config.options["endpoint"] = endpoint;
-  if (!rx_path.empty()) config.options["rx_path"] = rx_path;
-  if (!tx_path.empty()) config.options["tx_path"] = tx_path;
-  if (mtu > 0) config.options["mtu"] = std::to_string(mtu);
   return config;
 }
 
-bool sameDataLinkConfig(const audio_studio::drivers::datalink::DataLinkDeviceConfig& lhs,
-                        const audio_studio::drivers::datalink::DataLinkDeviceConfig& rhs) {
-  return lhs.name == rhs.name && lhs.endpoint == rhs.endpoint && lhs.options == rhs.options;
-}
-
 audio_studio::framework::Status configureTransportDataLinkFromOptions(const ServerOptions& options) {
-  const bool has_log = hasLogDataLinkOptions(options);
-  const bool has_audio = hasAudioDataLinkOptions(options);
-  if (!has_log && !has_audio) return audio_studio::framework::Status::success();
+  if (options.datalink.empty()) return audio_studio::framework::Status::success();
 
 #if defined(CONFIG_PLATFORM_SIMULATOR)
-  auto config = has_audio
-                  ? dataLinkConfigFromOptions(options.audio_datalink_endpoint,
-                                              options.audio_datalink_rx,
-                                              options.audio_datalink_tx,
-                                              options.audio_datalink_mtu)
-                  : dataLinkConfigFromOptions(options.log_datalink_endpoint,
-                                              options.log_datalink_rx,
-                                              options.log_datalink_tx,
-                                              options.log_datalink_mtu);
-  if (has_log && has_audio) {
-    const auto log_config = dataLinkConfigFromOptions(options.log_datalink_endpoint,
-                                                     options.log_datalink_rx,
-                                                     options.log_datalink_tx,
-                                                     options.log_datalink_mtu);
-    if (!sameDataLinkConfig(config, log_config)) {
-      return audio_studio::framework::Status::invalidArgument("log/audio data-link options do not match");
-    }
-  }
-
+  auto config = dataLinkConfigFromEndpoint(options.datalink);
   audio_studio::platform::simulator::ensureSimulatorPipeDataLinkDeviceRegistered();
   audio_studio::framework::transport::DataLinkManagerConfig manager_config;
   manager_config.ack_timeout_ms = 1000;

@@ -243,12 +243,15 @@ def assert_as_log_cli_is_transport_neutral():
     for forbidden_param in ('params["driver_factory"]', 'params["datalink_endpoint"]', 'params["trace_ldc"]'):
         assert forbidden_param not in cli_common
     require_contains(as_server, '--log-driver-factory')
-    require_contains(as_server, '--log-datalink-endpoint')
+    require_contains(as_server, 'app.add_option("--datalink"')
+    assert '--log-datalink' not in as_server
+    assert '--audio-datalink' not in as_server
     require_contains(as_server, '--log-trace-ldc')
     require_contains(log_service_header, 'setDefaultSessionConfig')
     require_contains(rv32_helper, '"--log-driver-factory", "rv32qemu"')
-    require_contains(rv32_helper, '"--log-datalink-endpoint", datalink_endpoint')
-    require_contains(rv32_helper, '"--log-datalink-mtu", "512"')
+    require_contains(rv32_helper, '"--datalink", datalink_endpoint')
+    assert '--log-datalink' not in rv32_helper
+    assert '--audio-datalink' not in rv32_helper
     require_contains(rv32_helper, '"--log-trace-ldc", trace_ldc')
 
     as_log_section = rv32_helper.split('as_log_cmd = [', 1)[1].split(']', 1)[0]
@@ -365,15 +368,17 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(rpc_audio_parser, 'optionalStringParam(object, "device", "")')
     require_contains(audio_service_h, 'std::map<std::string, std::string> options')
     require_contains(as_server, '--audio-driver-factory')
-    require_contains(as_server, '--audio-datalink-endpoint')
+    require_contains(as_server, 'app.add_option("--datalink"')
     require_contains(as_server, 'configureTransportDataLinkFromOptions')
     require_contains(as_server, 'TransportManager::instance().configureDataLinkDevice')
-    default_audio_config = as_server.split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[1].split('bool hasLogDataLinkOptions', 1)[0]
+    assert 'hasLogDataLinkOptions' not in as_server
+    assert 'hasAudioDataLinkOptions' not in as_server
+    default_audio_config = as_server.split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[1].split('#if defined(CONFIG_FRAMEWORK_TRANSPORT)', 1)[0]
     assert 'config.options["endpoint"]' not in default_audio_config
     default_log_config = as_server.split('LogSessionConfig defaultLogConfigFromOptions', 1)[1].split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[0]
     assert 'config.options["endpoint"]' not in default_log_config
     require_contains(rv32_helper, '"--audio-driver-factory", "rv32qemu"')
-    require_contains(rv32_helper, '"--audio-datalink-endpoint", datalink_endpoint')
+    require_contains(rv32_helper, '"--datalink", datalink_endpoint')
     require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')
 
 

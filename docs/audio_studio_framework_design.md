@@ -2545,7 +2545,7 @@ as_play/as_record
 
 A2/controller profile 后续沿用同一 `IAudioPlaybackDevice` / `IAudioCaptureDevice` interface，只替换 registry 中的 factory implementation。
 
-Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --audio-datalink-endpoint <endpoint>` 提供默认 driver 与 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。rv32qemu log/audio driver 都使用同一个 `TransportManager::instance()` 和同一个由 as_server 预先绑定的 `simulator-pipe` data-link；如果同时提供 `--log-datalink-*` 与 `--audio-datalink-*`，两组配置必须一致。driver session 内不得再解析或覆盖 endpoint。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
+Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --datalink <endpoint>` 提供默认 driver 与唯一平台 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。rv32qemu log/audio driver 都使用同一个 `TransportManager::instance()` 和同一个由 as_server 预先绑定的 `simulator-pipe` data-link。driver session 内不得再解析或覆盖 endpoint。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
 
 ### 7.2 as_control：A2 直连 Controller 模式
 
@@ -6158,7 +6158,7 @@ drivers/log/controller/ControllerLogDevice
 
 这样 A2 direct、DSP simulator、其他 Audio Controller 平台不需要各自实现 log driver。
 
-rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`datalink_endpoint`、`datalink_rx`/`datalink_tx` 是 `as_server` 与 audio controller 之间约定的运行期链路信息，应由 `as_server --log-datalink-*` 参数或 server 配置提供。as_server 在启动阶段配置 `TransportManager::instance()` 的 `simulator-pipe` data-link；该 log device 只打开 Log channel 并通过 transport command 读取 raw log chunk。未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
+rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`--datalink <endpoint>` 是 `as_server` 与 audio controller 之间唯一的运行期链路配置。as_server 在启动阶段配置 `TransportManager::instance()` 的 `simulator-pipe` data-link；该 log device 只打开 Log channel 并通过 transport command 读取 raw log chunk。未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
 
 `as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。`.ldc` 仍是 raw SOF trace 解码必需字典，但它属于 `as_server` 的 log session 默认配置，应由 `as_server --log-trace-ldc` 或 server 配置提供；`as_log` CLI 不暴露外部 SOF logger executable，也不携带 log driver factory、data-link endpoint 或 `.ldc`。`as_log` 负责连接 `as_server`、请求 log session、标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
 
@@ -6185,7 +6185,7 @@ Misc/sof_test/platform/rv32qemu:
 Audio-Studio host:
   as_server --rpc
             --log-driver-factory rv32qemu
-            --log-datalink-endpoint <sof_test cwd>/as_datalink
+            --datalink <sof_test cwd>/as_datalink
             --log-trace-ldc application/rv32qemu/build/sof.ldc
 
   as_log --level debug --follow
@@ -6205,7 +6205,7 @@ Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
   --level debug --follow
 ```
 
-`as_server` 与 CLI 默认使用 `127.0.0.1:9900`，两边同时省略 `--host/--port` 时必须能通信。`--log-datalink-endpoint` 和 `--log-trace-ldc` 是 `as_server` 与 audio controller/log decoder 的运行期约定，不属于 `as_log` 用户命令参数。`as_log --follow --count N` 正常退出时必须关闭 log session；测试中不要用外层 `timeout` 强杀 CLI 作为正常 close 验证，因为 SIGTERM 可能跳过 close RPC，导致 controller 侧 log source 仍持有 `sof_trace.fifo`，进而影响 simulator trace writer。
+`as_server` 与 CLI 默认使用 `127.0.0.1:9900`，两边同时省略 `--host/--port` 时必须能通信。`--datalink` 是 `as_server` 与 audio controller 的唯一运行期链路约定，`--log-trace-ldc` 是 SOF log decoder 字典配置；二者都不属于 `as_log` 用户命令参数。`as_log --follow --count N` 正常退出时必须关闭 log session；测试中不要用外层 `timeout` 强杀 CLI 作为正常 close 验证，因为 SIGTERM 可能跳过 close RPC，导致 controller 侧 log source 仍持有 `sof_trace.fifo`，进而影响 simulator trace writer。
 
 rv32qemu data-link endpoint 使用普通 host 文件模拟双向链路，session open 时打开、session close 时关闭，read/write 块不做每块 open/close。host 侧打开 RX 文件时从当前 EOF 开始读取，避免新 session 误读上一次运行遗留的 ACK/response；controller 侧也维护 stream offset。data-link 的 retry/ACK/CRC/切片仍由 `DataLinkManager` 和 `ac_datalink` common code 负责，platform ops 只提供最基础的文件读写和 MTU。
 
