@@ -3373,12 +3373,7 @@
       box-shadow: 0 0 10px rgba(125, 139, 160, .7) !important;
     }
 
-    .pipeline-node.runtime-validated .alive {
-      background: var(--cyan) !important;
-      box-shadow: 0 0 12px rgba(0, 216, 255, .9) !important;
-    }
-
-    .pipeline-node.runtime-built .alive {
+    .pipeline-node.runtime-pipe-loaded .alive {
       background: var(--purple) !important;
       box-shadow: 0 0 12px rgba(182, 92, 255, .9) !important;
     }
@@ -3388,7 +3383,6 @@
       box-shadow: 0 0 12px rgba(49, 242, 107, .9) !important;
     }
 
-    .pipeline-node.runtime-stopped .alive,
     .pipeline-node.runtime-error .alive {
       background: var(--red) !important;
       box-shadow: 0 0 12px rgba(255, 81, 81, .85) !important;
@@ -3399,12 +3393,7 @@
       text-shadow: 0 0 12px rgba(125, 139, 160, .35) !important;
     }
 
-    .active-label.runtime-validated {
-      color: var(--cyan) !important;
-      text-shadow: 0 0 12px rgba(0, 216, 255, .55) !important;
-    }
-
-    .active-label.runtime-built {
+    .active-label.runtime-pipe-loaded {
       color: var(--purple) !important;
       text-shadow: 0 0 12px rgba(182, 92, 255, .55) !important;
     }
@@ -3414,10 +3403,34 @@
       text-shadow: 0 0 12px rgba(49, 242, 107, .55) !important;
     }
 
-    .active-label.runtime-stopped,
     .active-label.runtime-error {
       color: var(--red) !important;
       text-shadow: 0 0 12px rgba(255, 81, 81, .55) !important;
+    }
+
+    .pipeline-node.debug-file-io {
+      border-color: rgba(0, 216, 255, .78) !important;
+      box-shadow: 0 0 0 1px rgba(0, 216, 255, .2), 0 12px 32px rgba(0, 216, 255, .16);
+    }
+
+    .pipeline-node.mark-warn {
+      border-color: rgba(255, 204, 69, .9) !important;
+      box-shadow: 0 0 0 1px rgba(255, 204, 69, .25), 0 0 22px rgba(255, 204, 69, .18);
+    }
+
+    .pipeline-node.mark-error {
+      border-color: rgba(255, 81, 81, .95) !important;
+      box-shadow: 0 0 0 1px rgba(255, 81, 81, .28), 0 0 24px rgba(255, 81, 81, .22);
+    }
+
+    .port.mark-warn {
+      border-color: rgba(255, 204, 69, .95) !important;
+      box-shadow: 0 0 13px rgba(255, 204, 69, .68) !important;
+    }
+
+    .port.mark-error {
+      border-color: rgba(255, 81, 81, .95) !important;
+      box-shadow: 0 0 14px rgba(255, 81, 81, .72) !important;
     }
 
 
@@ -3700,6 +3713,12 @@
     const AUDIO_STUDIO_RUNNING_RT_PROBE_POLL_MS = 200;
 
     const API_SESSION_ID = 'standalone_html_demo';
+    const RUNTIME_STATES = Object.freeze({
+      NOT_READY: 'NOT_READY',
+      PIPE_LOADED: 'PIPE_LOADED',
+      RUNNING: 'RUNNING',
+      ERROR: 'ERROR'
+    });
     let audioStudioJsonRpcNextId = 1;
     async function jsonRpcCall(method, params = {}, endpoint = '/rpc') {
       const request = { jsonrpc: '2.0', id: audioStudioJsonRpcNextId++, method, params };
@@ -3921,11 +3940,163 @@
       }
       return dropped;
     }
+    function originalNodeId(n) {
+      if (!n) return '';
+      if (n.pipelineNodeId) return n.pipelineNodeId;
+      const prefix = n.pipelineId ? `${safeGraphId(n.pipelineId)}__` : '';
+      return prefix && String(n.id || '').startsWith(prefix) ? String(n.id).slice(prefix.length) : String(n.id || '');
+    }
+    function ensureInspectorPreset() {
+      if (!currentProjectConfig) return null;
+      if (!Array.isArray(currentProjectConfig.presets)) currentProjectConfig.presets = [];
+      let preset = currentProjectConfig.presets.find(p => p.preset_id === 'inspector_preset');
+      if (!preset) {
+        preset = { preset_id: 'inspector_preset', description: 'Frontend Inspector scratch values.', load_mode: 'frontend_only', node_values: [] };
+        currentProjectConfig.presets.unshift(preset);
+      }
+      if (!Array.isArray(preset.node_values)) preset.node_values = [];
+      return preset;
+    }
+    function inspectorPresetEntryForNode(n, create = false) {
+      const preset = ensureInspectorPreset();
+      if (!preset || !n) return null;
+      const pipelineId = n.pipelineId || currentPipelineId || 'ALL';
+      const nodeId = originalNodeId(n);
+      let entry = preset.node_values.find(v => v.pipeline_id === pipelineId && v.node_id === nodeId);
+      if (!entry && create) {
+        entry = { pipeline_id: pipelineId, node_id: nodeId, values: {} };
+        preset.node_values.push(entry);
+      }
+      if (entry && !entry.values) entry.values = {};
+      return entry || null;
+    }
+    function inspectorPresetValuesForNode(n) {
+      return { ...(inspectorPresetEntryForNode(n, false)?.values || {}) };
+    }
+    function moduleParamDefaultValue(p) {
+      if (!p) return '';
+      if (p.default !== undefined) return p.default;
+      return paramDefault(p);
+    }
+    function readInspectorPresetParam(n, p) {
+      const id = paramId(p);
+      const values = inspectorPresetValuesForNode(n);
+      if (Object.prototype.hasOwnProperty.call(values, id)) return values[id];
+      if (n?.paramValues && Object.prototype.hasOwnProperty.call(n.paramValues, id)) return n.paramValues[id];
+      return moduleParamDefaultValue(p);
+    }
+    function writeInspectorPresetParam(n, p, value) {
+      const id = paramId(p);
+      const entry = inspectorPresetEntryForNode(n, true);
+      if (entry) entry.values[id] = value;
+      if (!n.paramValues) n.paramValues = {};
+      n.paramValues[id] = value;
+      return value;
+    }
+    function normalizeSettableStates(p) {
+      return (p?.apply?.settable_states || []).map(s => normalizeRuntimeStatus(s));
+    }
+    function isParamEnabledForNode(n, p) {
+      const states = normalizeSettableStates(p);
+      const status = runtimeStatusForNode(n);
+      if (!states.length) return status !== RUNTIME_STATES.RUNNING;
+      if (status === RUNTIME_STATES.RUNNING) return states.includes(RUNTIME_STATES.RUNNING);
+      if (states.includes(RUNTIME_STATES.PIPE_LOADED)) return status === RUNTIME_STATES.PIPE_LOADED;
+      return states.includes(status);
+    }
+    function debugFileIoDirection(n) {
+      const id = String(n?.moduleTypeId || '').toLowerCase();
+      if (id.includes('file_output')) return 'output';
+      if (id.includes('file_input')) return 'input';
+      return n?.type === 'output' ? 'output' : 'input';
+    }
+    function isDebugFileIoNode(n) {
+      const id = String(n?.moduleTypeId || '').toLowerCase();
+      return id === 'builtin.file_input' || id === 'builtin.file_output' || id === 'virtual.file_input';
+    }
+    function isHostComponentNode(n) {
+      const id = String(n?.moduleTypeId || '').toLowerCase();
+      const endpointKind = String(n?.rawEndpoint?.kind || '').toLowerCase();
+      return id === 'builtin.host' || id === 'host' || id.startsWith('port.') || endpointKind === 'host';
+    }
+    function isDaiFileIoNode(n) {
+      const id = String(n?.moduleTypeId || '').toLowerCase();
+      return (id === 'builtin.dai' || id === 'dai') && (n?.paramValues?.dai_type === 'file_io_dai' || String(n?.rawEndpoint?.kind || '').toLowerCase() === 'file_io');
+    }
+    function updateDaiDirectionParam(n) {
+      if (!isDaiFileIoNode(n)) return;
+      const hasInput = nodePortList(n, 'in').length > 0;
+      const direction = hasInput ? 'playback' : 'capture';
+      if (!n.paramValues) n.paramValues = {};
+      n.paramValues.direction = direction;
+      const p = nodeDisplayParams(n).find(x => paramId(x) === 'direction') || { param_id: 'direction' };
+      writeInspectorPresetParam(n, p, direction);
+    }
+    function diagnosticSeverity(value) {
+      const text = String(value?.severity || value?.level || value?.kind || value || '').toLowerCase();
+      return text.includes('err') ? 'error' : (text.includes('warn') ? 'warn' : '');
+    }
+    function nodeMarkFor(n) {
+      const keys = [n?.id, originalNodeId(n), n?.name].filter(Boolean);
+      for (const key of keys) {
+        const mark = buildMarks.nodes.get(key);
+        if (mark) return mark;
+      }
+      return '';
+    }
+    function portMarkFor(n, dir, portName) {
+      const keys = [
+        `${n?.id}.${portName}`, `${n?.id}:${portName}`, `${n?.id}.${dir}.${portName}`,
+        `${originalNodeId(n)}.${portName}`, `${originalNodeId(n)}:${portName}`, `${originalNodeId(n)}.${dir}.${portName}`
+      ].filter(Boolean);
+      for (const key of keys) {
+        const mark = buildMarks.ports.get(key);
+        if (mark) return mark;
+      }
+      return '';
+    }
+    function applyBuildDiagnostics(res = {}) {
+      buildMarks.nodes.clear();
+      buildMarks.ports.clear();
+      buildMarks.diagnostics = Array.isArray(res?.diagnostics) ? res.diagnostics : [];
+      const addNodeMark = (key, value) => { const sev = diagnosticSeverity(value); if (key && sev) buildMarks.nodes.set(String(key), sev); };
+      const addPortMark = (key, value) => { const sev = diagnosticSeverity(value); if (key && sev) buildMarks.ports.set(String(key), sev); };
+      Object.entries(res?.node_marks || {}).forEach(([key, value]) => addNodeMark(key, value));
+      Object.entries(res?.port_marks || {}).forEach(([key, value]) => addPortMark(key, value));
+      buildMarks.diagnostics.forEach(d => {
+        if (d?.node_id) addNodeMark(d.node_id, d);
+        if (d?.port || d?.port_id) addPortMark(`${d.node_id || d.node || ''}.${d.port || d.port_id}`, d);
+      });
+      $('#warnCount').textContent = String([...buildMarks.nodes.values(), ...buildMarks.ports.values()].filter(v => v === 'warn').length);
+      $('#errCount').textContent = String([...buildMarks.nodes.values(), ...buildMarks.ports.values()].filter(v => v === 'error').length);
+    }
     function pipelineSnapshot() {
+      const groupId = typeof targetRuntimeGroupId === 'function' ? targetRuntimeGroupId() : currentPipelineId;
+      const runtimeState = typeof runtimeStatusForGroupId === 'function' ? runtimeStatusForGroupId(groupId) : RUNTIME_STATES.NOT_READY;
+      const debugFileIo = state.nodes.filter(isDebugFileIoNode).map(n => ({
+        node_id: n.id,
+        node_name: n.name,
+        module_type: n.moduleTypeId,
+        direction: debugFileIoDirection(n),
+        params: { ...(n.paramValues || {}) },
+        file: n.debugFileIo || null
+      }));
+      const asConfigNodes = state.nodes.filter(n => !isDebugFileIoNode(n)).map(n => ({
+        id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, core: n.core,
+        module_type: n.moduleTypeId,
+        params: inspectorPresetValuesForNode(n),
+        in_ports: (n.inPorts || []).map(p => p.name),
+        out_ports: (n.outPorts || []).map(p => p.name),
+        ports_flipped: !!n.portsFlipped
+      }));
+      const asConfigNodeIds = new Set(asConfigNodes.map(n => n.id));
       return {
         project: currentProjectFile || 'a2/A2.json',
         project_name: currentProjectConfig?.meta?.build?.config_name || currentProjectFile || 'A2',
         active_pipeline: currentPipelineId,
+        group_id: groupId,
+        runtime_state: runtimeState,
+        pipeline_descriptions: (currentProjectConfig?.pipelines || []).map(p => ({ pipe_id: p.pipe_id, name: p.name || p.pipe_id })),
         target: {
           dsp: $('#dspSelect')?.value || 'HiFi5s',
           cores: Number($('#coreSelect')?.value || 4),
@@ -3940,9 +4111,20 @@
         nodes: state.nodes.map(n => ({
           id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, core: n.core,
           cpu: n.cpu, latencyMs: n.lat, memKb: n.mem, ch: n.ch,
+          module_type: n.moduleTypeId,
+          params: inspectorPresetValuesForNode(n),
+          debug_file_io: isDebugFileIoNode(n),
           in_ports: (n.inPorts || []).map(p => p.name), out_ports: (n.outPorts || []).map(p => p.name), ports_flipped: !!n.portsFlipped
         })),
-        connections: state.edges.map(e => { const p = edgeParts(e); return { from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort }; })
+        connections: state.edges.map(e => { const p = edgeParts(e); return { from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort }; }),
+        as_config_payload: {
+          as_config_nodes: asConfigNodes,
+          connections: state.edges
+            .map(e => edgeParts(e))
+            .filter(p => asConfigNodeIds.has(p.from) && asConfigNodeIds.has(p.to))
+            .map(p => ({ from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort }))
+        },
+        debug_file_io: debugFileIo
       };
     }
     async function syncTelemetryFromBackend() {
@@ -4017,7 +4199,9 @@
     let suppressCanvasClick = false;
     let connectFrom = null;
     let running = false;
-    let buildState = 'success';
+    let buildState = 'not-ready';
+    let buildingRuntimeGroupId = '';
+    const buildMarks = { nodes: new Map(), ports: new Map(), diagnostics: [] };
     let playSec = 42;
     const state = {
       nodes: [],
@@ -4229,6 +4413,10 @@
       }).map(p => ({ ...p, key: p.key || p.param_id })) : [];
       return fields.length ? { fields } : null;
     }
+    function maxChannelsFromInstance(inst = {}, fallback = 2) {
+      const caps = inst.capabilities || {};
+      return Number(caps.channels?.max || caps.max_ch || caps.channels_max || inst.max_ch || fallback || 2);
+    }
     function componentFromModuleType(mt) {
       const inDefs = mt.io?.in_ports || [];
       const outDefs = mt.io?.out_ports || [];
@@ -4265,6 +4453,21 @@
         description: ui.description || mt.description || mt.notes?.summary || '',
         notes: mt.notes || ui.notes || null,
         rawModuleType: mt
+      };
+    }
+    function debugFileOutputModuleType() {
+      return {
+        type_id: 'builtin.file_output',
+        category: 'builtin/input_output',
+        ui: { display_name: 'File Output', library_category: 'INPUT / OUTPUT', library_type: 'output', icon: 'file', channels: '2ch', source: 'built-in' },
+        io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [] },
+        performance: { cpu_percent: 0.2, mem_kb: 96, latency_ms: 0.1 },
+        parameters: [
+          { param_id: 'enable', param_name: 'Enable', value_type: 'bool', default: true, apply: { settable_states: ['PIPE_LOADED', 'RUNNING'], mode: 'next_frame' } },
+          { param_id: 'file_path', param_name: 'Save Path', value_type: 'file_save', default: '', apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' } },
+          { param_id: 'overwrite', param_name: 'Overwrite', value_type: 'bool', default: false, apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' } }
+        ],
+        description: 'Debug-only host WAV sink. It is carried in snapshot.debug_file_io and omitted from as_config payload.'
       };
     }
     function mergeLibraryComponents() {
@@ -4304,10 +4507,37 @@
     function graphNodeId(pipeId, nodeId) {
       return `${safeGraphId(pipeId)}__${safeGraphId(nodeId)}`;
     }
-    function componentFromResolvedModule(mt, displayName = '') {
+    function componentFromResolvedModule(mt, displayName = '', inst = null) {
       const fallback = { type_id: 'graph.unknown', category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
       const c = componentFromModuleType(mt || fallback);
       if (displayName) c.name = displayName;
+      const typeId = String(mt?.type_id || inst?.module_type || '').toLowerCase();
+      if (inst && (typeId === 'builtin.host' || typeId === 'host')) {
+        const maxCh = maxChannelsFromInstance(inst, 2);
+        const isPlayback = String(inst.direction || '').toLowerCase() !== 'capture';
+        c.type = isPlayback ? 'input' : 'output';
+        c.inPorts = isPlayback ? [] : [{ name: 'in', max_ch: maxCh }];
+        c.outPorts = isPlayback ? [{ name: 'out', max_ch: maxCh }] : [];
+        c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
+        c.paramValues = { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
+        c.rawEndpoint = inst;
+      }
+      if (inst && (typeId === 'builtin.dai' || typeId === 'dai')) {
+        const maxCh = maxChannelsFromInstance(inst, 2);
+        const direction = String(inst.direction || '').toLowerCase() === 'capture' ? 'capture' : 'playback';
+        const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction === 'playback';
+        c.type = hasInput ? 'output' : 'input';
+        c.inPorts = hasInput ? [{ name: 'in', max_ch: maxCh }] : [];
+        c.outPorts = hasInput ? [] : [{ name: 'out', max_ch: maxCh }];
+        c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
+        c.paramValues = {
+          dai_type: inst.dai_type || 'file_io_dai',
+          dai_index: Number(inst.dai_index || 0),
+          direction,
+          file_path: inst.file_path || ''
+        };
+        c.rawEndpoint = inst;
+      }
       return c;
     }
     function componentFromPipelinePort(pipe, portRef) {
@@ -4318,6 +4548,13 @@
       const caps = endpoint?.capabilities || {};
       const maxCh = Number(caps.channels?.max || caps.max_ch || caps.channels_max || p.hw?.max_ch || 2);
       const isSource = p.role !== 'sink';
+      const isFileIoDai = String(endpoint?.kind || '').toLowerCase() === 'file_io';
+      const daiIndex = Number(String(endpoint?.device_id || endpoint?.link_name || p.resource_ref || '').match(/(\d+)(?!.*\d)/)?.[1] || 0);
+      const daiParams = isFileIoDai ? [
+        { param_id: 'dai_type', param_name: 'DAI Type', value_type: 'enum', enum: ['file_io_dai'], default: 'file_io_dai', apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } },
+        { param_id: 'dai_index', param_name: 'DAI Index', value_type: 'uint8', default: daiIndex, range: { min: 0, max: 15, step: 1 }, apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } },
+        { param_id: 'direction', param_name: 'Direction', value_type: 'enum', enum: ['playback', 'capture'], default: endpoint?.direction || (isSource ? 'capture' : 'playback'), apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } }
+      ] : [];
       return {
         cat: 'PIPELINE PORTS',
         type: isSource ? 'input' : 'output',
@@ -4327,9 +4564,12 @@
         cpu: 0.1,
         mem: 32 + maxCh * 8,
         lat: 0.05,
-        moduleTypeId: `port.${p.role || 'io'}`,
+        moduleTypeId: isFileIoDai ? 'builtin.dai' : `port.${p.role || 'io'}`,
         inPorts: isSource ? [] : [{ name: 'in', max_ch: maxCh }],
-        outPorts: isSource ? [{ name: 'out', max_ch: maxCh }] : []
+        outPorts: isSource ? [{ name: 'out', max_ch: maxCh }] : [],
+        runtimeParams: daiParams,
+        paramValues: isFileIoDai ? { dai_type: 'file_io_dai', dai_index: daiIndex, direction: endpoint?.direction || (isSource ? 'capture' : 'playback') } : {},
+        rawEndpoint: endpoint || null
       };
     }
     function resolvePipelineNodeComponent(cfg, pipe, pn) {
@@ -4339,7 +4579,7 @@
       if (pn.kind === 'module') {
         const inst = instById.get(pn.inst_ref) || {};
         const mt = mtById.get(inst.module_type) || { type_id: inst.module_type || pn.inst_ref, category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
-        return componentFromResolvedModule(mt, inst.name || friendlyName(mt.type_id));
+        return componentFromResolvedModule(mt, inst.name || friendlyName(mt.type_id), inst);
       }
       if (pn.kind === 'module_inline') {
         const mt = mtById.get(pn.inline?.module_type) || { type_id: pn.inline?.module_type || pn.node_id, category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
@@ -4354,7 +4594,7 @@
       const h = Math.max(142, 108 + Math.max(inPorts.length, outPorts.length, 1) * 18);
       const name = c.name || id;
       const core = name === 'KWS' || name === 'VAD' ? 2 : (name === 'EQ' || name === 'DRC' || name === 'Volume' || name === 'NS' || name === 'AGC' ? 1 : 0);
-      return { id, name, type: c.type || 'util', icon: c.icon || '≋', x, y, w: 128, h, cpu: c.cpu || 0.8, mem: c.mem || Math.round(96 + maxCh * 24), lat: c.lat || 0.2, core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || (maxCh === 1 ? '1ch' : `${maxCh}ch`), moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, paramValues: {}, portsFlipped: false };
+      return { id, name, type: c.type || 'util', icon: c.icon || '≋', x, y, w: 128, h, cpu: c.cpu || 0.8, mem: c.mem || Math.round(96 + maxCh * 24), lat: c.lat || 0.2, core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || (maxCh === 1 ? '1ch' : `${maxCh}ch`), moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, rawEndpoint: c.rawEndpoint || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
     }
     function pipelineLayoutKey(pipeId, projectFile = currentProjectFile) {
       return `${projectFile || 'a2/A2.json'}::PIPE::${pipeId || 'ALL'}`;
@@ -4705,6 +4945,39 @@
         currentPipelineId = e.target.value || 'ALL';
         loadPipelineGraphFromConfig(currentPipelineId);
       };
+      updateToolboxPrimaryButton();
+    }
+    function updateToolboxPrimaryButton() {
+      const btn = $('#selectTool');
+      if (!btn) return;
+      const singlePipeline = !!selectedPipelineIdForRename();
+      btn.textContent = singlePipeline ? '✎' : '⌖';
+      btn.title = singlePipeline ? 'Rename pipeline' : 'Select';
+      btn.dataset.mode = singlePipeline ? 'renamePipeline' : 'select';
+    }
+    function selectedPipelineIdForRename() {
+      const selected = $('#pipelineSelect')?.value || currentPipelineId || 'ALL';
+      if (selected === 'ALL') return '';
+      if ((currentProjectConfig?.pipelines || []).some(p => p.pipe_id === selected)) return selected;
+      const group = window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.id === selected);
+      const ids = group?.originPipelineIds || [];
+      return ids.length === 1 ? ids[0] : '';
+    }
+    function renamePipeline() {
+      if (!currentProjectConfig) return;
+      const pipelineId = selectedPipelineIdForRename();
+      if (!pipelineId) return;
+      const pipe = (currentProjectConfig.pipelines || []).find(p => p.pipe_id === pipelineId);
+      if (!pipe) return;
+      const next = prompt('Pipeline name', pipe.name || pipe.pipe_id);
+      const name = String(next || '').trim();
+      if (!name || name === pipe.name) return;
+      pipe.name = name;
+      state.nodes.forEach(n => { if (n.pipelineId === pipe.pipe_id) n.pipelineName = name; });
+      renderPipelineSelect();
+      renderRuntimeStateVisuals();
+      backendEdit('renamePipeline', { pipeline_id: pipe.pipe_id, name });
+      toast('Pipeline renamed', 'ok');
     }
     function layoutPipelineNodes(pipe, pipeIndex, selectedPipesCount) {
       const startX = 120, xStep = 185;
@@ -4725,7 +4998,7 @@
           const c = resolvePipelineNodeComponent(currentProjectConfig, pipe, pn);
           const id = graphNodeId(pipe.pipe_id, pn.node_id);
           idSet.add(pn.node_id);
-          const gn = mkNodeFromComponent(id, c, x, y); gn.pipelineId = pipe.pipe_id; gn.pipelineName = pipe.name || pipe.pipe_id; nodes.push(gn);
+          const gn = mkNodeFromComponent(id, c, x, y); gn.pipelineId = pipe.pipe_id; gn.pipelineName = pipe.name || pipe.pipe_id; gn.pipelineNodeId = pn.node_id; nodes.push(gn);
         });
         (pipe.edges || []).forEach(e => {
           const from = splitEndpoint(e.from), to = splitEndpoint(e.to);
@@ -4868,8 +5141,8 @@
         renderLibrary($('#searchInput')?.value || '');
         return false;
       }
-      builtInModuleTypes = cfg.module_types;
-      builtInComponents = cfg.module_types.map(mt => ({ ...componentFromModuleType(mt), source: 'built-in' }));
+      builtInModuleTypes = [...cfg.module_types, debugFileOutputModuleType()];
+      builtInComponents = builtInModuleTypes.map(mt => ({ ...componentFromModuleType(mt), source: 'built-in' }));
       mergeLibraryComponents();
       renderLibrary($('#searchInput')?.value || '');
       addLog('ok', 'Built-in algorithms loaded', `${builtInComponents.length} common algorithm(s)`);
@@ -4942,7 +5215,7 @@
       const inPorts = normalizePortsForComponent(c, 'in');
       const outPorts = normalizePortsForComponent(c, 'out');
       const h = Math.max(142, 108 + Math.max(inPorts.length, outPorts.length, 1) * 18);
-      return { id, name, type, icon, x, y, w: 128, h, cpu: c.cpu || rnd(.2, 5), mem: c.mem || Math.round(rnd(64, 512)), lat: c.lat || rnd(.1, 2.2), core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || '2ch', moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, paramValues: {}, portsFlipped: false };
+      return { id, name, type, icon, x, y, w: 128, h, cpu: c.cpu || rnd(.2, 5), mem: c.mem || Math.round(rnd(64, 512)), lat: c.lat || rnd(.1, 2.2), core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || '2ch', moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, rawEndpoint: c.rawEndpoint || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
     }
     function toast(msg, level = 'info') { const t = $('#toast'); if (!t) return; t.textContent = msg; t.className = `toast ${String(level || 'info').toLowerCase()} show`; setTimeout(() => t.classList.remove('show'), 2200) }
     function addLog(kind, msg, sub = '') {
@@ -4977,7 +5250,8 @@
     }
 
     function nodeRuntimeVisualState(n) {
-      return window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || 'not-ready';
+      const status = window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || RUNTIME_STATES.NOT_READY;
+      return runtimeCssClass(status);
     }
 
 
@@ -5032,10 +5306,13 @@
         const portHtml = (ports, dir) => ports.map((p, i) => {
           const top = ((i + 1) / (ports.length + 1)) * 100;
           const name = p.name || (dir === 'in' ? 'in' : 'out');
-          return `<div class="port ${dir}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}" style="top:${top}%"></div>`;
+          const mark = portMarkFor(n, dir, name);
+          const markClass = mark ? ` mark-${mark}` : '';
+          return `<div class="port ${dir}${markClass}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}${mark ? ' · ' + mark.toUpperCase() : ''}" style="top:${top}%"></div>`;
         }).join('');
         const el = document.createElement('div');
-        el.className = `pipeline-node ${colors[n.type] || ''} ${isNodeSelected(n.id) ? 'selected' : ''} ${n.portsFlipped ? 'flipped' : ''} ${running ? 'locked' : 'editable'} runtime-${nodeRuntimeVisualState(n)}`;
+        const mark = nodeMarkFor(n);
+        el.className = `pipeline-node ${colors[n.type] || ''} ${isNodeSelected(n.id) ? 'selected' : ''} ${n.portsFlipped ? 'flipped' : ''} ${isDebugFileIoNode(n) ? 'debug-file-io' : ''} ${mark ? 'mark-' + mark : ''} ${running ? 'locked' : 'editable'} runtime-${nodeRuntimeVisualState(n)}`;
         el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; el.style.minHeight = n.h + 'px'; el.style.height = 'auto'; el.dataset.id = n.id;
         el.innerHTML = `<button class="delete-node" title="Delete node">×</button>${portHtml(inPorts, 'in')}${portHtml(outPorts, 'out')}<div class="node-title"><span class="nicon">${n.icon}</span><span class="node-name" title="${n.name}">${n.name}</span><i class="alive"></i></div><div class="node-sub">${n.ch} · 48 kHz</div>${renderNodeCardRuntimeCostMarkupV98(n)}`;
         layer.appendChild(el);
@@ -5075,6 +5352,12 @@
       const to = connectFrom.dir === 'in' ? connectFrom.nodeId : node.id;
       const toPort = connectFrom.dir === 'in' ? connectFrom.port : port;
       if (from === to) { toast('同一个算法组件不能自连接'); connectFrom = null; clearActivePorts(); return false; }
+      const fromNode = nodeById(from);
+      const toNode = nodeById(to);
+      if ((isDebugFileIoNode(fromNode) && !isHostComponentNode(toNode)) || (isDebugFileIoNode(toNode) && !isHostComponentNode(fromNode))) {
+        toast('Debug File I/O can connect only to host components', 'warn');
+        return false;
+      }
 
       pushHistory('Add connection');
       const replaced = state.edges.filter(e => {
@@ -5325,7 +5608,7 @@
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', '3'); dot.setAttribute('class', 'edge-particle');
           const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+        if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
       });
     }
     function deleteSelectedEdge() {
@@ -5469,6 +5752,22 @@
       const c = componentForNode(n);
       return (Array.isArray(n?.runtimeParams) && n.runtimeParams.length ? n.runtimeParams : (c?.runtimeParams || []));
     }
+    function nodeDisplayParams(n) {
+      const out = [];
+      const seen = new Set();
+      const add = (p) => {
+        const id = paramId(p || {});
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        out.push(p);
+      };
+      const c = componentForNode(n);
+      const staticFields = n?.staticSchema?.fields || c?.staticSchema?.fields || [];
+      staticFields.forEach(add);
+      nodeRuntimeParams(n).forEach(add);
+      (n?.rawModuleType?.parameters || c?.rawModuleType?.parameters || []).forEach(add);
+      return out.filter(p => p && p.hidden !== true && p.ui?.hidden !== true);
+    }
     function nodeDescription(n) {
       const c = componentForNode(n);
       return n?.description || c?.description || n?.rawModuleType?.description || c?.rawModuleType?.description || '';
@@ -5491,7 +5790,7 @@
     function nodeParamValue(n, p) {
       if (!n.paramValues) n.paramValues = {};
       const id = paramId(p);
-      if (n.paramValues[id] === undefined) n.paramValues[id] = paramDefault(p);
+      if (n.paramValues[id] === undefined) n.paramValues[id] = readInspectorPresetParam(n, p);
       return n.paramValues[id];
     }
     function formatParamValue(p, v) {
@@ -5508,36 +5807,53 @@
       if (t === 'bool' || t === 'boolean' || t.includes('int') || t.includes('float') || t === 'number' || t === 'double') return 'value';
       return t || 'value';
     }
+    function fileParamAction(n, p) {
+      const t = paramType(p);
+      const id = paramId(p).toLowerCase();
+      if (t === 'file_open' || t === 'file_save') return t;
+      if (t === 'file_io') return debugFileIoDirection(n) === 'output' ? 'file_save' : 'file_open';
+      if (id.includes('file') && (isDebugFileIoNode(n) || isDaiFileIoNode(n))) return debugFileIoDirection(n) === 'output' ? 'file_save' : 'file_open';
+      return '';
+    }
     function renderParamControl(n, p) {
       const id = paramId(p), t = paramType(p), name = escapeHtml(paramName(p));
       const value = nodeParamValue(n, p);
+      const enabled = isParamEnabledForNode(n, p);
+      const disabled = enabled ? '' : ' disabled';
+      const disabledFlag = enabled ? '0' : '1';
       const meta = p.apply?.mode || p.tlv?.type ? `<div class="param-meta">${escapeHtml(p.apply?.mode || 'runtime')} · ${escapeHtml(paramMetaKind(p))}${p.tlv?.type !== undefined ? ' · TLV ' + escapeHtml(p.tlv.type) : ''}</div>` : '';
+      const fileAction = fileParamAction(n, p);
+      if (fileAction) {
+        const buttonText = fileAction === 'file_save' ? 'Choose Save Path' : 'Choose WAV';
+        return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="${escapeHtml(fileAction)}" data-param-disabled="${disabledFlag}"${disabled}><button class="btn" data-file-param-action="${escapeHtml(fileAction)}" data-param-id="${escapeHtml(id)}"${disabled}>${buttonText}</button><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(value || 'No file')}</div>${meta}</div>`;
+      }
       if (t === 'bool' || t === 'boolean') {
-        return `<div class="param-row"><label>${name}</label><button class="toggle param-toggle ${value ? 'on' : ''}" data-param-id="${escapeHtml(id)}" data-param-type="bool" title="${name}"></button><div class="value-box" data-param-value="${escapeHtml(id)}">${formatParamValue(p, value)}</div>${meta}</div>`;
+        return `<div class="param-row"><label>${name}</label><button class="toggle param-toggle ${value ? 'on' : ''}" data-param-id="${escapeHtml(id)}" data-param-type="bool" data-param-disabled="${disabledFlag}" title="${name}"${disabled}></button><div class="value-box" data-param-value="${escapeHtml(id)}">${formatParamValue(p, value)}</div>${meta}</div>`;
       }
       if (t === 'enum' || Array.isArray(p.enum)) {
         const opts = (p.enum || []).map(x => `<option value="${escapeHtml(x)}" ${String(x) === String(value) ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('');
-        return `<div class="param-row"><label>${name}</label><select data-param-id="${escapeHtml(id)}" data-param-type="enum">${opts}</select><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(value)}</div>${meta}</div>`;
+        return `<div class="param-row"><label>${name}</label><select data-param-id="${escapeHtml(id)}" data-param-type="enum" data-param-disabled="${disabledFlag}"${disabled}>${opts}</select><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(value)}</div>${meta}</div>`;
       }
       if (t === 'string') {
-        return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="string" placeholder="${name}">${meta}</div>`;
+        return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="string" data-param-disabled="${disabledFlag}" placeholder="${name}"${disabled}>${meta}</div>`;
       }
       const isNumber = t.includes('int') || t.includes('float') || t === 'number' || t === 'double';
       if (isNumber && p.range) {
         const min = p.range.min ?? 0, max = p.range.max ?? 100, step = p.range.step ?? (t.includes('float') ? .1 : 1);
-        return `<div class="param-row"><label>${name}</label><input type="range" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number"><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p, value))}</div>${meta}</div>`;
+        return `<div class="param-row"><label>${name}</label><input type="range" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number" data-param-disabled="${disabledFlag}"${disabled}><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p, value))}</div>${meta}</div>`;
       }
       if (isNumber) {
-        return `<div class="param-row"><label>${name}</label><input type="number" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number"><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p, value))}</div>${meta}</div>`;
+        return `<div class="param-row"><label>${name}</label><input type="number" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="number" data-param-disabled="${disabledFlag}"${disabled}><div class="value-box" data-param-value="${escapeHtml(id)}">${escapeHtml(formatParamValue(p, value))}</div>${meta}</div>`;
       }
-      return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="${escapeHtml(t)}">${meta}</div>`;
+      return `<div class="param-row param-string"><label>${name}</label><input type="text" value="${escapeHtml(value)}" data-param-id="${escapeHtml(id)}" data-param-type="${escapeHtml(t)}" data-param-disabled="${disabledFlag}"${disabled}>${meta}</div>`;
     }
     function renderInspectorParameters(n) {
-      const params = nodeRuntimeParams(n);
+      ensureInspectorPreset();
+      const params = nodeDisplayParams(n);
       const list = $('#inspectorParamList');
       if (!list) return;
       if (!params.length) {
-        list.innerHTML = '<div class="empty-state">No runtime parameters described by this module JSON.</div>';
+        list.innerHTML = '<div class="empty-state">No displayable parameters described by this module JSON.</div>';
         return;
       }
       list.innerHTML = params.map(p => renderParamControl(n, p)).join('');
@@ -5545,12 +5861,13 @@
         const id = ctrl.dataset.paramId;
         const p = params.find(x => paramId(x) === id);
         const applyValue = (raw) => {
+          if (!isParamEnabledForNode(n, p)) return;
           if (!n.paramValues) n.paramValues = {};
           let value = raw;
           const t = paramType(p);
           if (t === 'bool' || t === 'boolean') value = !!raw;
           else if (t.includes('int') || t.includes('float') || t === 'number' || t === 'double') value = Number(raw);
-          n.paramValues[id] = value;
+          writeInspectorPresetParam(n, p, value);
           const box = list.querySelector(`[data-param-value="${CSS.escape(id)}"]`);
           if (box) box.textContent = formatParamValue(p, value);
           if (ctrl.classList.contains('param-toggle')) ctrl.classList.toggle('on', !!value);
@@ -5565,6 +5882,70 @@
           ctrl.addEventListener('change', () => applyValue(ctrl.value));
         }
       });
+      list.querySelectorAll('[data-file-param-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.paramId;
+          const p = params.find(x => paramId(x) === id);
+          if (!p || !isParamEnabledForNode(n, p)) return;
+          if (btn.dataset.fileParamAction === 'file_open') {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.wav,audio/wav,audio/x-wav';
+            input.onchange = async () => {
+              const file = input.files && input.files[0];
+              if (!file) return;
+              const info = await readAudioFileInfo(file);
+              const pathHint = file.webkitRelativePath || file.name;
+              n.debugFileIo = { direction: 'input', file_name: file.name, path_hint: pathHint, audio: info };
+              writeInspectorPresetParam(n, p, pathHint);
+              renderInspectorParameters(n);
+              backendEdit('debug_file_io_selected', { node_id: n.id, file_name: file.name, path_hint: pathHint, audio: info });
+              toast(`Loaded ${file.name}`, 'ok');
+            };
+            input.click();
+          } else {
+            let pathHint = '';
+            if (window.showSaveFilePicker) {
+              try {
+                const handle = await window.showSaveFilePicker({ suggestedName: `${originalNodeId(n) || 'capture'}.wav`, types: [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }] });
+                pathHint = handle?.name || '';
+                n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint, path_hint: pathHint, save_handle: !!handle };
+              } catch (e) { return; }
+            } else {
+              pathHint = prompt('Save WAV path', nodeParamValue(n, p) || `${originalNodeId(n) || 'capture'}.wav`) || '';
+              if (!pathHint) return;
+              n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint };
+            }
+            writeInspectorPresetParam(n, p, pathHint);
+            renderInspectorParameters(n);
+            backendEdit('debug_file_io_save_path', { node_id: n.id, path_hint: pathHint });
+            toast('Save path selected', 'ok');
+          }
+        });
+      });
+    }
+    async function readAudioFileInfo(file) {
+      const header = await file.slice(0, 64).arrayBuffer();
+      const view = new DataView(header);
+      const text = (off, len) => String.fromCharCode(...new Uint8Array(header, off, len));
+      const info = { bytes: file.size, sample_rate: null, channels: null, bits_per_sample: null, duration_sec: null };
+      if (text(0, 4) !== 'RIFF' || text(8, 4) !== 'WAVE') return info;
+      let off = 12;
+      while (off + 8 <= view.byteLength) {
+        const chunk = text(off, 4);
+        const size = view.getUint32(off + 4, true);
+        if (chunk === 'fmt ' && off + 24 <= view.byteLength) {
+          info.channels = view.getUint16(off + 10, true);
+          info.sample_rate = view.getUint32(off + 12, true);
+          info.bits_per_sample = view.getUint16(off + 22, true);
+        }
+        if (chunk === 'data' && info.sample_rate && info.channels && info.bits_per_sample) {
+          info.duration_sec = size / (info.sample_rate * info.channels * (info.bits_per_sample / 8));
+          break;
+        }
+        off += 8 + size + (size % 2);
+      }
+      return info;
     }
     function portSignalLabel(n, dir, p, idx) {
       const ch = Number(p.max_ch || String(n.ch || '2').replace(/\D/g, '') || 2);
@@ -5695,7 +6076,7 @@
         channels: n.ch,
         in_ports: nodePortList(n, 'in'),
         out_ports: nodePortList(n, 'out'),
-        runtime_params: nodeRuntimeParams(n).map(p => ({ param_id: paramId(p), param_name: paramName(p), value_type: paramType(p) }))
+        runtime_params: nodeDisplayParams(n).map(p => ({ param_id: paramId(p), param_name: paramName(p), value_type: paramType(p), value: readInspectorPresetParam(n, p) }))
       };
     }
     function syncInspectorBackendContext(n) {
@@ -5849,9 +6230,9 @@
     function renderInspector() {
       const n = nodeById(selectedNodeId) || state.nodes[0]; if (!n) return;
       $('#selIcon').textContent = n.icon; $('#selName').textContent = n.name; $('#selSub').textContent = `${n.ch} · 48kHz · Core ${n.core}`; $('#probeName').textContent = `(${n.name} Output)`;
-      const params = nodeRuntimeParams(n);
+      const params = nodeDisplayParams(n);
       const ports = [...nodePortList(n, 'in'), ...nodePortList(n, 'out')];
-      const renderKey = `${n.id}|${n.moduleTypeId}|${params.map(paramId).join(',')}|${ports.map(p => p.name).join(',')}|${JSON.stringify(nodeNotes(n) || {})}|${nodeDescription(n)}`;
+      const renderKey = `${n.id}|${n.moduleTypeId}|${runtimeStatusForNode(n)}|${params.map(paramId).join(',')}|${ports.map(p => p.name).join(',')}|${JSON.stringify(nodeNotes(n) || {})}|${nodeDescription(n)}`;
       if (renderKey !== inspectorRenderKey) {
         inspectorRenderKey = renderKey;
         renderInspectorParameters(n);
@@ -7031,11 +7412,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (edgePipelineRuntimeState(ep) === 'running') {
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -7644,11 +8025,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (edgePipelineRuntimeState(ep) === 'running') {
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (edgePipelineRuntimeState(ep) === 'running') { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -8495,11 +8876,24 @@
       const n = nodeById(selectedNodeId);
       if (!n) { toast('请先选择一个算法组件'); return; }
       pushHistory('Swap ports');
-      n.portsFlipped = !n.portsFlipped;
+      if (isDaiFileIoNode(n)) {
+        const maxCh = Math.max(1, ...nodePortList(n, 'in').map(p => Number(p.max_ch || 1)), ...nodePortList(n, 'out').map(p => Number(p.max_ch || 1)));
+        if (nodePortList(n, 'in').length) {
+          n.inPorts = [];
+          n.outPorts = [{ name: 'out', max_ch: maxCh }];
+        } else {
+          n.inPorts = [{ name: 'in', max_ch: maxCh }];
+          n.outPorts = [];
+        }
+        n.type = n.outPorts.length ? 'input' : 'output';
+        updateDaiDirectionParam(n);
+      } else {
+        n.portsFlipped = !n.portsFlipped;
+      }
       renderAll(true);
       saveCurrentLayout('ports_swapped');
-      backendEdit('ports_swapped', { node_id: n.id, node_name: n.name, ports_flipped: n.portsFlipped });
-      addLog('info', 'Ports side swapped', `${n.name}: ${n.portsFlipped ? 'IN right / OUT left' : 'IN left / OUT right'}`);
+      backendEdit('ports_swapped', { node_id: n.id, node_name: n.name, ports_flipped: n.portsFlipped, direction: n.paramValues?.direction, dai_type: n.paramValues?.dai_type, dai_index: n.paramValues?.dai_index });
+      addLog('info', 'Ports side swapped', isDaiFileIoNode(n) ? `${n.name}: DAI ${n.paramValues?.direction}` : `${n.name}: ${n.portsFlipped ? 'IN right / OUT left' : 'IN left / OUT right'}`);
       toast(`${n.name} 端口方向已对调`);
     }
 
@@ -9629,7 +10023,9 @@
             backendEdit('working_group_filter_selected', { group_id: 'ALL' });
             toast('Showing all working pipeline groups');
           }
+          updateToolboxPrimaryButton();
         };
+        updateToolboxPrimaryButton();
         return groups;
       }
 
@@ -11518,6 +11914,7 @@
       wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
       wrap.addEventListener('drop', e => { e.preventDefault(); wrap.classList.remove('dragover'); const name = e.dataTransfer.getData('text/plain'); if (!name) return; if (running) { toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return; } const c = componentByName(name); const pt = worldPointFromEvent(e); pushHistory('Add node'); const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + (++nodeSeq + 10); const n = mkNode(id, name, c.type, c.icon, pt.x - 64, pt.y - 58); n.moduleTypeId = c.moduleTypeId || ''; n.core = Math.floor(Math.random() * 4); state.nodes.push(n); selectedNodeId = n.id; renderAll(true); backendEdit('node_added', { node_id: n.id, node_name: name }); addLog('info', 'Node added', name); });
       $('#autoBtn').addEventListener('click', () => autoArrange());
+      $('#selectTool')?.addEventListener('click', () => { if ($('#selectTool')?.dataset.mode === 'renamePipeline') renamePipeline(); });
       $('#zoomOut').addEventListener('click', () => setZoom(state.zoom - .1));
       $('#zoomIn').addEventListener('click', () => setZoom(state.zoom + .1));
       $('#deleteTool').addEventListener('click', () => { backendTool('delete_selected', { selectedNodeId, selectedEdgeKey, selectedNodeIds: [...selectedNodeIds], selectedEdgeKeys: [...selectedEdgeKeys] }); deleteSelection(); });
@@ -11527,16 +11924,25 @@
       $$('#panelMenu input').forEach(cb => cb.addEventListener('change', e => setPanelVisible(e.target.dataset.panel, e.target.checked)));
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));
       $('#validateBtn').addEventListener('click', async () => { const res = await apiPost('/api/pipeline/validate', pipelineSnapshot()); const warnings = res?.warnings || []; const errors = res?.errors || []; $('#warnCount').textContent = String(warnings.length); $('#errCount').textContent = String(errors.length); addLog(errors.length ? 'warn' : 'ok', 'Pipeline validated', 'Backend callback: /api/pipeline/validate'); toast(errors.length ? 'Validate failed' : 'Validate success'); });
-      $('#buildBtn').addEventListener('click', async () => { buildState = 'building'; running = false; $('#playBtn').textContent = '▶'; $('.badge.ok').textContent = '◌ BUILDING'; toast('Building...'); addLog('info', 'Build started', 'Calling /api/pipeline/build'); const res = await apiPost('/api/pipeline/build', pipelineSnapshot()); setTimeout(() => { buildState = res?.ok === false ? 'failed' : 'success'; $('.badge.ok').textContent = buildState === 'success' ? '● BUILD SUCCESS' : '● BUILD FAILED'; if (res?.core_map) {/* reserved for real DSP mapping */ } else state.nodes.forEach(n => n.core = Math.floor(Math.random() * 4)); renderAll(true); addLog(buildState === 'success' ? 'ok' : 'warn', buildState === 'success' ? 'Build successful' : 'Build failed', 'Backend callback: /api/pipeline/build'); toast(buildState === 'success' ? 'Build success' : 'Build failed'); }, 300); });
-      $('#runBtn').addEventListener('click', async () => { if (buildState !== 'success') { toast('Please Build first'); return; } const res = await apiPost('/api/runtime/run', { session_id: API_SESSION_ID, snapshot: pipelineSnapshot() }); running = res?.ok === false ? false : true; if (running) { wakeAnimationLoop(); wakeTelemetryPoll(); wakeInspectorPoll(); } inspectorBackendContextKey = ''; $('#playBtn').textContent = running ? 'Ⅱ' : '▶'; renderAll(true); refreshInspectorBackend(); drawEdges(); updateHistoryButtons(); addLog(running ? 'ok' : 'warn', running ? 'Pipeline is running' : 'Run rejected', 'Backend callback: /api/runtime/run'); toast(running ? 'Run' : 'Run rejected'); });
-      $('#stopBtn').addEventListener('click', async () => { await apiPost('/api/runtime/stop', { session_id: API_SESSION_ID }); running = false; wakeTelemetryPoll(); wakeInspectorPoll(); inspectorBackendContextKey = ''; if (bufferDumpState.active) await stopBufferDump('pipeline_stopped'); $('#playBtn').textContent = '▶'; drawEdges(); renderNodes(); refreshInspectorBackend(); updateHistoryButtons(); addLog('warn', 'Pipeline stopped', 'Backend callback: /api/runtime/stop; editing is enabled'); toast('Stop：可以添加/删除/拖动节点'); });
+      $('#buildBtn').addEventListener('click', async () => { await buildRuntimeGroup(); });
+      $('#runBtn').addEventListener('click', async () => { await startRuntimeGroup(); });
+      $('#stopBtn').addEventListener('click', async () => { await stopRuntimeGroup(); });
       $('#playBtn').addEventListener('click', () => { if (running) { $('#stopBtn').click(); } else { $('#runBtn').click(); } });
       $('#undoBtn')?.addEventListener('click', undoEdit);
       $('#redoBtn')?.addEventListener('click', redoEdit);
       $('#undoTool')?.addEventListener('click', undoEdit);
       $('#redoTool')?.addEventListener('click', redoEdit);
       window.addEventListener('keydown', e => { const tag = e.target?.tagName?.toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return; if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redoEdit(); } });
-      $('#saveBtn').addEventListener('click', async () => { saveCurrentLayout('save_button'); localStorage.setItem('audioStudioDemoState', JSON.stringify({ nodes: state.nodes, edges: state.edges, layouts: pipelineLayoutCache })); await apiPost('/api/project/save', pipelineSnapshot()); addLog('ok', 'Layout saved', 'Backend callback: /api/project/save + browser localStorage'); toast('Saved locally'); });
+      $('#saveBtn').addEventListener('click', async () => {
+        const status = runtimeStatusForGroupId(targetRuntimeGroupId());
+        if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.RUNNING) { toast('Build must succeed before Save', 'error'); return; }
+        saveCurrentLayout('save_button');
+        localStorage.setItem('audioStudioDemoState', JSON.stringify({ nodes: state.nodes, edges: state.edges, layouts: pipelineLayoutCache }));
+        const res = await apiPost('/api/project/save', pipelineSnapshot());
+        if (res?.ok === false) { addLog('warn', 'Save failed', 'Backend callback: /api/project/save'); toast('Save failed', 'error'); return; }
+        addLog('ok', 'Layout saved', 'Backend callback: /api/project/save + browser localStorage');
+        toast('Saved', 'ok');
+      });
       $('#exportBtn').addEventListener('click', exportJson);
       $('#changeFileBtn')?.addEventListener('click', () => $('#fileInput')?.click());
       $('#fileInput')?.addEventListener('change', e => { if (e.target.files[0]) { const fileNameEl = $('#fileName'); if (fileNameEl) fileNameEl.textContent = e.target.files[0].name; backendEdit('audio_file_changed', { file_name: e.target.files[0].name }); addLog('info', 'Audio file changed', e.target.files[0].name); } });
@@ -11605,20 +12011,17 @@
 
 
     // Pipeline-scoped runtime state model.
-    // This is the canonical frontend runtime-state layer: pipeline working groups
-    // can be validated, built, run and stopped independently. The legacy global
-    // `running` flag remains a coarse compatibility flag that is true whenever
-    // at least one working group is running.
+    // This is the canonical frontend runtime-state layer for working groups.
+    // The legacy global `running` flag remains a coarse compatibility flag that
+    // is true whenever at least one working group is running.
     const pipelineRuntimeStates = new Map();
     let activeRuntimeGroupId = 'ALL';
     let runtimeRenderScopeNodeIds = null;
     const RUNTIME_STATUS_META = {
-      'not-ready': { label: 'Not Ready', log: 'warn' },
-      validated: { label: 'Validated', log: 'info' },
-      built: { label: 'Built', log: 'ok' },
-      running: { label: 'Active', log: 'ok' },
-      stopped: { label: 'Stopped', log: 'warn' },
-      error: { label: 'Error', log: 'err' }
+      [RUNTIME_STATES.NOT_READY]: { label: 'Not Ready', log: 'warn', css: 'not-ready' },
+      [RUNTIME_STATES.PIPE_LOADED]: { label: 'Pipe Loaded', log: 'ok', css: 'pipe-loaded' },
+      [RUNTIME_STATES.RUNNING]: { label: 'Running', log: 'ok', css: 'running' },
+      [RUNTIME_STATES.ERROR]: { label: 'Error', log: 'err', css: 'error' }
     };
 
     function runtimeGroups() {
@@ -11642,13 +12045,22 @@
     // disappear from connected-component discovery.
     function runtimeVisibleNodeIdSet() { return null; }
     function withRuntimeVisibleGraph(fn) { return fn(); }
-    function normalizeRuntimeStatus(status = 'not-ready') {
-      const s = String(status || 'not-ready').toLowerCase().replace(/_/g, '-');
-      return RUNTIME_STATUS_META[s] ? s : 'not-ready';
+    function normalizeRuntimeStatus(status = RUNTIME_STATES.NOT_READY) {
+      const raw = String(status || RUNTIME_STATES.NOT_READY);
+      const s = raw.toUpperCase().replace(/[-\s]+/g, '_');
+      const legacy = raw.toLowerCase().replace(/_/g, '-');
+      if (RUNTIME_STATUS_META[s]) return s;
+      if (legacy === 'built' || legacy === 'pipe-loaded') return RUNTIME_STATES.PIPE_LOADED;
+      if (legacy === 'running' || legacy === 'active') return RUNTIME_STATES.RUNNING;
+      if (legacy === 'error' || legacy === 'failed') return RUNTIME_STATES.ERROR;
+      return RUNTIME_STATES.NOT_READY;
+    }
+    function runtimeCssClass(status) {
+      return RUNTIME_STATUS_META[normalizeRuntimeStatus(status)]?.css || 'not-ready';
     }
     function runtimeStatusForGroupId(groupId) {
-      if (!groupId || groupId === 'ALL') return anyRuntimeGroupRunning() ? 'running' : 'not-ready';
-      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || 'not-ready');
+      if (!groupId || groupId === 'ALL') return anyRuntimeGroupRunning() ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.NOT_READY;
+      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || RUNTIME_STATES.NOT_READY);
     }
     function runtimeStatusForNode(node) {
       return runtimeStatusForGroupId(runtimeGroupForNodeId(node?.id)?.id);
@@ -11658,7 +12070,7 @@
       return runtimeStatusForGroupId(g?.id);
     }
     function anyRuntimeGroupRunning() {
-      return [...pipelineRuntimeStates.values()].some(s => normalizeRuntimeStatus(s?.status) === 'running');
+      return [...pipelineRuntimeStates.values()].some(s => normalizeRuntimeStatus(s?.status) === RUNTIME_STATES.RUNNING);
     }
     function setGlobalRunningFromGroups() {
       running = anyRuntimeGroupRunning();
@@ -11699,7 +12111,7 @@
       if (!ids.size) runtimeGroups().forEach(g => ids.add(g.id));
       ids.forEach(id => {
         const st = runtimeStatusForGroupId(id);
-        if (st === 'validated' || st === 'built' || st === 'stopped') setRuntimeStatusForGroup(id, 'not-ready', kind);
+        if (st === RUNTIME_STATES.PIPE_LOADED || st === RUNTIME_STATES.ERROR) setRuntimeStatusForGroup(id, RUNTIME_STATES.NOT_READY, kind);
       });
     }
     function runtimeStatusText(status) {
@@ -11720,7 +12132,7 @@
         const status = runtimeStatusForGroupId(id);
         opt.dataset.runtimeStatus = status;
         const g = groups.find(x => x.id === id);
-        const base = g ? `${g.displayName || g.name || id} — ${g.statusLabel || g.status || 'Working'} · ${g.nodes.length}N/${g.edges.length}E` : opt.textContent.replace(/ · (Not Ready|Validated|Built|Active|Stopped|Error)$/i, '');
+        const base = g ? `${g.displayName || g.name || id} — ${g.statusLabel || g.status || 'Working'} · ${g.nodes.length}N/${g.edges.length}E` : opt.textContent.replace(/ · (Not Ready|Pipe Loaded|Running|Error)$/i, '');
         opt.textContent = `${base} · ${RUNTIME_STATUS_META[status].label}`;
       });
     }
@@ -11735,8 +12147,8 @@
       if (!label) return;
       const g = selectedRuntimeGroupForInspector();
       const status = runtimeStatusForGroupId(g?.id);
-      label.classList.remove('runtime-not-ready', 'runtime-validated', 'runtime-built', 'runtime-running', 'runtime-stopped', 'runtime-error');
-      label.classList.add(`runtime-${status}`);
+      label.classList.remove('runtime-not-ready', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
+      label.classList.add(`runtime-${runtimeCssClass(status)}`);
       label.textContent = runtimeStatusText(status);
       label.title = g ? `${g.displayName || g.name || g.id} · ${RUNTIME_STATUS_META[status].label}` : RUNTIME_STATUS_META[status].label;
     }
@@ -11744,8 +12156,8 @@
       document.querySelectorAll('.pipeline-node').forEach(el => {
         const n = nodeById(el.dataset.id);
         const status = runtimeStatusForNode(n);
-        el.classList.remove('runtime-not-ready', 'runtime-validated', 'runtime-built', 'runtime-running', 'runtime-stopped', 'runtime-error');
-        el.classList.add(`runtime-${status}`);
+        el.classList.remove('runtime-not-ready', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
+        el.classList.add(`runtime-${runtimeCssClass(status)}`);
         el.dataset.runtimeStatus = status;
         el.title = `${n?.name || el.dataset.id || 'Node'} · ${RUNTIME_STATUS_META[status].label}`;
       });
@@ -11766,26 +12178,78 @@
         pipeline_id: currentPipelineId,
         group_id: groupId,
         scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
-        status,
-        running_groups: groups.filter(g => runtimeStatusForGroupId(g.id) === 'running').map(g => g.id),
+        runtime_state: normalizeRuntimeStatus(status),
+        running_groups: groups.filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.RUNNING).map(g => g.id),
         nodes: selectedGroups.flatMap(g => g.nodes.map(n => n.id)),
         edges: selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge))
       };
       const path = action === 'stop' ? '/api/runtime/stop' : '/api/runtime/run';
       try { return await apiPost(path, payload); } catch (e) { return null; }
     }
-    function startRuntimeGroup(groupId = targetRuntimeGroupId()) {
-      setRuntimeStatusForGroup(groupId, 'running', 'run_button');
-      postRuntimeGroupState('run', groupId, 'running');
-      if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();
-      const label = groupId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId);
-      addLog('ok', 'Pipeline running', `${label} started`);
-      toast(`${label} running`, 'ok');
+    async function buildRuntimeGroup(groupId = targetRuntimeGroupId()) {
+      const buildBtn = $('#buildBtn');
+      buildingRuntimeGroupId = groupId;
+      buildState = 'building';
+      running = false;
+      if (buildBtn) { buildBtn.disabled = true; buildBtn.dataset.originalText = buildBtn.dataset.originalText || buildBtn.textContent; buildBtn.textContent = '▣ Building'; }
+      $('#playBtn').textContent = '▶';
+      $('.badge.ok').textContent = '◌ BUILDING';
+      toast('Building...', 'info');
+      addLog('info', 'Build started', 'Calling /api/pipeline/build');
+      const res = await apiPost('/api/pipeline/build', pipelineSnapshot());
+      applyBuildDiagnostics(res || {});
+      const ok = res?.ok !== false && !((res?.errors || []).length);
+      buildState = ok ? 'success' : 'failed';
+      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
+      $('.badge.ok').textContent = ok ? '● BUILD SUCCESS' : '● BUILD FAILED';
+      if (res?.core_map) {
+        state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
+      } else if (ok) {
+        state.nodes.forEach(n => n.core = Math.floor(Math.random() * 4));
+      }
+      if (buildBtn) { buildBtn.disabled = false; buildBtn.textContent = buildBtn.dataset.originalText || '▣ Build'; }
+      buildingRuntimeGroupId = '';
+      renderAll(true);
+      addLog(ok ? 'ok' : 'warn', ok ? 'Build successful' : 'Build failed', 'Backend callback: /api/pipeline/build');
+      toast(ok ? 'Build success' : 'Build failed', ok ? 'ok' : 'error');
+      return ok;
     }
-    function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
+    async function startRuntimeGroup(groupId = targetRuntimeGroupId()) {
+      const current = runtimeStatusForGroupId(groupId);
+      if (current !== RUNTIME_STATES.PIPE_LOADED && current !== RUNTIME_STATES.RUNNING) {
+        toast('Please Build first', 'warn');
+        return false;
+      }
+      const res = await postRuntimeGroupState('run', groupId, RUNTIME_STATES.RUNNING);
+      const ok = res?.ok !== false;
+      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
+      if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();
+      if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
+      if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
+      inspectorBackendContextKey = '';
+      $('#playBtn').textContent = ok ? 'Ⅱ' : '▶';
+      renderAll(true);
+      refreshInspectorBackend();
+      drawEdges();
+      updateHistoryButtons();
+      const label = groupId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId);
+      addLog(ok ? 'ok' : 'warn', ok ? 'Pipeline is running' : 'Run rejected', 'Backend callback: /api/runtime/run');
+      toast(ok ? `${label} running` : 'Run rejected', ok ? 'ok' : 'error');
+      return ok;
+    }
+    async function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const stopId = groupId === 'ALL' ? 'ALL' : groupId;
-      setRuntimeStatusForGroup(stopId, 'stopped', 'stop_button');
-      postRuntimeGroupState('stop', stopId, 'stopped');
+      await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.NOT_READY);
+      setRuntimeStatusForGroup(stopId, RUNTIME_STATES.NOT_READY, 'stop_button');
+      if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
+      if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
+      inspectorBackendContextKey = '';
+      if (bufferDumpState.active) await stopBufferDump('pipeline_stopped');
+      $('#playBtn').textContent = '▶';
+      drawEdges();
+      renderNodes();
+      refreshInspectorBackend();
+      updateHistoryButtons();
       const label = stopId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(stopId)?.displayName || stopId);
       addLog('warn', 'Pipeline stopped', `${label} stopped`);
       toast(`${label} stopped`, 'warn');
@@ -11818,12 +12282,9 @@
       renderRuntimeStateVisuals();
     }
     function installPipelineScopedRuntimeControls() {
-      const runBtn = $('#runBtn'), stopBtn = $('#stopBtn'), validateBtn = $('#validateBtn'), buildBtn = $('#buildBtn'), select = $('#pipelineSelect');
-      runBtn?.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); startRuntimeGroup(); }, true);
-      stopBtn?.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); stopRuntimeGroup(); }, true);
-      validateBtn?.addEventListener('click', () => { setRuntimeStatusForGroup(targetRuntimeGroupId(), 'validated', 'validate_button'); renderRuntimeStateVisuals(); });
-      buildBtn?.addEventListener('click', () => { setRuntimeStatusForGroup(targetRuntimeGroupId(), 'built', 'build_button'); renderRuntimeStateVisuals(); });
-      setRuntimeStatusForGroup('ALL', 'not-ready', 'initial');
+      const select = $('#pipelineSelect');
+      select?.addEventListener('change', () => { activeRuntimeGroupId = select.value || 'ALL'; renderRuntimeStateVisuals(); });
+      setRuntimeStatusForGroup('ALL', RUNTIME_STATES.NOT_READY, 'initial');
     }
     const __renderNodesBeforePipelineRuntimeState = renderNodes;
     renderNodes = function () {
@@ -11877,7 +12338,7 @@
       targetRuntimeGroupId,
       setRuntimeGroupFilter,
       edgePipelineRuntimeState,
-      runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === 'running')
+      runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.RUNNING)
     };
 
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
@@ -12208,7 +12669,7 @@
       };
       function isRuntimeEdgeRunningV101(ep) {
         try {
-          if (typeof edgePipelineRuntimeState === 'function') return edgePipelineRuntimeState(ep) === 'running';
+          if (typeof edgePipelineRuntimeState === 'function') return edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING;
         } catch (e) { }
         return !!running;
       }

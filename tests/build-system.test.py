@@ -701,7 +701,7 @@ def main():
     require_contains(as_config_result, '"pipeline_count":3')
     require_contains(as_config_result, '"tplg_built":true')
     assert_as_config_decode_status(as_config_result, as_config_out, 'a2_test')
-    require_contains(as_config_result, '"preset_count":2')
+    require_contains(as_config_result, '"preset_count":3')
     for path in [
         as_config_out / 'a2_test.conf',
         as_config_out / 'a2_test.tplg',
@@ -759,6 +759,7 @@ def main():
     assert b'as-builtin-gain-volume-preset-json-v1' in private_payload
     assert b'"pipelines"' in private_payload
     assert b'"dai_id":"FILE_IO_PLAYBACK_DAI0"' in private_payload
+    assert b'"dai_index":1' in private_payload
     assert b'"tdm_slots":2' in private_payload
     assert b'"config_format":"sof-ipc3-bytes-v1"' in private_payload
     assert b'"codec_format"' not in private_payload
@@ -771,8 +772,26 @@ def main():
     assert '"type_id": "filter.channel_remap"' not in a2_json_text
     assert '"type_id": "mix.fader_balance"' not in a2_json_text
     assert '"type_id": "filter.dsp_filter"' not in a2_json_text
+    assert '"audio_endpoints"' not in a2_json_text
+    assert '"ports":' not in a2_json_text
+    assert '"kind": "port"' not in a2_json_text
+    assert '"RUNTIME"' not in a2_json_text
+    assert 'inspecrot' not in a2_json_text
+    assert 'inspetpr' not in a2_json_text
+    require_contains(a2_json_text, '"preset_id": "inspector_preset"')
+    require_contains(a2_json_text, '"load_mode": "inspector"')
+    require_contains(a2_json_text, '"module_type": "builtin.host"')
+    require_contains(a2_json_text, '"module_type": "builtin.dai"')
     require_contains(builtin_json_text, '"schema_version": "2.0.0"')
+    require_contains(builtin_json_text, '"type_id": "builtin.host"')
+    require_contains(builtin_json_text, '"type_id": "builtin.dai"')
+    require_contains(builtin_json_text, '"type_id": "builtin.file_output"')
     require_contains(simulator_json_text, '"path": "configs/built-in-algorithm.json"')
+    assert '"audio_endpoints"' not in simulator_json_text
+    assert '"ports":' not in simulator_json_text
+    assert '"kind": "port"' not in simulator_json_text
+    assert '"RUNTIME"' not in simulator_json_text
+    require_contains(simulator_json_text, '"preset_id": "inspector_preset"')
     require_contains(builtin_json_text, '"type_id": "filter.channel_remap"')
     require_contains(builtin_json_text, '"param_id": "layout"')
     require_contains(builtin_json_text, '"type_id": "filter.dsp_filter"')

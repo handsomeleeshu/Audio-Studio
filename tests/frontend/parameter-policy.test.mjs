@@ -22,6 +22,18 @@ assertNoKey(builtin, 'kcontrol');
 assert.equal(indexHtml.includes('p.kcontrol'), false, 'Inspector UI must not depend on kcontrol metadata');
 assert.ok(indexHtml.includes('function displayIconForModuleIcon'), 'Library UI must map ui.icon keys to display glyphs');
 assert.equal(indexHtml.includes('icon: ui.icon || iconForModule'), false, 'Library UI must not render ui.icon keys as raw text');
+assert.ok(indexHtml.includes('const RUNTIME_STATES = Object.freeze({'), 'frontend should expose canonical runtime states');
+assert.ok(indexHtml.includes('PIPE_LOADED'), 'build success should expose PIPE_LOADED instead of built');
+assert.equal(indexHtml.includes('validated: { label:'), false, 'validated must not remain an exposed runtime state');
+assert.equal(indexHtml.includes("built: { label:"), false, 'built must be mapped to PIPE_LOADED instead of exposed as built');
+assert.equal(indexHtml.includes('stopped: { label:'), false, 'stopped must not remain an exposed runtime state');
+assert.equal(/['"]RUNTIME['"]/.test(indexHtml), false, 'runtime gating must not use the legacy RUNTIME state token');
+assert.ok(indexHtml.includes('ensureInspectorPreset'), 'Inspector should find/create inspector_preset');
+assert.ok(indexHtml.includes("preset_id: 'inspector_preset'"), 'Inspector preset id should be stable');
+assert.ok(indexHtml.includes('debug_file_io'), 'snapshot should carry debug file I/O outside as_config payload');
+assert.ok(indexHtml.includes('applyBuildDiagnostics'), 'build diagnostics should mark nodes and ports');
+assert.ok(indexHtml.includes("id === 'builtin.host'"), 'debug file I/O connection policy should recognize host modules');
+assert.ok(indexHtml.includes("id === 'builtin.dai'"), 'FILE_IO DAI should be represented as builtin.dai plus parameters');
 
 const volumeType = builtin.module_types.find(mt => mt.type_id === 'gain.volume');
 assert.ok(volumeType, 'built-in catalog must expose real compile-time gain.volume type');
@@ -32,6 +44,12 @@ assert.equal(volumeType.parameters.find(p => p.param_id === 'volume_db').range.m
 
 const srcType = builtin.module_types.find(mt => mt.type_id === 'rate.src');
 assert.ok(srcType.parameters.some(p => p.param_id === 'output_rate_hz' && p.value_type === 'enum'));
+const hostType = builtin.module_types.find(mt => mt.type_id === 'builtin.host');
+assert.ok(hostType.parameters.some(p => p.param_id === 'stream_name' && p.value_type === 'string'));
+const daiType = builtin.module_types.find(mt => mt.type_id === 'builtin.dai');
+assert.ok(daiType.parameters.some(p => p.param_id === 'dai_type' && p.value_type === 'enum'));
+assert.ok(daiType.parameters.some(p => p.param_id === 'dai_index' && p.value_type === 'uint8'));
+assert.ok(daiType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_io'));
 
 const vol = graph.nodes.find(n => n.id === 'VOLUME');
 assert.equal(vol.moduleType.parameters.find(p => p.param_id === 'volume_db').value_type, 'float');

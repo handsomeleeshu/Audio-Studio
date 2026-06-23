@@ -4848,6 +4848,75 @@ apps/as_config
 
 第一阶段可以允许 `as_config` 本地直接调用 `framework/config`，因为它是离线编译类命令；但在 as_server 常驻模式下，应同时提供 `config.compile` RPC，让 GUI、脚本工具和远程前端复用同一套编译服务。
 
+#### 5.X.1 GUI backend build workspace 与 config.compile RPC
+
+Audio Studio GUI backend 不直接修改源平台 JSON。页面初始化加载平台配置时，backend 为当前 project 创建临时 workspace，将原始 JSON 拷贝为 workspace copy，并把 copy 返回前端。Build 时前端提交 snapshot，backend 将 GUI build metadata 写入 workspace JSON 的 `audio_studio_gui` 字段，并同步 pipeline rename 后的 `pipelines[].name`。
+
+Build 的编译阶段必须通过 as_server JSON-RPC 调用 `config.compile`，参数与 CLI `as_config` 对齐：
+
+```json
+{
+  "input_path": "/tmp/audio-studio-gui-workspaces/.../project.json",
+  "output_dir": "/tmp/audio-studio-gui-workspaces/.../build",
+  "project_name": "a2",
+  "alsatplg": "third_party/alsatplg/bin/alsatplg",
+  "build_tplg": true,
+  "strict": true,
+  "plugin_paths": []
+}
+```
+
+编译成功后，backend 生成 `audio_studio_test_list.txt`：
+
+```text
+ac_run --endpoint as_datalink --mtu 512
+trace on
+pipeinstall <compiled.tplg>
+ac_run --stop
+```
+
+然后调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log`，由该脚本负责重启 simulator 和验证用 as_server。GUI `Save` 只有在 workspace 至少 build 成功一次后才允许写回原始平台 JSON。
+
+#### 5.X.2 GUI/runtime state 与 Inspector preset
+
+Frontend/backend 之间的 runtime state enum 固定为：
+
+```text
+NOT_READY
+PIPE_LOADED
+RUNNING
+ERROR
+```
+
+平台 JSON 中 `parameter.apply.settable_states` 使用 `RUNNING` 表示运行中可配置。Inspector 展示参数时，必须先查找 `inspector_preset`；不存在则创建空 preset。`inspector_preset` 没有对应 pipeline/node/parameter 值时，显示 module parameter default。`PIPE_LOADED` 参数在所在 pipeline build 成功后可编辑；进入 `RUNNING` 后，未声明 `RUNNING` settable state 的参数置灰。
+
+#### 5.X.3 HOST/DAI endpoint module schema
+
+平台 JSON 不再在 pipeline 中声明 audio endpoints 或 pipeline ports。HOST 与 DAI 都是普通 module：
+
+```json
+{
+  "inst_id": "PLAY_HOST",
+  "module_type": "builtin.host",
+  "stream_name": "as_config_playback",
+  "stream_id": "as_config_playback"
+}
+```
+
+```json
+{
+  "inst_id": "PLAY_FILEIO_DAI",
+  "module_type": "builtin.dai",
+  "dai_type": "file_io_dai",
+  "dai_index": 0,
+  "direction": "playback"
+}
+```
+
+`stream_name` 是 HOST 的 UI/config 参数；`stream_id` 可保留为 as_config 兼容字段。FILE_IO DAI 不是独立 module type，而是 `builtin.dai` 加 `dai_type=file_io_dai` 与 `dai_index`。as_config 根据这两个参数生成对应 SOF DAI/BE widget。FILE_IO DAI 的 `file_path` 使用 `value_type: "file_io"`，Inspector 根据当前 `direction` 显示为选择 WAV 或保存路径。
+
+`builtin.file_input` 与 `builtin.file_output` 是 debug-only 前端虚拟组件，不进入 `pipelines[]` 或 as_config payload；它们只能连接 HOST component，用于前端/后端调试音频文件选择、保存和音频格式传递。
+
 关键实现边界：
 
 ```text

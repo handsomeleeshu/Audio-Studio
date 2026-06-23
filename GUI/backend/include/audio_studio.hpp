@@ -68,6 +68,82 @@ public:
   virtual std::string updateParameter(const std::string& request_json) = 0;
 };
 
+struct GuiConfigCompileRequest {
+  std::string input_path;
+  std::string output_dir;
+  std::string project_name;
+  std::string alsatplg;
+  bool build_tplg = true;
+  bool strict = true;
+  std::vector<std::string> plugin_paths;
+};
+
+struct GuiConfigCompileResult {
+  bool ok = false;
+  std::string tplg_path;
+  std::string message;
+  std::vector<std::string> diagnostics;
+};
+
+class IConfigCompileClient {
+public:
+  virtual ~IConfigCompileClient() = default;
+  virtual GuiConfigCompileResult compile(const GuiConfigCompileRequest& request) = 0;
+};
+
+struct ValidationRequest {
+  std::string workspace_id;
+  std::string workspace_dir;
+  std::string project_name;
+  std::string tplg_path;
+  std::string test_list_path;
+  std::string script_path;
+};
+
+struct ValidationResult {
+  bool ok = false;
+  std::string message;
+  std::vector<std::string> diagnostics;
+};
+
+class IValidationRunner {
+public:
+  virtual ~IValidationRunner() = default;
+  virtual ValidationResult run(const ValidationRequest& request) = 0;
+};
+
+class BuildOrchestrator {
+public:
+  BuildOrchestrator(std::string root_dir,
+                    std::shared_ptr<IConfigCompileClient> compile_client = nullptr,
+                    std::shared_ptr<IValidationRunner> validation_runner = nullptr);
+
+  HttpResponse openProjectByName(const std::string& project);
+  HttpResponse openProjectRequest(const std::string& request_json);
+  HttpResponse buildPipeline(const std::string& request_json);
+  HttpResponse saveProject(const std::string& request_json);
+
+private:
+  struct WorkspaceRecord {
+    std::string workspace_id;
+    std::string project;
+    std::string project_name;
+    std::string source_path;
+    std::string workspace_dir;
+    std::string input_path;
+    std::string output_dir;
+    bool build_ok = false;
+  };
+
+  WorkspaceRecord* findWorkspaceLocked(const std::string& workspace_id);
+  WorkspaceRecord& openProjectLocked(const std::string& project);
+  std::string root_dir_;
+  std::shared_ptr<IConfigCompileClient> compile_client_;
+  std::shared_ptr<IValidationRunner> validation_runner_;
+  std::map<std::string, WorkspaceRecord> workspaces_;
+  std::mutex mutex_;
+};
+
 
 
 struct TargetConfigSnapshot {
@@ -362,7 +438,8 @@ public:
               std::shared_ptr<IEventLogController> event_log_controller = nullptr,
               std::shared_ptr<ISystemHealthController> system_health_controller = nullptr,
               std::shared_ptr<IAudioIoController> audio_io_controller = nullptr,
-              std::shared_ptr<IRealTimeProbeController> real_time_probe_controller = nullptr);
+              std::shared_ptr<IRealTimeProbeController> real_time_probe_controller = nullptr,
+              std::shared_ptr<BuildOrchestrator> build_orchestrator = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -379,6 +456,7 @@ private:
   std::shared_ptr<ISystemHealthController> system_health_controller_;
   std::shared_ptr<IAudioIoController> audio_io_controller_;
   std::shared_ptr<IRealTimeProbeController> real_time_probe_controller_;
+  std::shared_ptr<BuildOrchestrator> build_orchestrator_;
 HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 
@@ -387,5 +465,7 @@ std::vector<std::string> splitCsv(const std::string& csv);
 std::string jsonEscape(const std::string& s);
 std::string contentTypeForPath(const std::string& path);
 std::map<std::string, std::string> parseQuery(const std::string& q);
+std::string sanitizeProjectConfigPath(const std::string& input);
+std::string projectConfigRelPath(const std::string& input);
 
 } // namespace audiostudio

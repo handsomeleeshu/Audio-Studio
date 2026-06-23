@@ -74,11 +74,22 @@ Runtime Dashboard
 
 ## 参数与运行态规则
 
+- Frontend/backend runtime state enum 固定为 `NOT_READY`、`PIPE_LOADED`、`RUNNING`、`ERROR`。
 - `parameters[]`：统一参数模型；没有 `RUNNING` settable state 的参数作为 install/static 参数处理。
 - 带 `RUNNING` settable state 的 `bool`、`enum`、`int/float` 参数会在 Inspector 自动显示为 toggle、select、slider 或 number input，running 时调用 `/api/param/update`。
+- Inspector 显示参数值时优先使用 `presets[].preset_id == "inspector_preset"`；不存在时前端自动创建。该 preset 中没有值时，再回退到 module parameter default。
+- `PIPE_LOADED` 参数只在对应 pipeline build 成功后可编辑；进入 `RUNNING` 后，未声明 `RUNNING` settable state 的参数会置灰。
 - `static_schema.fields` 和 `runtime_params` 只作为旧 catalog 的兼容输入，新 built-in catalog 不再以它们为主模型。
 - 节点新增、删除、移动、连线、删线：仅 stopped 状态允许。
 - buffer dump 和 real-time probe 数据必须来自后端接口，前端不生成 fake PCM 或 fake spectrum 数据。
+
+## Endpoint 与 File I/O
+
+- `builtin.host` 和 `builtin.dai` 是普通 module type，pipeline nodes 使用 `kind: "module"` 引用 module instances，不再使用旧的 pipeline `ports` / `audio_endpoints` 描述。
+- `builtin.host` module instance 使用 `stream_name` 字符串参数；配置中仍可保留 `stream_id` 作为 as_config 兼容字段。
+- FILE_IO DAI 不是单独 module type。它是 `builtin.dai` instance，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction` 和 `file_path`。
+- `value_type: "file_io"` 由 Inspector 根据 DAI 当前方向显示为打开 WAV 或选择保存路径；port 方向切换会同步更新 `direction`。
+- `builtin.file_input` 和 `builtin.file_output` 是 debug-only 前端虚拟组件：它们显示为特殊颜色，连接规则限制为只能连接 HOST component，并且不会进入 `as_config_payload`。
 
 ## 连接策略
 

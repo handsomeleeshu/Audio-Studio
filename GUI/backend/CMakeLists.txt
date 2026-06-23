@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(audio_studio_core
   src/mock_runtime.cpp
   src/http_server.cpp
+  src/project_orchestration.cpp
 )
 target_include_directories(audio_studio_core PUBLIC include)
 target_link_libraries(audio_studio_core PUBLIC audio_studio_config)

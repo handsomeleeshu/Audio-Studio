@@ -98,6 +98,55 @@ function buildParamDefaults(moduleType, presetValues = {}) {
   return { staticParams, runtimeParams };
 }
 
+function instanceMaxChannels(inst, fallback = 2) {
+  const caps = inst && inst.capabilities || {};
+  return Number(
+    caps.channels && caps.channels.max ||
+    caps.max_ch ||
+    caps.channels_max ||
+    inst && inst.max_ch ||
+    fallback ||
+    2
+  );
+}
+
+function endpointInstanceParamValues(inst, moduleTypeId) {
+  if (!inst) return {};
+  if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
+    return { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
+  }
+  if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
+    return {
+      dai_type: inst.dai_type || 'file_io_dai',
+      dai_index: Number(inst.dai_index || 0),
+      direction: inst.direction || 'playback',
+      file_path: inst.file_path || ''
+    };
+  }
+  return {};
+}
+
+function endpointInstancePorts(inst, moduleTypeId, fallbackInputs, fallbackOutputs) {
+  if (!inst) return { inputs: fallbackInputs, outputs: fallbackOutputs };
+  const maxCh = instanceMaxChannels(inst, 2);
+  const direction = String(inst.direction || '').toLowerCase();
+  if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
+    const playback = direction !== 'capture';
+    return {
+      inputs: playback ? [] : [{ name: 'in', max_ch: maxCh }],
+      outputs: playback ? [{ name: 'out', max_ch: maxCh }] : []
+    };
+  }
+  if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
+    const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction !== 'capture';
+    return {
+      inputs: hasInput ? [{ name: 'in', max_ch: maxCh }] : [],
+      outputs: hasInput ? [] : [{ name: 'out', max_ch: maxCh }]
+    };
+  }
+  return { inputs: fallbackInputs, outputs: fallbackOutputs };
+}
+
 function normalizedLibraryCategory(moduleType) {
   const text = `${moduleType && moduleType.type_id || ''} ${moduleType && moduleType.category || ''} ${moduleType && moduleType.name || ''}`.toLowerCase();
   if (text.includes('virtual.') || text.includes('port.source') || text.includes('port.sink') || text.includes('file') || text.includes('mic_input') || text.includes('audio_output')) return 'INPUT / OUTPUT';
@@ -191,8 +240,11 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
       category = moduleType && moduleType.category || 'module';
       moduleTypeId = moduleType && moduleType.type_id || 'unknown';
       subtitle = moduleTypeId;
+      const endpointPorts = endpointInstancePorts(inst, moduleTypeId, inputs, outputs);
+      inputs = endpointPorts.inputs;
+      outputs = endpointPorts.outputs;
     }
-    const defaults = buildParamDefaults(moduleType, presetValues);
+    const defaults = buildParamDefaults(moduleType, { ...endpointInstanceParamValues(inst, moduleTypeId), ...presetValues });
     nodes.push({
       id: raw.node_id,
       kind: raw.kind,

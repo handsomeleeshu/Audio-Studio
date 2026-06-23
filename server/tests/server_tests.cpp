@@ -253,6 +253,81 @@ std::string readFileText(const std::string& path) {
   return out.str();
 }
 
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+bool jsonContainsStringValue(const audio_studio::rpc::JsonValue& value, const std::string& needle) {
+  if (value.isString()) return value.asString() == needle;
+  if (value.isArray()) {
+    for (const auto& item : value.asArray()) {
+      if (jsonContainsStringValue(item, needle)) return true;
+    }
+  }
+  if (value.isObject()) {
+    for (const auto& item : value.asObject()) {
+      if (jsonContainsStringValue(item.second, needle)) return true;
+    }
+  }
+  return false;
+}
+
+bool hasModuleType(const audio_studio::rpc::JsonValue& root, const std::string& type_id) {
+  for (const auto& item : root.at("module_types").asArray()) {
+    if (item.at("type_id").asString() == type_id) return true;
+  }
+  return false;
+}
+
+bool hasModuleInstance(const audio_studio::rpc::JsonValue& root,
+                       const std::string& inst_id,
+                       const std::string& module_type) {
+  for (const auto& item : root.at("module_instances").asArray()) {
+    if (item.at("inst_id").asString() == inst_id && item.at("module_type").asString() == module_type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool hasPreset(const audio_studio::rpc::JsonValue& root,
+               const std::string& preset_id,
+               const std::string& load_mode) {
+  for (const auto& item : root.at("presets").asArray()) {
+    if (item.at("preset_id").asString() == preset_id && item.at("load_mode").asString() == load_mode) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void assertModuleizedEndpointSchema(const std::string& path) {
+  const std::string text = readFileText(path);
+  assert(text.find("inspecrot") == std::string::npos);
+  assert(text.find("inspetpr") == std::string::npos);
+  assert(text.find("\"RUNTIME\"") == std::string::npos);
+
+  const auto root = audio_studio::rpc::parseJson(text);
+  assert(!jsonContainsStringValue(root, "RUNTIME"));
+  assert(root.has("module_instances"));
+  assert(root.has("pipelines"));
+  assert(hasPreset(root, "inspector_preset", "inspector"));
+  assert(hasModuleInstance(root, "PLAY_HOST", "builtin.host"));
+  assert(hasModuleInstance(root, "PLAY_FILEIO_DAI", "builtin.dai"));
+  assert(hasModuleInstance(root, "CAP_HOST", "builtin.host"));
+  assert(hasModuleInstance(root, "CAP_FILEIO_DAI", "builtin.dai"));
+
+  if (root.has("resource_catalog")) {
+    assert(!root.at("resource_catalog").has("audio_endpoints"));
+  }
+
+  for (const auto& pipeline : root.at("pipelines").asArray()) {
+    assert(!pipeline.has("ports"));
+    for (const auto& node : pipeline.at("nodes").asArray()) {
+      assert(node.at("kind").asString() == "module");
+      assert(node.has("inst_ref"));
+    }
+  }
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -541,6 +616,16 @@ int main() {
 
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   {
+    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json");
+    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/simulator/simulator.json");
+    const auto builtin = audio_studio::rpc::parseJson(
+        readFileText(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/built-in-algorithm.json"));
+    assert(hasModuleType(builtin, "builtin.host"));
+    assert(hasModuleType(builtin, "builtin.dai"));
+    assert(hasModuleType(builtin, "builtin.file_input"));
+    assert(hasModuleType(builtin, "builtin.file_output"));
+    assert(!jsonContainsStringValue(builtin, "RUNTIME"));
+
     audio_studio::framework::config::ConfigService config_service(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
     audio_studio::framework::config::ConfigCompileRequest request;
     request.input_path = std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json";
@@ -556,12 +641,12 @@ int main() {
     audio_studio::framework::config::ConfigCompileOutput output;
     assert(config_service.compile(request, output).ok());
     assert(output.ok);
-    assert(output.module_type_count == 20);
-    assert(output.module_instance_count == 8);
+    assert(output.module_type_count == 23);
+    assert(output.module_instance_count == 14);
     assert(output.pipeline_count == 3);
     assert(output.runtime_control_count == 19);
-    assert(output.install_param_count == 0);
-    assert(output.preset_count == 2);
+    assert(output.install_param_count == 15);
+    assert(output.preset_count == 3);
     assert(output.plugin_count == 1);
 
     audio_studio::drivers::filesystem::FileInfo info;
@@ -592,6 +677,7 @@ int main() {
     assert(ids.find("AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOLUME_DB") != std::string::npos);
     const std::string presets = readFileText(output.preset_header_path);
     assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
+    assert(presets.find("AS_PRESET_INSPECTOR_PRESET") != std::string::npos);
     const std::string conf = readFileText(output.conf_path);
     assert(conf.find("SectionVendorTokens.\"sof_sched_tokens\"") != std::string::npos);
     assert(conf.find("SectionVendorTokens.\"sof_comp_tokens\"") != std::string::npos);
@@ -600,6 +686,10 @@ int main() {
     assert(conf.find("SectionDAI.") != std::string::npos);
     assert(conf.find("SectionBE.") != std::string::npos);
     assert(conf.find("SOF_TKN_DAI_TYPE \"FILE_IO\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_INDEX \"0\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_INDEX \"1\"") != std::string::npos);
+    assert(conf.find("stream_name \"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
+    assert(conf.find("stream_name \"FILE_IO_DSP_FILTER_DAI1\"") != std::string::npos);
     assert(conf.find("SOF_TKN_DAI_TYPE \"VSI_TDM\"") == std::string::npos);
     assert(conf.find("SectionControlBytes.") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"CHAN_REMAP\"") != std::string::npos);
@@ -612,6 +702,8 @@ int main() {
     assert(private_payload.find("as-builtin-gain-volume-preset-json-v1") != std::string::npos);
     assert(private_payload.find("\"pipelines\"") != std::string::npos);
     assert(private_payload.find("\"dai_id\":\"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
+    assert(private_payload.find("\"hw_id\":\"FILEIO1\"") != std::string::npos);
+    assert(private_payload.find("\"dai_index\":1") != std::string::npos);
     assert(private_payload.find("\"tdm_slots\":2") != std::string::npos);
     assert(private_payload.find("\"config_format\":\"sof-ipc3-bytes-v1\"") != std::string::npos);
     assert(private_payload.find("\"codec_format\"") == std::string::npos);

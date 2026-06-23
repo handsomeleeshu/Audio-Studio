@@ -107,6 +107,200 @@
       }
     },
     {
+      "type_id": "builtin.file_output",
+      "category": "builtin/input_output",
+      "abi_version": 2,
+      "debug_only": true,
+      "ui": {
+        "display_name": "File Output",
+        "library_category": "INPUT / OUTPUT",
+        "library_type": "output",
+        "icon": "file-output",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": []
+      },
+      "performance": {
+        "cpu_percent": 0.2,
+        "mem_kb": 96,
+        "latency_ms": 0.1
+      },
+      "parameters": [
+        {
+          "param_id": "enable",
+          "param_name": "Enable",
+          "value_type": "bool",
+          "default": true,
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "next_frame"
+          }
+        },
+        {
+          "param_id": "file_path",
+          "param_name": "File Path",
+          "value_type": "string",
+          "default": "",
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED",
+              "RUNNING"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Debug-only file sink used by the Inspector and simulator tooling to capture repeatable output.",
+      "notes": {
+        "summary": "Debug-only file sink used by the Inspector and simulator tooling to capture repeatable output."
+      }
+    },
+    {
+      "type_id": "builtin.host",
+      "category": "builtin/endpoint",
+      "abi_version": 2,
+      "endpoint_role": "host",
+      "ui": {
+        "display_name": "HOST",
+        "library_category": "ENDPOINT",
+        "library_type": "endpoint",
+        "icon": "computer",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "param_id": "stream_name",
+          "param_name": "Stream Name",
+          "value_type": "string",
+          "default": "",
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        }
+      ],
+      "description": "SOF host PCM endpoint. Static stream_name fields live on module_instances."
+    },
+    {
+      "type_id": "builtin.dai",
+      "category": "builtin/endpoint",
+      "abi_version": 2,
+      "endpoint_role": "dai",
+      "ui": {
+        "display_name": "DAI",
+        "library_category": "ENDPOINT",
+        "library_type": "endpoint",
+        "icon": "plug",
+        "channels": "2ch",
+        "source": "built-in"
+      },
+      "io": {
+        "in_ports": [
+          {
+            "name": "in",
+            "max_ch": 2
+          }
+        ],
+        "out_ports": [
+          {
+            "name": "out",
+            "max_ch": 2
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "param_id": "dai_type",
+          "param_name": "DAI Type",
+          "value_type": "enum",
+          "default": "file_io_dai",
+          "enum": [
+            "file_io_dai"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "dai_index",
+          "param_name": "DAI Index",
+          "value_type": "uint8",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 15,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "direction",
+          "param_name": "Direction",
+          "value_type": "enum",
+          "default": "playback",
+          "enum": [
+            "playback",
+            "capture"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "file_path",
+          "param_name": "File Path",
+          "value_type": "file_io",
+          "default": "",
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "safe_point"
+          }
+        }
+      ],
+      "description": "Digital Audio Interface endpoint. Static dai_type, dai_index and file_io path fields live on module_instances."
+    },
+    {
       "type_id": "builtin.mic_input",
       "category": "builtin/input_output",
       "abi_version": 2,

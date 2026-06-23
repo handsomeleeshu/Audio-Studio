@@ -36,135 +36,148 @@
         "role": "primary_audio",
         "index": 0
       }
-    ],
-    "audio_endpoints": [
-      {
-        "id": "host_playback0",
-        "kind": "host",
-        "stream_id": "as_config_playback",
-        "direction": "playback",
-        "capabilities": {
-          "channels": {
-            "min": 1,
-            "max": 2
-          },
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      },
-      {
-        "id": "fileio_playback0",
-        "kind": "file_io",
-        "stream_id": "as_config_playback",
-        "link_name": "FILE_IO_PLAYBACK_DAI0",
-        "device_id": "FILEIO0",
-        "direction": "playback",
-        "data_flow": "out",
-        "capabilities": {
-          "channels": {
-            "min": 1,
-            "max": 2
-          },
-          "tdm_slots": 2,
-          "slot_width": 16,
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      },
-      {
-        "id": "fileio_capture0",
-        "kind": "file_io",
-        "stream_id": "as_config_capture",
-        "link_name": "FILE_IO_CAPTURE_DAI0",
-        "device_id": "FILEIO0",
-        "direction": "capture",
-        "data_flow": "in",
-        "capabilities": {
-          "channels": {
-            "min": 1,
-            "max": 2
-          },
-          "tdm_slots": 2,
-          "slot_width": 16,
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      },
-      {
-        "id": "host_capture0",
-        "kind": "host",
-        "stream_id": "as_config_capture",
-        "direction": "capture",
-        "capabilities": {
-          "channels": {
-            "min": 1,
-            "max": 2
-          },
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      },
-      {
-        "id": "host_dsp_filter0",
-        "kind": "host",
-        "stream_id": "as_config_dsp_filter",
-        "direction": "playback",
-        "capabilities": {
-          "channels": {
-            "min": 2,
-            "max": 2
-          },
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      },
-      {
-        "id": "fileio_dsp_filter1",
-        "kind": "file_io",
-        "stream_id": "as_config_dsp_filter",
-        "link_name": "FILE_IO_DSP_FILTER_DAI1",
-        "device_id": "FILEIO1",
-        "direction": "playback",
-        "data_flow": "out",
-        "capabilities": {
-          "channels": {
-            "min": 2,
-            "max": 2
-          },
-          "tdm_slots": 2,
-          "slot_width": 16,
-          "sample_bits": [
-            16
-          ],
-          "sample_rates": [
-            48000
-          ]
-        }
-      }
     ]
   },
   "module_types": [],
   "module_instances": [
+    {
+      "inst_id": "PLAY_HOST",
+      "name": "Playback HOST",
+      "module_type": "builtin.host",
+      "stream_id": "as_config_playback",
+      "stream_name": "as_config_playback",
+      "direction": "playback",
+      "capabilities": {
+        "channels": {
+          "min": 1,
+          "max": 2
+        },
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
+    {
+      "inst_id": "PLAY_FILEIO_DAI",
+      "name": "Playback FILE_IO DAI",
+      "module_type": "builtin.dai",
+      "dai_type": "file_io_dai",
+      "dai_index": 0,
+      "stream_id": "as_config_playback",
+      "link_name": "FILE_IO_PLAYBACK_DAI0",
+      "device_id": "FILEIO0",
+      "direction": "playback",
+      "data_flow": "out",
+      "capabilities": {
+        "channels": {
+          "min": 1,
+          "max": 2
+        },
+        "tdm_slots": 2,
+        "slot_width": 16,
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
+    {
+      "inst_id": "CAP_FILEIO_DAI",
+      "name": "Capture FILE_IO DAI",
+      "module_type": "builtin.dai",
+      "dai_type": "file_io_dai",
+      "dai_index": 0,
+      "stream_id": "as_config_capture",
+      "link_name": "FILE_IO_CAPTURE_DAI0",
+      "device_id": "FILEIO0",
+      "direction": "capture",
+      "data_flow": "in",
+      "capabilities": {
+        "channels": {
+          "min": 1,
+          "max": 2
+        },
+        "tdm_slots": 2,
+        "slot_width": 16,
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
+    {
+      "inst_id": "CAP_HOST",
+      "name": "Capture HOST",
+      "module_type": "builtin.host",
+      "stream_id": "as_config_capture",
+      "stream_name": "as_config_capture",
+      "direction": "capture",
+      "capabilities": {
+        "channels": {
+          "min": 1,
+          "max": 2
+        },
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
+    {
+      "inst_id": "DSP_HOST",
+      "name": "DSP Filter HOST",
+      "module_type": "builtin.host",
+      "stream_id": "as_config_dsp_filter",
+      "stream_name": "as_config_dsp_filter",
+      "direction": "playback",
+      "capabilities": {
+        "channels": {
+          "min": 2,
+          "max": 2
+        },
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
+    {
+      "inst_id": "DSP_FILEIO_DAI",
+      "name": "DSP Filter FILE_IO DAI",
+      "module_type": "builtin.dai",
+      "dai_type": "file_io_dai",
+      "dai_index": 1,
+      "stream_id": "as_config_dsp_filter",
+      "link_name": "FILE_IO_DSP_FILTER_DAI1",
+      "device_id": "FILEIO1",
+      "direction": "playback",
+      "data_flow": "out",
+      "capabilities": {
+        "channels": {
+          "min": 2,
+          "max": 2
+        },
+        "tdm_slots": 2,
+        "slot_width": 16,
+        "sample_bits": [
+          16
+        ],
+        "sample_rates": [
+          48000
+        ]
+      }
+    },
     {
       "inst_id": "PLAY_CHREMAP0",
       "name": "Playback Channel Remap",
@@ -220,23 +233,11 @@
         "priority": 0,
         "clock": "timer"
       },
-      "ports": [
-        {
-          "port_id": "PLAY_HOST",
-          "role": "source",
-          "resource_ref": "host_playback0"
-        },
-        {
-          "port_id": "PLAY_FILEIO",
-          "role": "sink",
-          "resource_ref": "fileio_playback0"
-        }
-      ],
       "nodes": [
         {
           "node_id": "HOST_IN",
-          "kind": "port",
-          "port_ref": "PLAY_HOST"
+          "kind": "module",
+          "inst_ref": "PLAY_HOST"
         },
         {
           "node_id": "CHREMAP",
@@ -260,8 +261,8 @@
         },
         {
           "node_id": "DAI_OUT",
-          "kind": "port",
-          "port_ref": "PLAY_FILEIO"
+          "kind": "module",
+          "inst_ref": "PLAY_FILEIO_DAI"
         }
       ],
       "edges": [
@@ -300,23 +301,11 @@
         "priority": 0,
         "clock": "timer"
       },
-      "ports": [
-        {
-          "port_id": "CAP_FILEIO",
-          "role": "source",
-          "resource_ref": "fileio_capture0"
-        },
-        {
-          "port_id": "CAP_HOST",
-          "role": "sink",
-          "resource_ref": "host_capture0"
-        }
-      ],
       "nodes": [
         {
           "node_id": "DAI_IN",
-          "kind": "port",
-          "port_ref": "CAP_FILEIO"
+          "kind": "module",
+          "inst_ref": "CAP_FILEIO_DAI"
         },
         {
           "node_id": "VOLUME",
@@ -335,8 +324,8 @@
         },
         {
           "node_id": "HOST_OUT",
-          "kind": "port",
-          "port_ref": "CAP_HOST"
+          "kind": "module",
+          "inst_ref": "CAP_HOST"
         }
       ],
       "edges": [
@@ -371,23 +360,11 @@
         "priority": 0,
         "clock": "timer"
       },
-      "ports": [
-        {
-          "port_id": "DSP_HOST",
-          "role": "source",
-          "resource_ref": "host_dsp_filter0"
-        },
-        {
-          "port_id": "DSP_FILEIO",
-          "role": "sink",
-          "resource_ref": "fileio_dsp_filter1"
-        }
-      ],
       "nodes": [
         {
           "node_id": "HOST_IN",
-          "kind": "port",
-          "port_ref": "DSP_HOST"
+          "kind": "module",
+          "inst_ref": "DSP_HOST"
         },
         {
           "node_id": "DSP_FILTER",
@@ -396,8 +373,8 @@
         },
         {
           "node_id": "DAI_OUT",
-          "kind": "port",
-          "port_ref": "DSP_FILEIO"
+          "kind": "module",
+          "inst_ref": "DSP_FILEIO_DAI"
         }
       ],
       "edges": [
@@ -432,6 +409,27 @@
       "description": "Nominal capture gain for as_config FILE_IO validation.",
       "load_mode": "bulk",
       "node_values": [
+        {
+          "pipeline_id": "CAPTURE_MAIN",
+          "node_id": "VOLUME",
+          "values": {
+            "volume_db": 0
+          }
+        }
+      ]
+    },
+    {
+      "preset_id": "inspector_preset",
+      "description": "Inspector defaults for Audio Studio validation.",
+      "load_mode": "inspector",
+      "node_values": [
+        {
+          "pipeline_id": "PLAYBACK_MAIN",
+          "node_id": "VOLUME",
+          "values": {
+            "volume_db": 0
+          }
+        },
         {
           "pipeline_id": "CAPTURE_MAIN",
           "node_id": "VOLUME",
