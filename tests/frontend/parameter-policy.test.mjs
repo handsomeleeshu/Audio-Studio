@@ -33,6 +33,8 @@ assert.ok(indexHtml.includes("preset_id: 'inspector_preset'"), 'Inspector preset
 assert.ok(indexHtml.includes('debug_file_io'), 'snapshot should carry debug file I/O outside as_config payload');
 assert.ok(indexHtml.includes('applyBuildDiagnostics'), 'build diagnostics should mark nodes and ports');
 assert.ok(indexHtml.includes("id === 'builtin.host'"), 'debug file I/O connection policy should recognize host modules');
+assert.ok(indexHtml.includes('port-domain-external'), 'Host/debug external ports should use a solid visual marker');
+assert.ok(indexHtml.includes('isExternalPort'), 'connection policy should distinguish external/debug ports');
 assert.ok(indexHtml.includes("id === 'builtin.dai'"), 'FILE_IO DAI should be represented as builtin.dai plus parameters');
 
 const volumeType = builtin.module_types.find(mt => mt.type_id === 'gain.volume');

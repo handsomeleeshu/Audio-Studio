@@ -73,6 +73,7 @@ struct GuiConfigCompileRequest {
   std::string output_dir;
   std::string project_name;
   std::string alsatplg;
+  std::string as_server;
   bool build_tplg = true;
   bool strict = true;
   std::vector<std::string> plugin_paths;
@@ -98,6 +99,9 @@ struct ValidationRequest {
   std::string tplg_path;
   std::string test_list_path;
   std::string script_path;
+  std::string as_server_path;
+  std::string as_log_path;
+  std::string trace_ldc_path;
 };
 
 struct ValidationResult {

@@ -884,6 +884,16 @@
       background: var(--purple)
     }
 
+    .port.in.port-domain-external {
+      background: var(--cyan);
+      box-shadow: 0 0 9px var(--cyan), inset 0 0 0 2px #06101c
+    }
+
+    .port.out.port-domain-external {
+      background: var(--purple);
+      box-shadow: 0 0 9px var(--purple), inset 0 0 0 2px #06101c
+    }
+
     .port.active {
       background: var(--yellow);
       border-color: var(--yellow);
@@ -3740,7 +3750,7 @@
         if (r.ok) return await r.json();
         console.warn('[AudioStudio API] non-OK response', path, r.status);
       } catch (e) {
-        console.warn('[AudioStudio API] request failed, UI keeps running in fallback mode:', path, e.message);
+        console.warn('[AudioStudio API] request failed:', path, e.message);
       }
       return null;
     }
@@ -4023,6 +4033,22 @@
       const id = String(n?.moduleTypeId || '').toLowerCase();
       return (id === 'builtin.dai' || id === 'dai') && (n?.paramValues?.dai_type === 'file_io_dai' || String(n?.rawEndpoint?.kind || '').toLowerCase() === 'file_io');
     }
+    function portDomain(p) {
+      const domain = String(p?.domain || (p?.external ? 'external' : 'sof') || 'sof').toLowerCase();
+      return domain === 'external' ? 'external' : 'sof';
+    }
+    function nodePort(node, dir, name) {
+      return nodePortList(node, dir).find(p => (p.name || (dir === 'in' ? 'in' : 'out')) === name) || null;
+    }
+    function isExternalPort(node, dir, name) {
+      return portDomain(nodePort(node, dir, name)) === 'external';
+    }
+    function portDomainsForNode(n) {
+      const domains = {};
+      nodePortList(n, 'in').forEach(p => { domains[p.name || 'in'] = portDomain(p); });
+      nodePortList(n, 'out').forEach(p => { domains[p.name || 'out'] = portDomain(p); });
+      return domains;
+    }
     function updateDaiDirectionParam(n) {
       if (!isDaiFileIoNode(n)) return;
       const hasInput = nodePortList(n, 'in').length > 0;
@@ -4073,6 +4099,43 @@
     function pipelineSnapshot() {
       const groupId = typeof targetRuntimeGroupId === 'function' ? targetRuntimeGroupId() : currentPipelineId;
       const runtimeState = typeof runtimeStatusForGroupId === 'function' ? runtimeStatusForGroupId(groupId) : RUNTIME_STATES.NOT_READY;
+      const workingGroupsRaw = window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.() || [];
+      const edgeDomain = (p, side) => {
+        const node = nodeById(side === 'from' ? p.from : p.to);
+        return portDomain(nodePort(node, side === 'from' ? 'out' : 'in', side === 'from' ? p.fromPort : p.toPort));
+      };
+      const edgeSnapshot = e => {
+        const p = edgeParts(e);
+        return {
+          from: p.from + '.' + p.fromPort,
+          to: p.to + '.' + p.toPort,
+          from_domain: edgeDomain(p, 'from'),
+          to_domain: edgeDomain(p, 'to')
+        };
+      };
+      const nodeSnapshot = n => ({
+        id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, core: n.core,
+        cpu: n.cpu, latencyMs: n.lat, memKb: n.mem, ch: n.ch,
+        pipelineId: inferNodePipelineId(n),
+        pipelineNodeId: originalNodeId(n),
+        module_type: n.moduleTypeId,
+        inst_ref: n.instId || n.rawEndpoint?.inst_id || '',
+        kind: n.nodeKind || (n.instId || n.rawEndpoint?.inst_id ? 'module' : 'module_inline'),
+        params: inspectorPresetValuesForNode(n),
+        debug_file_io: isDebugFileIoNode(n),
+        in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
+        out_ports: nodePortList(n, 'out').map(p => p.name || 'out'),
+        port_domains: portDomainsForNode(n),
+        ports_flipped: !!n.portsFlipped
+      });
+      const workingGroups = workingGroupsRaw.map((g, idx) => ({
+        id: g.id || `GUI_PIPE_${idx + 1}`,
+        pipeline_id: g.originPipelineIds?.length === 1 ? g.originPipelineIds[0] : (g.id || `GUI_PIPE_${idx + 1}`),
+        name: g.displayName || g.name || `GUI Pipeline ${idx + 1}`,
+        origin_pipeline_ids: Array.isArray(g.originPipelineIds) ? g.originPipelineIds : [],
+        nodes: (g.nodes || []).map(n => n.id),
+        edges: (g.edges || []).map(edgeKeyForEdge)
+      }));
       const debugFileIo = state.nodes.filter(isDebugFileIoNode).map(n => ({
         node_id: n.id,
         node_name: n.name,
@@ -4083,19 +4146,25 @@
       }));
       const asConfigNodes = state.nodes.filter(n => !isDebugFileIoNode(n)).map(n => ({
         id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, core: n.core,
+        pipelineId: inferNodePipelineId(n),
+        pipelineNodeId: originalNodeId(n),
         module_type: n.moduleTypeId,
+        inst_ref: n.instId || n.rawEndpoint?.inst_id || '',
         params: inspectorPresetValuesForNode(n),
-        in_ports: (n.inPorts || []).map(p => p.name),
-        out_ports: (n.outPorts || []).map(p => p.name),
+        in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
+        out_ports: nodePortList(n, 'out').map(p => p.name || 'out'),
+        port_domains: portDomainsForNode(n),
         ports_flipped: !!n.portsFlipped
       }));
       const asConfigNodeIds = new Set(asConfigNodes.map(n => n.id));
       return {
         project: currentProjectFile || 'a2/A2.json',
+        workspace_id: currentWorkspaceId || currentProjectConfig?.workspace_id || '',
         project_name: currentProjectConfig?.meta?.build?.config_name || currentProjectFile || 'A2',
         active_pipeline: currentPipelineId,
         group_id: groupId,
         runtime_state: runtimeState,
+        working_groups: workingGroups,
         pipeline_descriptions: (currentProjectConfig?.pipelines || []).map(p => ({ pipe_id: p.pipe_id, name: p.name || p.pipe_id })),
         target: {
           dsp: $('#dspSelect')?.value || 'HiFi5s',
@@ -4108,21 +4177,14 @@
         running,
         selectedNodeId,
         selectedEdgeKey,
-        nodes: state.nodes.map(n => ({
-          id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, core: n.core,
-          cpu: n.cpu, latencyMs: n.lat, memKb: n.mem, ch: n.ch,
-          module_type: n.moduleTypeId,
-          params: inspectorPresetValuesForNode(n),
-          debug_file_io: isDebugFileIoNode(n),
-          in_ports: (n.inPorts || []).map(p => p.name), out_ports: (n.outPorts || []).map(p => p.name), ports_flipped: !!n.portsFlipped
-        })),
-        connections: state.edges.map(e => { const p = edgeParts(e); return { from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort }; }),
+        nodes: state.nodes.map(nodeSnapshot),
+        connections: state.edges.map(edgeSnapshot),
         as_config_payload: {
           as_config_nodes: asConfigNodes,
           connections: state.edges
             .map(e => edgeParts(e))
             .filter(p => asConfigNodeIds.has(p.from) && asConfigNodeIds.has(p.to))
-            .map(p => ({ from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort }))
+            .map(p => ({ from: p.from + '.' + p.fromPort, to: p.to + '.' + p.toPort, from_domain: edgeDomain(p, 'from'), to_domain: edgeDomain(p, 'to') }))
         },
         debug_file_io: debugFileIo
       };
@@ -4177,6 +4239,7 @@
     let nodeSeq = 0;
     let currentProjectFile = 'a2/A2.json';
     let currentProjectConfig = null;
+    let currentWorkspaceId = '';
     let currentPipelineId = 'ALL';
     let pipelineLayoutCache = {};
     let pendingLayoutScroll = null;
@@ -4420,6 +4483,13 @@
     function componentFromModuleType(mt) {
       const inDefs = mt.io?.in_ports || [];
       const outDefs = mt.io?.out_ports || [];
+      const typeId = String(mt.type_id || '').toLowerCase();
+      const debugExternal = !!mt.debug_only || typeId === 'builtin.file_input' || typeId === 'builtin.file_output' ||
+        typeId === 'virtual.file_input' || typeId === 'virtual.audio_output';
+      const normalizeModulePort = (p, dir, i) => {
+        const domain = debugExternal ? 'external' : portDomain(p);
+        return { name: p.name || `${dir}${i}`, max_ch: p.max_ch || maxCh, domain, external: domain === 'external' };
+      };
       const maxCh = Math.max(
         1,
         ...inDefs.map(p => Number(p.max_ch || 1)),
@@ -4442,8 +4512,8 @@
         name,
         moduleTypeId: mt.type_id,
         source: ui.source || mt.source || 'platform',
-        inPorts: inDefs.map((p, i) => ({ name: p.name || `in${i}`, max_ch: p.max_ch || maxCh })),
-        outPorts: outDefs.map((p, i) => ({ name: p.name || `out${i}`, max_ch: p.max_ch || maxCh })),
+        inPorts: inDefs.map((p, i) => normalizeModulePort(p, 'in', i)),
+        outPorts: outDefs.map((p, i) => normalizeModulePort(p, 'out', i)),
         ch: ui.channels || (maxCh === 1 ? '1ch' : `${maxCh}ch`),
         cpu,
         mem,
@@ -4460,7 +4530,7 @@
         type_id: 'builtin.file_output',
         category: 'builtin/input_output',
         ui: { display_name: 'File Output', library_category: 'INPUT / OUTPUT', library_type: 'output', icon: 'file', channels: '2ch', source: 'built-in' },
-        io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [] },
+        io: { in_ports: [{ name: 'in', max_ch: 2, domain: 'external', external: true }], out_ports: [] },
         performance: { cpu_percent: 0.2, mem_kb: 96, latency_ms: 0.1 },
         parameters: [
           { param_id: 'enable', param_name: 'Enable', value_type: 'bool', default: true, apply: { settable_states: ['PIPE_LOADED', 'RUNNING'], mode: 'next_frame' } },
@@ -4477,7 +4547,7 @@
       const n = String(name || 'Module');
       const s = n.toLowerCase();
       const type = s.includes('input') ? 'input' : s.includes('output') ? 'output' : 'util';
-      return { cat: 'MODULE', type, icon: iconForModule(n, '', n), name: n, ch: '2ch', cpu: .8, mem: 128, lat: .2, moduleTypeId: `fallback.${n.toLowerCase().replace(/\s+/g, '_')}`, inPorts: type === 'input' ? [] : [{ name: 'in', max_ch: 2 }], outPorts: type === 'output' ? [] : [{ name: 'out', max_ch: 2 }], runtimeParams: [] };
+      return { cat: 'MODULE', type, icon: iconForModule(n, '', n), name: n, ch: '2ch', cpu: .8, mem: 128, lat: .2, moduleTypeId: `fallback.${n.toLowerCase().replace(/\s+/g, '_')}`, inPorts: type === 'input' ? [] : [{ name: 'in', max_ch: 2, domain: 'sof' }], outPorts: type === 'output' ? [] : [{ name: 'out', max_ch: 2, domain: 'sof' }], runtimeParams: [] };
     }
     function projectNameFromFile(file = '') {
       const base = String(file || '').split('/').pop() || '';
@@ -4516,8 +4586,8 @@
         const maxCh = maxChannelsFromInstance(inst, 2);
         const isPlayback = String(inst.direction || '').toLowerCase() !== 'capture';
         c.type = isPlayback ? 'input' : 'output';
-        c.inPorts = isPlayback ? [] : [{ name: 'in', max_ch: maxCh }];
-        c.outPorts = isPlayback ? [{ name: 'out', max_ch: maxCh }] : [];
+        c.inPorts = [{ name: 'in', max_ch: maxCh, domain: isPlayback ? 'external' : 'sof', external: isPlayback }];
+        c.outPorts = [{ name: 'out', max_ch: maxCh, domain: isPlayback ? 'sof' : 'external', external: !isPlayback }];
         c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
         c.paramValues = { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
         c.rawEndpoint = inst;
@@ -4527,8 +4597,8 @@
         const direction = String(inst.direction || '').toLowerCase() === 'capture' ? 'capture' : 'playback';
         const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction === 'playback';
         c.type = hasInput ? 'output' : 'input';
-        c.inPorts = hasInput ? [{ name: 'in', max_ch: maxCh }] : [];
-        c.outPorts = hasInput ? [] : [{ name: 'out', max_ch: maxCh }];
+        c.inPorts = hasInput ? [{ name: 'in', max_ch: maxCh, domain: 'sof' }] : [];
+        c.outPorts = hasInput ? [] : [{ name: 'out', max_ch: maxCh, domain: 'sof' }];
         c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
         c.paramValues = {
           dai_type: inst.dai_type || 'file_io_dai',
@@ -4565,8 +4635,8 @@
         mem: 32 + maxCh * 8,
         lat: 0.05,
         moduleTypeId: isFileIoDai ? 'builtin.dai' : `port.${p.role || 'io'}`,
-        inPorts: isSource ? [] : [{ name: 'in', max_ch: maxCh }],
-        outPorts: isSource ? [{ name: 'out', max_ch: maxCh }] : [],
+        inPorts: isSource ? [] : [{ name: 'in', max_ch: maxCh, domain: 'sof' }],
+        outPorts: isSource ? [{ name: 'out', max_ch: maxCh, domain: 'sof' }] : [],
         runtimeParams: daiParams,
         paramValues: isFileIoDai ? { dai_type: 'file_io_dai', dai_index: daiIndex, direction: endpoint?.direction || (isSource ? 'capture' : 'playback') } : {},
         rawEndpoint: endpoint || null
@@ -4998,7 +5068,13 @@
           const c = resolvePipelineNodeComponent(currentProjectConfig, pipe, pn);
           const id = graphNodeId(pipe.pipe_id, pn.node_id);
           idSet.add(pn.node_id);
-          const gn = mkNodeFromComponent(id, c, x, y); gn.pipelineId = pipe.pipe_id; gn.pipelineName = pipe.name || pipe.pipe_id; gn.pipelineNodeId = pn.node_id; nodes.push(gn);
+          const gn = mkNodeFromComponent(id, c, x, y);
+          gn.pipelineId = pipe.pipe_id;
+          gn.pipelineName = pipe.name || pipe.pipe_id;
+          gn.pipelineNodeId = pn.node_id;
+          gn.instId = pn.inst_ref || c.rawEndpoint?.inst_id || null;
+          gn.nodeKind = pn.kind || (gn.instId ? 'module' : 'module_inline');
+          nodes.push(gn);
         });
         (pipe.edges || []).forEach(e => {
           const from = splitEndpoint(e.from), to = splitEndpoint(e.to);
@@ -5171,10 +5247,16 @@
       await loadPlatformConfig(currentProjectFile);
     }
     async function loadPlatformConfig(projectFile = currentProjectFile) {
-      const cfg = await apiGetFirstJson(['/api/config?project=' + encodeURIComponent(projectFile || 'a2/A2.json'), ...staticConfigPaths(projectFile || 'a2/A2.json')]);
-      if (!cfg) { addLog('warn', 'Project JSON not loaded', 'Tried backend /api/config and static configs/platform/*.json'); return; }
+      const cfg = await apiGet('/api/config?project=' + encodeURIComponent(projectFile || 'a2/A2.json'));
+      if (!cfg || cfg.ok === false || !cfg.workspace_id) {
+        currentWorkspaceId = '';
+        addLog('warn', 'Project JSON not loaded', 'Backend /api/config did not return a workspace project');
+        toast('Backend project workspace unavailable', 'error');
+        return;
+      }
       currentProjectFile = projectFile || 'a2/A2.json';
       currentProjectConfig = cfg;
+      currentWorkspaceId = cfg.workspace_id || '';
       defaultViewportZoomApplied = false;
       const projectSelect = $('#projectSelect');
       if (projectSelect) projectSelect.value = currentProjectFile;
@@ -5199,10 +5281,13 @@
     function componentByName(name) { return components.find(c => c.name === name) || fallbackComponentForName(name); }
     function normalizePortsForComponent(c, dir) {
       const key = dir === 'in' ? 'inPorts' : 'outPorts';
-      if (Array.isArray(c?.[key])) return c[key].map((p, i) => ({ name: p.name || `${dir}${i}`, max_ch: p.max_ch || 1 }));
+      if (Array.isArray(c?.[key])) return c[key].map((p, i) => {
+        const domain = portDomain(p);
+        return { name: p.name || `${dir}${i}`, max_ch: p.max_ch || p.maxCh || 1, domain, external: domain === 'external' };
+      });
       if (dir === 'in' && c?.type === 'input') return [];
       if (dir === 'out' && c?.type === 'output') return [];
-      return [{ name: dir === 'in' ? 'in' : 'out', max_ch: Number(String(c?.ch || '2').replace(/\D/g, '')) || 2 }];
+      return [{ name: dir === 'in' ? 'in' : 'out', max_ch: Number(String(c?.ch || '2').replace(/\D/g, '')) || 2, domain: 'sof' }];
     }
     function nodePortList(node, dir) {
       const ports = dir === 'in' ? node.inPorts : node.outPorts;
@@ -5306,9 +5391,10 @@
         const portHtml = (ports, dir) => ports.map((p, i) => {
           const top = ((i + 1) / (ports.length + 1)) * 100;
           const name = p.name || (dir === 'in' ? 'in' : 'out');
+          const domain = portDomain(p);
           const mark = portMarkFor(n, dir, name);
           const markClass = mark ? ` mark-${mark}` : '';
-          return `<div class="port ${dir}${markClass}" data-dir="${dir}" data-port="${name}" title="${dir.toUpperCase()} ${name}${mark ? ' · ' + mark.toUpperCase() : ''}" style="top:${top}%"></div>`;
+          return `<div class="port ${dir} port-domain-${domain}${markClass}" data-dir="${dir}" data-port="${name}" data-port-domain="${domain}" title="${dir.toUpperCase()} ${name} · ${domain}${mark ? ' · ' + mark.toUpperCase() : ''}" style="top:${top}%"></div>`;
         }).join('');
         const el = document.createElement('div');
         const mark = nodeMarkFor(n);
@@ -5354,8 +5440,19 @@
       if (from === to) { toast('同一个算法组件不能自连接'); connectFrom = null; clearActivePorts(); return false; }
       const fromNode = nodeById(from);
       const toNode = nodeById(to);
-      if ((isDebugFileIoNode(fromNode) && !isHostComponentNode(toNode)) || (isDebugFileIoNode(toNode) && !isHostComponentNode(fromNode))) {
+      const fromExternal = isExternalPort(fromNode, 'out', fromPort);
+      const toExternal = isExternalPort(toNode, 'in', toPort);
+      if (fromExternal !== toExternal) {
+        toast('External debug ports can connect only to external debug ports', 'warn');
+        return false;
+      }
+      if ((isDebugFileIoNode(fromNode) || isDebugFileIoNode(toNode)) &&
+        !(fromExternal && toExternal && (isHostComponentNode(fromNode) || isHostComponentNode(toNode)))) {
         toast('Debug File I/O can connect only to host components', 'warn');
+        return false;
+      }
+      if (fromExternal && !(isHostComponentNode(fromNode) || isHostComponentNode(toNode))) {
+        toast('External debug ports can connect only to HOST external ports', 'warn');
         return false;
       }
 
@@ -11862,7 +11959,7 @@
 
     }
     function init() {
-      pipelineLayoutCache = loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); setupInspectorTabs(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawInspectorProbeCanvases(); $('#playBtn').textContent = '▶'; addLog('ok', 'Build successful', 'Smart Speaker v3 / HiFi5'); addLog('info', 'Pipeline validated', '0 warnings, 0 errors');
+      pipelineLayoutCache = loadLayoutCacheFromStorage(); renderLibrary(); renderAll(true); updateHistoryButtons(); setupInspectorTabs(); loadAlgorithmCatalogThenProject(); drawWave($('#mainWave')); drawInspectorProbeCanvases(); $('#playBtn').textContent = '▶'; addLog('info', 'Frontend ready', 'Waiting for backend project workspace');
       $('#searchInput').addEventListener('input', e => renderLibrary(e.target.value));
       $('#projectSelect').addEventListener('change', e => { saveCurrentLayout('before_project_switch'); loadPlatformConfig(e.target.value); });
       const wrap = $('#canvasWrap');
@@ -12198,14 +12295,14 @@
       addLog('info', 'Build started', 'Calling /api/pipeline/build');
       const res = await apiPost('/api/pipeline/build', pipelineSnapshot());
       applyBuildDiagnostics(res || {});
-      const ok = res?.ok !== false && !((res?.errors || []).length);
+      const backendOk = res && res.ok === true;
+      const pipeLoaded = normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
+      const ok = backendOk && pipeLoaded && !((res?.errors || []).length);
       buildState = ok ? 'success' : 'failed';
       setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
       $('.badge.ok').textContent = ok ? '● BUILD SUCCESS' : '● BUILD FAILED';
       if (res?.core_map) {
         state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
-      } else if (ok) {
-        state.nodes.forEach(n => n.core = Math.floor(Math.random() * 4));
       }
       if (buildBtn) { buildBtn.disabled = false; buildBtn.textContent = buildBtn.dataset.originalText || '▣ Build'; }
       buildingRuntimeGroupId = '';

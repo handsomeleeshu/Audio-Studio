@@ -89,13 +89,17 @@ Runtime Dashboard
 - `builtin.host` module instance 使用 `stream_name` 字符串参数；配置中仍可保留 `stream_id` 作为 as_config 兼容字段。
 - FILE_IO DAI 不是单独 module type。它是 `builtin.dai` instance，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction` 和 `file_path`。
 - `value_type: "file_io"` 由 Inspector 根据 DAI 当前方向显示为打开 WAV 或选择保存路径；port 方向切换会同步更新 `direction`。
-- `builtin.file_input` 和 `builtin.file_output` 是 debug-only 前端虚拟组件：它们显示为特殊颜色，连接规则限制为只能连接 HOST component，并且不会进入 `as_config_payload`。
+- `builtin.host` 在 pipeline layout 中始终显示一个 input 和一个 output，其中一侧是 SOF internal port，另一侧是 external debug port。external port 和 file input/output port 渲染为实心小圆孔，颜色仍按 input/output 原规则。
+- `builtin.file_input` 和 `builtin.file_output` 是 debug-only 前端虚拟组件：它们显示为特殊颜色，只能连接 HOST external port，并且不会进入 backend 重生成后的根 `pipelines[]`。
+- Build 请求必须提交完整 layout snapshot，同时用 `group_id` 指明本次 build 的 working group；`group_id:"ALL"` 才表示请求全量 pipeline build。
+- Build 成功只接受 backend 返回 `ok: true` 且 `runtime_state: "PIPE_LOADED"`；无 backend、HTTP 失败或 `null` response 都必须显示 Build failed。
 
 ## 连接策略
 
 连接规则由当前 standalone 入口实现，并由 `GUI/frontend/assets/js/pipelineRules.js` 的单元测试覆盖：
 
 - 必须从 output port 连到 input port。
+- `external` 只能连接 `external`，`sof` 只能连接 `sof`。
 - 不允许同一节点自连。
 - UI 手动编辑时，一个 output port 只能连接一个 input port。
 - 一个 input port 也只能有一个上游 output。

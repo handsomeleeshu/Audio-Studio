@@ -27,11 +27,15 @@ assert.equal(/['"]RUNTIME['"]/.test(html), false, 'runtime gating must not use t
 assert.equal(count(/#buildBtn'\)\.addEventListener\('click'/g), 1, 'Build button should have one owning click handler');
 assertIncludes('async function buildRuntimeGroup', 'Build button should wait for /api/pipeline/build before changing state');
 assertIncludes("buildBtn.disabled = true", 'Build button should be disabled while building');
+assertIncludes('res && res.ok === true', 'Build must not treat null/missing backend responses as success');
+assertIncludes('normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED', 'Build success must require backend PIPE_LOADED');
 assert.ok(/setRuntimeStatusForGroup\(groupId,[\s\S]*RUNTIME_STATES\.PIPE_LOADED/.test(html), 'successful build should set PIPE_LOADED');
 assert.ok(/setRuntimeStatusForGroup\(groupId,[\s\S]*RUNTIME_STATES\.ERROR/.test(html), 'failed build should set ERROR');
 assertIncludes('applyBuildDiagnostics', 'build diagnostics should mark nodes and ports');
 assertIncludes('node_marks', 'backend node marks must be consumed');
 assertIncludes('port_marks', 'backend port marks must be consumed');
+assertNotIncludes('UI keeps running in fallback mode', 'API failures must not be described as fallback success mode');
+assertNotIncludes("addLog('ok', 'Build successful', 'Smart Speaker v3 / HiFi5')", 'startup must not log fake build success');
 
 assertIncludes('ensureInspectorPreset', 'Inspector should create or find inspector_preset');
 assertIncludes("preset_id: 'inspector_preset'", 'inspector preset id should be stable');
@@ -41,12 +45,20 @@ assertIncludes('writeInspectorPresetParam', 'Inspector changes should write to i
 assertIncludes('data-param-disabled', 'Inspector disabled state should be reflected in DOM');
 
 assertIncludes('debug_file_io', 'snapshot should carry debug file I/O outside as_config payload');
+assertIncludes('working_groups', 'snapshot should send working groups for backend pipeline regeneration');
+assertIncludes('pipelineNodeId', 'snapshot should send original/local pipeline node ids');
+assertIncludes('inst_ref', 'snapshot should send module instance references for HOST/DAI');
+assertIncludes('port_domains', 'snapshot should send per-port SOF/external domains');
 assertIncludes('data-file-param-action', 'file_open/file_save controls should be rendered');
 assertIncludes("t === 'file_io'", 'Inspector should map file_io value_type to file open/save controls');
 assertIncludes('readAudioFileInfo', 'WAV selection should parse basic audio info');
 assertIncludes('isDebugFileIoNode', 'debug file I/O nodes should be identifiable');
 assertIncludes('as_config_nodes', 'snapshot should separate final as_config payload nodes');
 assertIncludes("id === 'builtin.host'", 'debug file I/O connection policy should recognize host modules');
+assertIncludes('isExternalPort', 'frontend should distinguish external/debug ports');
+assertIncludes('data-port-domain', 'port DOM should expose SOF/external domain');
+assertIncludes('port-domain-external', 'external/debug ports should render as solid special ports');
+assertIncludes('External debug ports can connect only to external debug ports', 'connection policy should reject external to SOF edges');
 
 assertIncludes('isDaiFileIoNode', 'DAI file_io_dai direction handling should be explicit');
 assertIncludes("id === 'builtin.dai'", 'FILE_IO DAI should be represented as builtin.dai plus parameters');

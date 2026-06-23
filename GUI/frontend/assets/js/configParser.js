@@ -5,7 +5,7 @@ const VIRTUAL_IO_MODULE_TYPES = [
     type_id: 'virtual.file_input',
     name: 'File Input',
     category: 'INPUT / OUTPUT',
-    io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }] },
+    io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }] },
     static_schema: {
       fields: [
         { key: 'source', type: 'enum', enum: ['local_file', 'demo_sine', 'demo_speech'], default: 'local_file' },
@@ -35,7 +35,7 @@ const VIRTUAL_IO_MODULE_TYPES = [
     type_id: 'virtual.audio_output',
     name: 'Audio Output',
     category: 'INPUT / OUTPUT',
-    io: { in_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }], out_ports: [] },
+    io: { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }], out_ports: [] },
     static_schema: {
       fields: [
         { key: 'sink', type: 'enum', enum: ['browser_playback', 'wav_render', 'virtual_speaker'], default: 'browser_playback' }
@@ -133,18 +133,36 @@ function endpointInstancePorts(inst, moduleTypeId, fallbackInputs, fallbackOutpu
   if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
     const playback = direction !== 'capture';
     return {
-      inputs: playback ? [] : [{ name: 'in', max_ch: maxCh }],
-      outputs: playback ? [{ name: 'out', max_ch: maxCh }] : []
+      inputs: [{ name: 'in', max_ch: maxCh, domain: playback ? 'external' : 'sof', external: playback }],
+      outputs: [{ name: 'out', max_ch: maxCh, domain: playback ? 'sof' : 'external', external: !playback }]
     };
   }
   if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
     const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction !== 'capture';
     return {
-      inputs: hasInput ? [{ name: 'in', max_ch: maxCh }] : [],
-      outputs: hasInput ? [] : [{ name: 'out', max_ch: maxCh }]
+      inputs: hasInput ? [{ name: 'in', max_ch: maxCh, domain: 'sof' }] : [],
+      outputs: hasInput ? [] : [{ name: 'out', max_ch: maxCh, domain: 'sof' }]
     };
   }
   return { inputs: fallbackInputs, outputs: fallbackOutputs };
+}
+
+function portDomain(port) {
+  return String(port && (port.domain || (port.external ? 'external' : 'sof')) || 'sof').toLowerCase() === 'external'
+    ? 'external'
+    : 'sof';
+}
+
+function convertPort(port, dir, index) {
+  const name = port && port.name || `${dir}${index}`;
+  const domain = portDomain(port);
+  return {
+    id: safeName(name),
+    name,
+    maxCh: port && (port.max_ch || port.maxCh) || 0,
+    domain,
+    external: domain === 'external'
+  };
 }
 
 function normalizedLibraryCategory(moduleType) {
@@ -255,8 +273,8 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
       subtitle,
       raw: deepClone(raw),
       moduleType: deepClone(moduleType),
-      inputs: inputs.map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
-      outputs: outputs.map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
+      inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
+      outputs: outputs.map((p, i) => convertPort(p, 'out', i)),
       staticParams: defaults.staticParams,
       runtimeParams: defaults.runtimeParams,
       core: moduleType && moduleType.service_binding && moduleType.service_binding.preferred_core ? Number(String(moduleType.service_binding.preferred_core).replace('core', '')) : 0,
@@ -287,8 +305,8 @@ export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
     subtitle: moduleType.type_id,
     raw: { node_id: id, kind: 'module_inline', inline: { module_type: moduleType.type_id, name: title } },
     moduleType: deepClone(moduleType),
-    inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
-    outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
+    inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => convertPort(p, 'in', i)),
+    outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => convertPort(p, 'out', i)),
     staticParams: defaults.staticParams,
     runtimeParams: defaults.runtimeParams,
     core: 0,
