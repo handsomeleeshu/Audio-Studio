@@ -4013,12 +4013,23 @@
       return (p?.apply?.settable_states || []).map(s => normalizeRuntimeStatus(s));
     }
     function isParamEnabledForNode(n, p) {
+      if (isBuildAffectingParam(p) && runtimeHasStructuralEditLock()) return false;
       const states = normalizeSettableStates(p);
       const status = runtimeStatusForNode(n);
       if (!states.length) return status !== RUNTIME_STATES.RUNNING;
       if (status === RUNTIME_STATES.RUNNING) return states.includes(RUNTIME_STATES.RUNNING);
       if (states.includes(RUNTIME_STATES.PIPE_LOADED)) return status === RUNTIME_STATES.PIPE_LOADED;
       return states.includes(status);
+    }
+    function isBuildAffectingParam(p) {
+      const mode = String(p?.apply?.mode || '').toLowerCase();
+      if (mode === 'runtime' || mode === 'next_frame') return false;
+      if (mode) return mode === 'build' || mode === 'compile' || mode === 'static' || mode === 'safe_point';
+      return !normalizeSettableStates(p).length;
+    }
+    function runtimeAllowsBuildAffectingParameterEdit(n, p, kind = 'build_affecting_param_updated') {
+      if (!isBuildAffectingParam(p)) return true;
+      return runtimeAllowsStructuralEdit(kind);
     }
     function debugFileIoDirection(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
@@ -4310,7 +4321,7 @@
       updateHistoryButtons();
     }
     function undoEdit() {
-      if (running) { toast('Run 状态下不能 Undo，请先 Stop'); return; }
+      if (!runtimeAllowsStructuralEdit('undo')) return;
       const item = history.undo.pop();
       if (!item) { toast('Nothing to undo'); return; }
       history.redo.push({ label: item.label, snapshot: cloneGraph() });
@@ -4322,7 +4333,7 @@
       addLog('info', 'Undo', item.label);
     }
     function redoEdit() {
-      if (running) { toast('Run 状态下不能 Redo，请先 Stop'); return; }
+      if (!runtimeAllowsStructuralEdit('redo')) return;
       const item = history.redo.pop();
       if (!item) { toast('Nothing to redo'); return; }
       history.undo.push({ label: item.label, snapshot: cloneGraph() });
@@ -5016,7 +5027,6 @@
       select.value = options.some(p => p.pipe_id === currentPipelineId) ? currentPipelineId : 'ALL';
       currentPipelineId = select.value || 'ALL';
       select.onchange = e => {
-        if (running) { toast('Run 状态下不能切换 pipeline，请先 Stop'); e.target.value = currentPipelineId; return; }
         saveCurrentLayout('before_pipeline_switch');
         currentPipelineId = e.target.value || 'ALL';
         loadPipelineGraphFromConfig(currentPipelineId);
@@ -5045,6 +5055,7 @@
       if (!pipelineId) return;
       const pipe = (currentProjectConfig.pipelines || []).find(p => p.pipe_id === pipelineId);
       if (!pipe) return;
+      if (!runtimeAllowsStructuralEdit('pipeline_rename')) return;
       const next = prompt('Pipeline name', pipe.name || pipe.pipe_id);
       const name = String(next || '').trim();
       if (!name || name === pipe.name) return;
@@ -5422,7 +5433,7 @@
       $$('.port.active').forEach(p => p.classList.remove('active'));
     }
     function beginPortConnection(node, dir, port) {
-      if (running) { toast('Run 状态下锁定 pipeline，请 Stop 后再改线'); return; }
+      if (!runtimeAllowsNodeMutation([node.id], 'connection_added')) return;
       connectFrom = { nodeId: node.id, nodeName: node.name, dir, port };
       clearActivePorts();
       const nodeEl = $(`.pipeline-node[data-id="${node.id}"]`);
@@ -5432,7 +5443,7 @@
       backendEdit('connection_begin', { node_id: node.id, dir, port });
     }
     function finishPortConnection(node, dir, port) {
-      if (running || !connectFrom) return false;
+      if (!connectFrom) return false;
       if (connectFrom.nodeId === node.id && connectFrom.dir === dir && connectFrom.port === port) return false;
       if (connectFrom.dir === dir) {
         beginPortConnection(node, dir, port);
@@ -5507,11 +5518,10 @@
       });
     }
     function makeDraggable(el, n) {
-      let startX, startY, drag = false, moved = false, dragNodes = [], origPos = new Map(), lockedRunDrag = null;
+      let startX, startY, drag = false, moved = false, dragNodes = [], origPos = new Map();
       const nodeElementById = (id) => $$('.pipeline-node').find(x => x.dataset.id === id);
       el.addEventListener('pointerdown', e => {
         if (e.target.classList.contains('port') || e.target.classList.contains('delete-node')) return;
-        if (running) { selectedNodeIds.clear(); selectedEdgeKeys.clear(); selectedNodeIds.add(n.id); selectedNodeId = n.id; selectedEdgeKey = ''; lockedRunDrag = { x: e.clientX, y: e.clientY, warned: false }; renderSelectionChange({ resetInspector: true }); return; }
 
         // If this node is part of a marquee selection, keep the selection and
         // drag all selected nodes together. If it is not selected, fall back to
@@ -5545,13 +5555,6 @@
         renderSelectionChange({ resetInspector: true });
       });
       el.addEventListener('pointermove', e => {
-        if (running && lockedRunDrag) {
-          if (!lockedRunDrag.warned && Math.hypot(e.clientX - lockedRunDrag.x, e.clientY - lockedRunDrag.y) > 3) {
-            lockedRunDrag.warned = true;
-            toast('Run 状态下锁定 pipeline，请 Stop 后再拖动节点', 'warn');
-          }
-          return;
-        }
         if (!drag) return;
         const dx = (e.clientX - startX) / (state.zoom || 1);
         const dy = (e.clientY - startY) / (state.zoom || 1);
@@ -5582,7 +5585,6 @@
             backendEdit('node_moved', { node_id: n.id, x: n.x, y: n.y });
           }
         }
-        lockedRunDrag = null;
         drag = false;
         moved = false;
         dragNodes = [];
@@ -5724,7 +5726,6 @@
       });
     }
     function deleteSelectedEdge() {
-      if (running) { toast('Run 状态下不能删除连线，请先 Stop'); return false; }
       const keys = selectedEdgeKeys.size ? new Set(selectedEdgeKeys) : (selectedEdgeKey ? new Set([selectedEdgeKey]) : new Set());
       if (!keys.size) return false;
       if (!runtimeAllowsEdgeMutation([...keys], 'connections_removed')) return false;
@@ -5746,7 +5747,6 @@
       return false;
     }
     function deleteSelection() {
-      if (running) { toast('Run 状态下不能删除选择，请先 Stop'); return false; }
       const nodeKeys = new Set(selectedNodeIds);
       const edgeKeys = new Set(selectedEdgeKeys);
       if (selectedEdgeKey) edgeKeys.add(selectedEdgeKey);
@@ -5842,7 +5842,6 @@
     }
     function deleteNode(id) {
       selectedEdgeKey = '';
-      if (running) { toast('Run 状态下不能删除节点，请先 Stop'); return; }
       const n = nodeById(id); if (!n) return;
       if (!runtimeAllowsNodeMutation([id], 'node_removed')) return;
       pushHistory('Delete node');
@@ -5977,6 +5976,7 @@
         const id = ctrl.dataset.paramId;
         const p = params.find(x => paramId(x) === id);
         const applyValue = (raw) => {
+          if (!runtimeAllowsBuildAffectingParameterEdit(n, p, 'build_affecting_param_updated')) return;
           if (!isParamEnabledForNode(n, p)) return;
           if (!n.paramValues) n.paramValues = {};
           let value = raw;
@@ -6002,7 +6002,7 @@
         btn.addEventListener('click', async () => {
           const id = btn.dataset.paramId;
           const p = params.find(x => paramId(x) === id);
-          if (!p || !isParamEnabledForNode(n, p)) return;
+          if (!p || !runtimeAllowsBuildAffectingParameterEdit(n, p, 'build_affecting_param_updated') || !isParamEnabledForNode(n, p)) return;
           if (btn.dataset.fileParamAction === 'file_open') {
             const input = document.createElement('input');
             input.type = 'file';
@@ -8943,7 +8943,6 @@
       if (opts && typeof opts.preventDefault === 'function') opts = {};
       const silent = !!opts.silent;
       const keepHistory = opts.history !== false;
-      if (running) { toast('Run 状态下不能自动布局，请先 Stop'); return; }
       if (!state.nodes.length) { toast('No nodes to arrange'); return; }
       if (keepHistory) pushHistory('Auto arrange');
 
@@ -8988,7 +8987,6 @@
       addLog('info', silent ? 'Initial auto layout finished' : 'Auto layout finished', `Per-pipeline layout saved: ${arrangedGroups.length} pipeline band(s), ${state.nodes.length} node(s)`);
     }
     function swapSelectedPorts() {
-      if (running) { toast('Run 状态下不能对调端口方向，请先 Stop'); return; }
       const n = nodeById(selectedNodeId);
       if (!n) { toast('请先选择一个算法组件'); return; }
       if (!runtimeAllowsNodeMutation([n.id], 'swap_ports')) return;
@@ -9264,7 +9262,6 @@
         if (opts && typeof opts.preventDefault === 'function') opts = {};
         const silent = !!opts.silent;
         const keepHistory = opts.history !== false;
-        if (running) { toast('Run 状态下不能自动布局，请先 Stop'); return; }
         if (!state.nodes.length) { toast('No nodes to arrange'); return; }
         if (keepHistory) pushHistory('Auto arrange');
 
@@ -9390,7 +9387,6 @@
         if (opts && typeof opts.preventDefault === 'function') opts = {};
         const silent = !!opts.silent;
         const keepHistory = opts.history !== false;
-        if (running) { toast('Run 状态下不能自动布局，请先 Stop'); return; }
         if (!state.nodes.length) { toast('No nodes to arrange'); return; }
         if (keepHistory) pushHistory('Auto arrange');
 
@@ -9544,7 +9540,8 @@
         return true;
       }
       function cutSelectionV43() {
-        if (running) { toast('Run 状态下不能 Cut，请先 Stop'); return false; }
+        if (!runtimeAllowsNodeMutation([...selectedNodeSetV43()], 'selection_cut')) return false;
+        if (!runtimeAllowsEdgeMutation([...selectedEdgeSetV43()], 'selection_cut')) return false;
         if (!copySelectionV43({ silent: true, cut: true })) return false;
         const payload = clipboardStateV43.payload;
         const ok = deleteSelection();
@@ -9577,7 +9574,7 @@
         return true;
       }
       function pasteSelectionV43() {
-        if (running) { toast('Run 状态下不能 Paste，请先 Stop'); return false; }
+        if (!runtimeAllowsStructuralEdit('selection_pasted')) return false;
         const payload = clipboardStateV43.payload;
         if (!payload) { toast('Clipboard is empty'); return false; }
         pushHistory('Paste selection');
@@ -12029,7 +12026,25 @@
       });
       wrap.addEventListener('dragover', e => { e.preventDefault(); wrap.classList.add('dragover') });
       wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
-      wrap.addEventListener('drop', e => { e.preventDefault(); wrap.classList.remove('dragover'); const name = e.dataTransfer.getData('text/plain'); if (!name) return; if (running) { toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return; } if (!runtimeAllowsNodeMutation([], 'node_added')) return; const c = componentByName(name); const pt = worldPointFromEvent(e); pushHistory('Add node'); const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + (++nodeSeq + 10); const n = mkNode(id, name, c.type, c.icon, pt.x - 64, pt.y - 58); n.moduleTypeId = c.moduleTypeId || ''; n.core = Math.floor(Math.random() * 4); state.nodes.push(n); selectedNodeId = n.id; renderAll(true); backendEdit('node_added', { node_id: n.id, node_name: name }); addLog('info', 'Node added', name); });
+      wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        wrap.classList.remove('dragover');
+        const name = e.dataTransfer.getData('text/plain');
+        if (!name) return;
+        if (!runtimeAllowsNodeMutation([], 'node_added')) return;
+        const c = componentByName(name);
+        const pt = worldPointFromEvent(e);
+        pushHistory('Add node');
+        const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + (++nodeSeq + 10);
+        const n = mkNode(id, name, c.type, c.icon, pt.x - 64, pt.y - 58);
+        n.moduleTypeId = c.moduleTypeId || '';
+        n.core = Math.floor(Math.random() * 4);
+        state.nodes.push(n);
+        selectedNodeId = n.id;
+        renderAll(true);
+        backendEdit('node_added', { node_id: n.id, node_name: name });
+        addLog('info', 'Node added', name);
+      });
       $('#autoBtn').addEventListener('click', () => autoArrange());
       $('#selectTool')?.addEventListener('click', () => { if ($('#selectTool')?.dataset.mode === 'renamePipeline') renamePipeline(); });
       $('#zoomOut').addEventListener('click', () => setZoom(state.zoom - .1));
@@ -12042,10 +12057,9 @@
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));
       $('#validateBtn').addEventListener('click', async () => { const res = await apiPost('/api/pipeline/validate', pipelineSnapshot()); const warnings = res?.warnings || []; const errors = res?.errors || []; $('#warnCount').textContent = String(warnings.length); $('#errCount').textContent = String(errors.length); addLog(errors.length ? 'warn' : 'ok', 'Pipeline validated', 'Backend callback: /api/pipeline/validate'); toast(errors.length ? 'Validate failed' : 'Validate success'); });
       $('#buildBtn').addEventListener('click', async () => {
-        const groupId = targetRuntimeGroupId();
-        const status = runtimeStatusForGroupId(groupId);
-        if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup(groupId);
-        else await buildRuntimeGroup(groupId);
+        const status = runtimeStatusForGroupId('ALL');
+        if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup('ALL');
+        else await buildRuntimeGroup('ALL');
       });
       $('#runBtn').addEventListener('click', async () => { await startRuntimeGroup(); });
       $('#stopBtn').addEventListener('click', async () => { await stopRuntimeGroup(); });
@@ -12139,6 +12153,20 @@
     const pipelineRuntimeStates = new Map();
     let activeRuntimeGroupId = 'ALL';
     let runtimeRenderScopeNodeIds = null;
+    const STRUCTURAL_EDIT_KINDS = new Set([
+      'node_added',
+      'node_removed',
+      'connection_added',
+      'connections_removed',
+      'selection_deleted',
+      'selection_cut',
+      'selection_pasted',
+      'swap_ports',
+      'pipeline_rename',
+      'build_affecting_param_updated',
+      'undo',
+      'redo'
+    ]);
     const RUNTIME_STATUS_META = {
       [RUNTIME_STATES.NOT_READY]: { label: 'Not Ready', log: 'warn', css: 'not-ready' },
       [RUNTIME_STATES.PIPE_LOADED]: { label: 'Pipe Loaded', log: 'ok', css: 'pipe-loaded' },
@@ -12159,6 +12187,16 @@
     function runtimeGroupForEdgeKey(key) {
       if (!key) return null;
       return runtimeGroups().find(g => g.edges?.some(e => edgeKeyForEdge(e) === key)) || null;
+    }
+    function runtimeStatusStoredForGroupId(groupId) {
+      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || RUNTIME_STATES.NOT_READY);
+    }
+    function runtimeStatusForAllGroups() {
+      const statuses = runtimeGroups().map(g => runtimeStatusStoredForGroupId(g.id));
+      if (statuses.includes(RUNTIME_STATES.RUNNING)) return RUNTIME_STATES.RUNNING;
+      if (statuses.includes(RUNTIME_STATES.PIPE_LOADED)) return RUNTIME_STATES.PIPE_LOADED;
+      if (statuses.includes(RUNTIME_STATES.ERROR)) return RUNTIME_STATES.ERROR;
+      return RUNTIME_STATES.NOT_READY;
     }
     // Pipeline runtime visibility hotfix: runtime state must not own canvas
     // filtering. Working-group visibility remains handled by the canonical
@@ -12181,8 +12219,8 @@
       return RUNTIME_STATUS_META[normalizeRuntimeStatus(status)]?.css || 'not-ready';
     }
     function runtimeStatusForGroupId(groupId) {
-      if (!groupId || groupId === 'ALL') return anyRuntimeGroupRunning() ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.NOT_READY;
-      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || RUNTIME_STATES.NOT_READY);
+      if (!groupId || groupId === 'ALL') return runtimeStatusForAllGroups();
+      return runtimeStatusStoredForGroupId(groupId);
     }
     function runtimeStatusForNode(node) {
       return runtimeStatusForGroupId(runtimeGroupForNodeId(node?.id)?.id);
@@ -12223,12 +12261,20 @@
       renderRuntimeStateVisuals();
     }
     function runtimeGroupAllowsGraphMutation(groupId, kind = '') {
-      const status = runtimeStatusForGroupId(groupId);
+      return runtimeAllowsStructuralEdit(kind);
+    }
+    function runtimeHasStructuralEditLock() {
+      const status = runtimeStatusForGroupId('ALL');
+      return status === RUNTIME_STATES.PIPE_LOADED || status === RUNTIME_STATES.RUNNING;
+    }
+    function runtimeAllowsStructuralEdit(kind = '') {
+      if (!STRUCTURAL_EDIT_KINDS.has(kind)) return true;
+      const status = runtimeStatusForGroupId('ALL');
       if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.RUNNING) return true;
-      const label = runtimeGroupById(groupId)?.displayName || runtimeGroupById(groupId)?.name || groupId;
       const action = status === RUNTIME_STATES.RUNNING ? 'Stop' : 'Unload';
-      toast(`${label} is ${RUNTIME_STATUS_META[status].label}; ${action} before editing`, 'warn');
-      addLog('warn', 'Graph edit blocked', `${label} is ${RUNTIME_STATUS_META[status].label}; ${action} before ${kind || 'editing'}`);
+      const label = RUNTIME_STATUS_META[status].label;
+      toast(`Pipeline is ${label}; ${action} before editing`, 'warn');
+      addLog('warn', 'Structural edit blocked', `Pipeline is ${label}; ${action} before ${kind || 'editing'}`);
       return false;
     }
     function runtimeGroupIdsForNodeIds(nodeIds = []) {
@@ -12326,7 +12372,7 @@
       drawEdges();
       updateHistoryButtons();
     }
-    function updateBuildRuntimeButtonState(groupId = targetRuntimeGroupId()) {
+    function updateBuildRuntimeButtonState(groupId = 'ALL') {
       const buildBtn = $('#buildBtn');
       if (!buildBtn) return;
       buildBtn.classList.remove('btnRuntimeUnload');
@@ -12335,7 +12381,7 @@
         buildBtn.textContent = '▣ Building';
         return;
       }
-      const status = runtimeStatusForGroupId(groupId);
+      const status = runtimeStatusForGroupId('ALL');
       if (status === RUNTIME_STATES.PIPE_LOADED) {
         buildBtn.disabled = false;
         buildBtn.textContent = '▣ Unload';
@@ -12366,20 +12412,33 @@
       try { return await apiPost(path, payload); } catch (e) { return null; }
     }
     function upsertUpdatedPipelineFromBuildResponse(res = {}) {
-      const updated = res?.updated_pipeline;
-      if (!updated || typeof updated !== 'object') return false;
       currentProjectConfig = currentProjectConfig || {};
       currentProjectConfig.pipelines = Array.isArray(currentProjectConfig.pipelines) ? currentProjectConfig.pipelines : [];
+      if (Array.isArray(res?.updated_module_instances)) {
+        currentProjectConfig.module_instances = res.updated_module_instances;
+      }
+      const updates = Array.isArray(res?.updated_pipelines)
+        ? res.updated_pipelines
+        : (res?.updated_pipeline && typeof res.updated_pipeline === 'object' ? [res.updated_pipeline] : []);
+      if (!updates.length && !Array.isArray(res?.updated_module_instances)) return false;
       const pipelines = currentProjectConfig.pipelines;
-      const pipeId = String(updated.pipe_id || '');
-      const name = String(updated.name || '');
-      let idx = pipeId ? pipelines.findIndex(p => String(p?.pipe_id || '') === pipeId) : -1;
-      if (idx < 0 && name) idx = pipelines.findIndex(p => String(p?.name || '') === name);
-      if (idx >= 0) pipelines[idx] = { ...pipelines[idx], ...updated };
-      else pipelines.push(updated);
+      updates.filter(p => p && typeof p === 'object').forEach(updated => {
+        const pipeId = String(updated.pipe_id || '');
+        const name = String(updated.name || '');
+        let idx = pipeId ? pipelines.findIndex(p => String(p?.pipe_id || '') === pipeId) : -1;
+        if (idx < 0 && name) idx = pipelines.findIndex(p => String(p?.name || '') === name);
+        if (idx >= 0) pipelines[idx] = { ...pipelines[idx], ...updated };
+        else pipelines.push(updated);
+      });
       return true;
     }
-    async function buildRuntimeGroup(groupId = targetRuntimeGroupId()) {
+    async function buildRuntimeGroup(groupId = 'ALL') {
+      groupId = 'ALL';
+      if (runtimeStatusForGroupId('ALL') === RUNTIME_STATES.RUNNING) {
+        toast('Pipeline is Running; Stop before Build', 'warn');
+        addLog('warn', 'Build blocked', 'Pipeline is Running; Stop before Build');
+        return false;
+      }
       const buildBtn = $('#buildBtn');
       buildingRuntimeGroupId = groupId;
       buildState = 'building';
@@ -12389,44 +12448,60 @@
       $('.badge.ok').textContent = '◌ BUILDING';
       toast('Building...', 'info');
       addLog('info', 'Build started', 'Calling /api/pipeline/build');
-      const res = await apiPost('/api/pipeline/build', pipelineSnapshot());
+      const buildPayload = {
+        ...pipelineSnapshot(),
+        build_scope: 'all_pipelines',
+        group_id: 'ALL',
+        scope: 'all_pipelines',
+        target_group: {
+          id: 'ALL',
+          name: 'All working pipeline groups',
+          nodes: state.nodes.map(n => n.id),
+          edges: state.edges.map(edgeKeyForEdge)
+        }
+      };
+      const res = await apiPost('/api/pipeline/build', buildPayload);
       upsertUpdatedPipelineFromBuildResponse(res);
       applyBuildDiagnostics(res || {});
       const backendOk = res && res.ok === true;
       const pipeLoaded = normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
       const ok = backendOk && pipeLoaded && !((res?.errors || []).length);
       buildState = ok ? 'success' : 'failed';
-      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
+      setRuntimeStatusForGroup('ALL', ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
       $('.badge.ok').textContent = ok ? '● BUILD SUCCESS' : '● BUILD FAILED';
       if (res?.core_map) {
         state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
       }
       buildingRuntimeGroupId = '';
-      if (buildBtn) updateBuildRuntimeButtonState(groupId);
+      if (buildBtn) updateBuildRuntimeButtonState('ALL');
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Build successful' : 'Build failed', 'Backend callback: /api/pipeline/build');
       toast(ok ? 'Build success' : 'Build failed', ok ? 'ok' : 'error');
       return ok;
     }
-    async function unloadRuntimeGroup(groupId = targetRuntimeGroupId()) {
-      const group = runtimeGroupById(groupId);
+    async function unloadRuntimeGroup(groupId = 'ALL') {
+      groupId = 'ALL';
+      const groups = runtimeGroups();
       const payload = {
         ...pipelineSnapshot(),
-        group_id: groupId,
+        unload_scope: 'all_pipelines',
+        group_id: 'ALL',
+        scope: 'all_pipelines',
         target_group: {
-          id: groupId,
-          name: group?.displayName || group?.name || groupId,
-          nodes: group?.nodes?.map(n => n.id) || [],
-          edges: group?.edges?.map(edgeKeyForEdge) || []
+          id: 'ALL',
+          name: 'All working pipeline groups',
+          groups: groups.map(g => g.id),
+          nodes: state.nodes.map(n => n.id),
+          edges: state.edges.map(edgeKeyForEdge)
         }
       };
       addLog('info', 'Unload started', 'Calling /api/pipeline/unload');
       const res = await apiPost('/api/pipeline/unload', payload);
       const ok = res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.NOT_READY;
       if (ok) {
-        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.NOT_READY, 'unload_success');
+        setRuntimeStatusForGroup('ALL', RUNTIME_STATES.NOT_READY, 'unload_success');
       } else {
-        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'unload_failed');
+        setRuntimeStatusForGroup('ALL', RUNTIME_STATES.ERROR, 'unload_failed');
       }
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Unload successful' : 'Unload failed', 'Backend callback: /api/pipeline/unload');

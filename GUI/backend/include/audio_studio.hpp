@@ -115,7 +115,8 @@ struct ValidationResult {
 class IValidationRunner {
 public:
   virtual ~IValidationRunner() = default;
-  virtual ValidationResult run(const ValidationRequest& request) = 0;
+  virtual ValidationResult start(const ValidationRequest& request) = 0;
+  virtual ValidationResult stop(const std::string& workspace_id) = 0;
 };
 
 class BuildOrchestrator {
@@ -141,7 +142,6 @@ private:
     std::string output_dir;
     bool build_ok = false;
     uint64_t workspace_revision = 0;
-    std::set<std::string> dirty_pipeline_ids;
     std::set<std::string> loaded_pipeline_ids;
     std::set<std::string> validated_pipeline_ids;
   };

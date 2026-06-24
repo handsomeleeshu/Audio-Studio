@@ -127,16 +127,26 @@ struct FakeCompileClient final : public audiostudio::IConfigCompileClient {
 
 struct FakeValidationRunner final : public audiostudio::IValidationRunner {
   bool called = false;
+  int start_count = 0;
+  int stop_count = 0;
+  std::string last_stopped_workspace;
   std::string last_test_list;
   std::string last_script;
   audiostudio::ValidationRequest last_request;
 
-  audiostudio::ValidationResult run(const audiostudio::ValidationRequest& request) override {
+  audiostudio::ValidationResult start(const audiostudio::ValidationRequest& request) override {
     called = true;
+    ++start_count;
     last_request = request;
     last_test_list = request.test_list_path;
     last_script = request.script_path;
     return {true, "fake validation passed"};
+  }
+
+  audiostudio::ValidationResult stop(const std::string& workspace_id) override {
+    ++stop_count;
+    last_stopped_workspace = workspace_id;
+    return {true, "fake validation stopped"};
   }
 };
 
@@ -356,18 +366,19 @@ int main() {
   build_req.method = "POST";
   build_req.path = "/api/pipeline/build";
   build_req.body = "{\"workspace_id\":\"" + workspace_id + "\",\"project\":\"a2/A2.json\","
-                   "\"snapshot\":" + validGuiPipelineSnapshot() + "}";
+                   "\"snapshot\":" + validGuiPipelineSnapshotWithUnselectedGroup() + "}";
   auto build_res = orchestrated_server.handle(build_req);
   assert(build_res.status == 200);
   assert(build_res.body.find("\"ok\":true") != std::string::npos);
   assert(build_res.body.find("PIPE_LOADED") != std::string::npos);
   assert(build_res.body.find("RUNTIME") == std::string::npos);
-  assert(build_res.body.find("\"updated_pipeline\"") != std::string::npos);
+  assert(build_res.body.find("\"updated_pipelines\"") != std::string::npos);
+  assert(build_res.body.find("\"updated_module_instances\"") != std::string::npos);
   assert(build_res.body.find("\"workspace_revision\"") != std::string::npos);
   assert(compile->called);
   assert(validation->called);
   assert(compile->last_request.input_path.find(workspace_id) != std::string::npos);
-  assert(compile->last_request.input_path.find("a2_pipeline_PLAYBACK_MAIN.json") != std::string::npos);
+  assert(compile->last_request.input_path.find("a2_pipeline_all.json") != std::string::npos);
   assert(compile->last_request.output_dir.find(workspace_id) != std::string::npos);
   assert(compile->last_request.project_name == "a2");
   assert(compile->last_request.build_tplg);
@@ -386,29 +397,34 @@ int main() {
   assert(generated_test_list.find("audio_studio.tplg") != std::string::npos);
   assert(generated_test_list.find("ac_run --stop") == std::string::npos);
 
-  const std::string single_pipeline_json_after_build = readText(compile->last_request.input_path);
-  const std::string regenerated_pipelines = testJsonArrayField(single_pipeline_json_after_build, "pipelines");
+  const std::string global_pipeline_json_after_build = readText(compile->last_request.input_path);
+  const std::string regenerated_pipelines = testJsonArrayField(global_pipeline_json_after_build, "pipelines");
   assert(!regenerated_pipelines.empty());
   assert(regenerated_pipelines.find("\"pipe_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"pipe_id\":\"GUI_PIPE_2\"") != std::string::npos);
   assert(regenerated_pipelines.find("\"pipe_id\":\"CAPTURE_MAIN\"") == std::string::npos);
   assert(regenerated_pipelines.find("\"pipe_id\":\"DSP_FILTER_COVERAGE\"") == std::string::npos);
   assert(regenerated_pipelines.find("builtin.file_input") == std::string::npos);
   assert(regenerated_pipelines.find("builtin.file_output") == std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN") == std::string::npos);
   assert(regenerated_pipelines.find("\"node_id\":\"NEW_VOLUME\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"kind\":\"module_inline\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"kind\":\"module_inline\"") == std::string::npos);
+  assert(regenerated_pipelines.find("\"inst_ref\":\"PLAYBACK_MAIN_NEW_VOLUME\"") != std::string::npos);
   assert(regenerated_pipelines.find("\"inst_ref\":\"PLAY_HOST\"") != std::string::npos);
   assert(regenerated_pipelines.find("\"inst_ref\":\"PLAY_FILEIO_DAI\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"inst_ref\":\"GUI_PIPE_2_NODE\"") != std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN:out") == std::string::npos);
   assert(regenerated_pipelines.find("\"from\":\"HOST_IN:out\"") != std::string::npos);
   assert(regenerated_pipelines.find("\"to\":\"NEW_VOLUME:in\"") != std::string::npos);
-  assert(single_pipeline_json_after_build.find("\"node_id\":\"VOLUME\"") == std::string::npos);
+  assert(global_pipeline_json_after_build.find("\"inst_id\":\"GUI_PIPE_2_NODE\"") != std::string::npos);
+  assert(global_pipeline_json_after_build.find("\"node_id\":\"VOLUME\"") == std::string::npos);
 
   const std::string all_workspace_json_after_build = readText(workspace_all_path);
   const std::string all_pipelines_after_build = testJsonArrayField(all_workspace_json_after_build, "pipelines");
   assert(all_pipelines_after_build.find("PLAYBACK_MAIN") != std::string::npos);
-  assert(all_pipelines_after_build.find("CAPTURE_MAIN") != std::string::npos);
-  assert(all_pipelines_after_build.find("DSP_FILTER_COVERAGE") != std::string::npos);
+  assert(all_pipelines_after_build.find("GUI_PIPE_2") != std::string::npos);
+  assert(all_pipelines_after_build.find("CAPTURE_MAIN") == std::string::npos);
+  assert(all_pipelines_after_build.find("DSP_FILTER_COVERAGE") == std::string::npos);
   assert(all_pipelines_after_build.find("\"name\":\"Renamed Playback\"") != std::string::npos);
   assert(all_pipelines_after_build.find("builtin.file_input") == std::string::npos);
 
@@ -418,12 +434,16 @@ int main() {
   raw_build_req.method = "POST";
   raw_build_req.path = "/api/pipeline/build";
   raw_build_req.body = guiSnapshotWithWorkspace(validGuiPipelineSnapshot(), workspace_id, "a2/A2.json");
+  const int start_count_before_rebuild = validation->start_count;
+  const int stop_count_before_rebuild = validation->stop_count;
   auto raw_build_res = orchestrated_server.handle(raw_build_req);
   assert(raw_build_res.status == 200);
-  assert(raw_build_res.body.find("\"ok\":false") != std::string::npos);
-  assert(raw_build_res.body.find("already_loaded") != std::string::npos);
-  assert(!compile->called);
-  assert(!validation->called);
+  assert(raw_build_res.body.find("\"ok\":true") != std::string::npos);
+  assert(raw_build_res.body.find("PIPE_LOADED") != std::string::npos);
+  assert(compile->called);
+  assert(validation->start_count == start_count_before_rebuild + 1);
+  assert(validation->stop_count >= stop_count_before_rebuild + 1);
+  assert(validation->last_stopped_workspace == workspace_id);
 
   audiostudio::HttpRequest unload_req;
   unload_req.method = "POST";
@@ -448,16 +468,11 @@ int main() {
                           "\"snapshot\":" + validGuiPipelineSnapshotWithUnselectedGroup() + "}";
   auto scoped_build_res = orchestrated_server.handle(scoped_build_req);
   assert(scoped_build_res.status == 200);
-  assert(scoped_build_res.body.find("already_loaded") != std::string::npos);
-  orchestrated_server.handle(unload_req);
-  scoped_build_res = orchestrated_server.handle(scoped_build_req);
-  assert(scoped_build_res.status == 200);
   assert(scoped_build_res.body.find("\"ok\":true") != std::string::npos);
   const std::string scoped_workspace_json = readText(compile->last_request.input_path);
   const std::string scoped_pipelines = testJsonArrayField(scoped_workspace_json, "pipelines");
   assert(scoped_pipelines.find("\"pipe_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
-  assert(scoped_pipelines.find("UNSELECTED") == std::string::npos);
-  assert(scoped_pipelines.find("GUI_PIPE_2") == std::string::npos);
+  assert(scoped_pipelines.find("GUI_PIPE_2") != std::string::npos);
 
   audiostudio::HttpRequest save_after_build;
   save_after_build.method = "POST";
@@ -496,7 +511,8 @@ int main() {
   assert(fail_build_res.body.find("\"ok\":false") != std::string::npos);
   assert(fail_build_res.body.find("\"status\":\"failed\"") != std::string::npos);
   assert(fail_build_res.body.find("\"stage\":\"compile\"") != std::string::npos);
-  assert(fail_build_res.body.find("\"updated_pipeline\"") != std::string::npos);
+  assert(fail_build_res.body.find("\"updated_pipelines\"") != std::string::npos);
+  assert(fail_build_res.body.find("\"updated_module_instances\"") != std::string::npos);
   assert(fail_build_res.body.find("\"diagnostics\"") != std::string::npos);
   assert(fail_build_res.body.find("\"node_marks\"") != std::string::npos);
   assert(fail_build_res.body.find("\"port_marks\"") != std::string::npos);

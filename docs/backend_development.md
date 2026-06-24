@@ -20,8 +20,8 @@
 | GET | `/api/config` | 打开产品 JSON，创建临时 workspace，并返回 workspace copy |
 | GET | `/api/telemetry?nodes=A,B` | 返回 mock telemetry |
 | POST | `/api/pipeline/validate` | Pipeline 校验 |
-| POST | `/api/pipeline/build` | 生成单条 pipeline JSON、upsert 回 workspace all JSON、通过 as_server `config.compile` 编译 tplg、生成 SOF test list 并触发验证 |
-| POST | `/api/pipeline/unload` | v1 只清理已加载 pipeline 状态，真实 as_server 拆除后续接入 |
+| POST | `/api/pipeline/build` | 用完整 layout snapshot 重建 workspace all JSON，通过 as_server `config.compile` 编译 tplg，生成 SOF test list 并启动 keep-alive 验证 session |
+| POST | `/api/pipeline/unload` | 停止当前 keep-alive validation session，并清理全局 loaded 状态 |
 | POST | `/api/runtime/run` | 启动 runtime |
 | POST | `/api/runtime/stop` | 停止 runtime |
 | POST | `/api/param/update` | 动态参数下发 |
@@ -33,14 +33,15 @@
 `BuildOrchestrator` 是 GUI backend 和 `as_server`/simulator 验证之间的胶水层：
 
 1. `GET /api/config?project=...` 将 `configs/platform/<project>` 拷贝到 `/tmp/audio-studio-gui-workspaces/.../${platform}_pipeline_all.json`，并把 all copy 返回前端。
-2. `POST /api/pipeline/build` 接受 frontend 直接提交的裸 layout snapshot，也兼容 `{ "snapshot": ... }` 包装格式。Build 必须指向单个 working group；backend 从 snapshot 生成该 group 的单条 pipeline。
-3. Backend 将单条 pipeline 写入 `${platform}_pipeline_<pipe_id>.json`，该文件根 `pipelines[]` 只有这一条，用作 `as_config` 输入；同时把同 `pipe_id`/同名 pipeline upsert 回 `${platform}_pipeline_all.json`，保留其他 pipeline。
-4. 重生成时会剔除 `builtin.file_input` / `builtin.file_output` debug 节点以及 external/debug 连接；`as_config` 只读取根 `pipelines[]`，不读取 `audio_studio_gui.as_config_payload`。
+2. `POST /api/pipeline/build` 接受 frontend 直接提交的裸 layout snapshot，也兼容 `{ "snapshot": ... }` 包装格式。Build 永远面向全量 layout，不依赖当前 UI 选中的单个 pipeline。
+3. Backend 根据 snapshot 的全部 working groups 重建 `${platform}_pipeline_all.json` 的根 `module_instances[]` 和 `pipelines[]`，该 all JSON 是唯一 `as_config` 输入。
+4. 重生成时会剔除 `builtin.file_input` / `builtin.file_output` debug 节点以及 external/debug 连接；HOST/DAI 节点必须引用已有 module instance，普通新增算法节点会生成稳定 `module_instances[]` entry。
 5. 编译阶段先尝试连接常驻 `as_server` 的 `config.compile` JSON-RPC；如果 socket 不可用，则直接调用 `as_server --rpc-once <jsonrpc>`，避免 GUI build 依赖手工预启动一个编译 server。
 6. 编译成功后生成 `audio_studio_test_list.txt`，内容包含 `ac_run --endpoint as_datalink --mtu 512`、`trace on`、`pipeinstall <tplg>`。
-7. 默认验证 runner 调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log`，该脚本负责启动 simulator 和验证用 as_server。
-8. Build 成功后该 pipeline 状态为 `PIPE_LOADED`，再次 build 会被拒绝并要求先 `POST /api/pipeline/unload`；unload v1 仅清理 backend 状态。
-9. `POST /api/project/save` 只有 dirty pipeline 均已成功 build 后才允许把 `${platform}_pipeline_all.json` 写回源 JSON。
+7. 默认验证 runner 调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log --gui-keep-alive --gui-ready-marker <file>`，该脚本负责启动 simulator 和验证用 as_server。
+8. `sof-test-run.py` 看到 test list 成功结束后写 ready marker，并保持 qemu/as_server 运行；backend 看到 marker 后返回 `runtime_state:"PIPE_LOADED"`。
+9. 每次 build 开始前会停止旧 validation session；build 失败或 `POST /api/pipeline/unload` 会对 session 进程组发送 Ctrl+C 等价清理。
+10. `POST /api/project/save` 只有最近一次全局 build 成功后才允许把 `${platform}_pipeline_all.json` 写回源 JSON。
 
 默认环境变量：
 
@@ -54,12 +55,15 @@ AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT=9901
 AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH=<optional simulator/rpc_socket as_server>
 AUDIO_STUDIO_VALIDATION_AS_LOG_PATH=<optional simulator/rpc_socket as_log>
 AUDIO_STUDIO_VALIDATION_TRACE_LDC=<optional rv32qemu sof.ldc>
+AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS=120000
 ```
 
 `9901` 用于验证脚本启动的 as_server，避免和 `config.compile` 常驻服务抢默认 `9900`。
 如果未设置上述 path 变量，backend 会从启动目录和父目录向上查找 `out/linux/a2/as_config/Debug/as_server`、`out/linux/simulator/rpc_socket/Debug/as_server`、`application/rv32qemu/sof-build-test.py` 和 `application/rv32qemu/build/sof.ldc` 等默认位置。
 
-当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI build 应使用当前选中 node/working group 对应的 `group_id`，backend 只编译该 pipeline，成功后返回 `runtime_state:"PIPE_LOADED"` 和 `updated_pipeline`，前端用它同步内存中的 all config。
+当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI build 即使在单 pipeline 视图中触发，也会提交和编译全部 working groups；任一子 pipeline workspace/compile/validation 失败都会让全局 build 失败。成功响应返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines` 和 `updated_module_instances`，前端用这些字段同步内存中的 all config。
+
+Build 成功后 frontend 锁定结构编辑：不能新增/删除组件、连接、端口方向、pipeline rename 或 build-affecting 参数；仍允许拖动节点位置、Auto Arrange、选择、缩放和 Inspector 查看。`Unload` 后解除结构锁。
 
 ## Mock 到真实实现的过渡
 

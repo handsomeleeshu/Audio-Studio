@@ -444,6 +444,30 @@ def assert_default_rpc_endpoint_can_be_omitted_for_as_log():
         assert forbidden not in server_cmd_section
 
 
+def assert_rv32_gui_keep_alive_mode_is_opt_in():
+    rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
+    sof_runner = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'sof-test-run.py')
+
+    require_contains(rv32_helper, 'parser.add_argument("--gui-keep-alive", action="store_true"')
+    require_contains(rv32_helper, 'parser.add_argument("--gui-ready-marker"')
+    require_contains(rv32_helper, 'if args.gui_keep_alive and not args.gui_ready_marker:')
+    require_contains(rv32_helper, 'test_cmd.extend(["--gui-keep-alive", "--gui-ready-marker",')
+    require_contains(rv32_helper, 'run_test_command(test_cmd, cwd=test_dir, cleanup_on_terminate=args.gui_keep_alive)')
+    require_contains(rv32_helper, 'signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)')
+
+    default_test_cmd = rv32_helper.split('test_cmd = [', 1)[1].split(']', 1)[0]
+    assert '--gui-keep-alive' not in default_test_cmd
+    assert '--gui-ready-marker' not in default_test_cmd
+
+    require_contains(sof_runner, 'parser.add_argument("--gui-keep-alive", action="store_true"')
+    require_contains(sof_runner, 'parser.add_argument("--gui-ready-marker"')
+    require_contains(sof_runner, 'def _write_ready_marker(')
+    require_contains(sof_runner, 'def _wait_for_keep_alive_shutdown(')
+    require_contains(sof_runner, 'gui_keep_alive=False')
+    require_contains(sof_runner, 'signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)')
+    require_contains(sof_runner, '_terminate_process_group(proc)')
+
+
 def assert_rv32_log_timeout_is_not_fatal_for_follow():
     rv32_log_device = read_text(ROOT / 'server' / 'platform' / 'simulator' / 'src' / 'rv32qemu_log_device.cpp')
     require_contains(rv32_log_device, 'isTransportReadTimeout')
@@ -617,6 +641,7 @@ def main():
     assert_rv32_log_datalink_files_are_session_scoped()
     assert_rv32_audio_controller_log_uses_regular_trace_source()
     assert_default_rpc_endpoint_can_be_omitted_for_as_log()
+    assert_rv32_gui_keep_alive_mode_is_opt_in()
     assert_rv32_log_timeout_is_not_fatal_for_follow()
 
     if LINUX_BUILD_DIR.exists():
