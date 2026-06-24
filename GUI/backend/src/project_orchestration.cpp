@@ -9,6 +9,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <set>
 #include <sstream>
@@ -704,6 +705,56 @@ std::string mergeSnapshotWithRegeneratedPipelines(const std::string& workspace_j
   return mergeSnapshot(upsertObjectMember(workspace_json, "pipelines", pipelines_json), snapshot_json);
 }
 
+std::string jsonArrayFromObjects(const std::vector<std::string>& objects) {
+  std::ostringstream os;
+  os << "[";
+  for (size_t i = 0; i < objects.size(); ++i) {
+    if (i) os << ",";
+    os << objects[i];
+  }
+  os << "]";
+  return os.str();
+}
+
+std::string singlePipelineObjectFromArray(const std::string& pipelines_json) {
+  const auto objects = jsonObjectArrayItems(pipelines_json);
+  return objects.size() == 1 ? objects.front() : std::string();
+}
+
+std::string pipelineIdentity(const std::string& pipeline_object) {
+  const std::string pipe_id = simpleJsonStringField(pipeline_object, "pipe_id");
+  if (!pipe_id.empty()) return pipe_id;
+  return simpleJsonStringField(pipeline_object, "name", "GUI_PIPE_1");
+}
+
+std::string upsertPipelineObject(const std::string& workspace_json, const std::string& pipeline_object) {
+  const std::string target_pipe_id = simpleJsonStringField(pipeline_object, "pipe_id");
+  const std::string target_name = simpleJsonStringField(pipeline_object, "name");
+  std::vector<std::string> pipelines;
+  bool replaced = false;
+  for (const auto& existing : jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "pipelines"))) {
+    const std::string existing_pipe_id = simpleJsonStringField(existing, "pipe_id");
+    const std::string existing_name = simpleJsonStringField(existing, "name");
+    const bool same_id = !target_pipe_id.empty() && existing_pipe_id == target_pipe_id;
+    const bool same_name = target_pipe_id.empty() && !target_name.empty() && existing_name == target_name;
+    if (same_id || same_name) {
+      pipelines.push_back(pipeline_object);
+      replaced = true;
+    } else {
+      pipelines.push_back(existing);
+    }
+  }
+  if (!replaced) pipelines.push_back(pipeline_object);
+  return upsertObjectMember(workspace_json, "pipelines", jsonArrayFromObjects(pipelines));
+}
+
+std::string buildExtraFields(const std::string& pipeline_object, uint64_t workspace_revision) {
+  std::ostringstream os;
+  os << "\"updated_pipeline\":" << (pipeline_object.empty() ? "{}" : pipeline_object)
+     << ",\"workspace_revision\":" << workspace_revision;
+  return os.str();
+}
+
 std::string jsonStringArray(const std::vector<std::string>& values) {
   std::ostringstream os;
   os << "[";
@@ -770,12 +821,14 @@ std::string resolveCompileServerPath(const std::string& root_dir) {
   auto roots = pathAndParents(root_dir);
   const auto cwd_roots = pathAndParents(fs::current_path());
   roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  return firstExistingRelativeToRoots(roots, {
+  const std::string resolved = firstExistingRelativeToRoots(roots, {
       "out/linux/a2/as_config/Debug/as_server",
       "out/linux/a2/rpc_socket/Debug/as_server",
       "out/linux/simulator/rpc_socket/Debug/as_server",
       "as_config/Debug/as_server",
       "rpc_socket/Debug/as_server"});
+  if (!resolved.empty()) return resolved;
+  return (fs::path(root_dir) / "out/linux/simulator/rpc_socket/Debug/as_server").string();
 }
 
 std::string resolveSimulatorRpcToolPath(const std::string& root_dir,
@@ -786,10 +839,12 @@ std::string resolveSimulatorRpcToolPath(const std::string& root_dir,
   auto roots = pathAndParents(root_dir);
   const auto cwd_roots = pathAndParents(fs::current_path());
   roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  return firstExistingRelativeToRoots(roots, {
+  const std::string resolved = firstExistingRelativeToRoots(roots, {
       fs::path("out/linux/simulator/rpc_socket/Debug") / tool,
       fs::path("out/linux/a2/rpc_socket/Debug") / tool,
       fs::path("rpc_socket/Debug") / tool});
+  if (!resolved.empty()) return resolved;
+  return (fs::path(root_dir) / "out/linux/simulator/rpc_socket/Debug" / tool).string();
 }
 
 std::string resolveTraceLdcPath(const std::string& root_dir) {
@@ -798,9 +853,11 @@ std::string resolveTraceLdcPath(const std::string& root_dir) {
   auto roots = pathAndParents(root_dir);
   const auto cwd_roots = pathAndParents(fs::current_path());
   roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  return firstExistingRelativeToRoots(roots, {
+  const std::string resolved = firstExistingRelativeToRoots(roots, {
       "application/rv32qemu/build/sof.ldc",
       "../application/rv32qemu/build/sof.ldc"});
+  if (!resolved.empty()) return resolved;
+  return (fs::path(root_dir) / "../application/rv32qemu/build/sof.ldc").string();
 }
 
 uint16_t envPort(const char* name, uint16_t fallback) {
@@ -826,11 +883,13 @@ std::string resolveValidationScriptPath(const std::string& root_dir) {
 std::string workspaceResponse(const std::string& workspace_id,
                               const std::string& input_path,
                               const std::string& source_path,
-                              const std::string& workspace_json) {
+                              const std::string& workspace_json,
+                              uint64_t workspace_revision) {
   const std::string fields =
       "\"workspace_id\":\"" + jsonEscape(workspace_id) + "\","
       "\"workspace_path\":\"" + jsonEscape(input_path) + "\","
-      "\"source_path\":\"" + jsonEscape(source_path) + "\"";
+      "\"source_path\":\"" + jsonEscape(source_path) + "\","
+      "\"workspace_revision\":" + std::to_string(workspace_revision);
   return appendObjectFields(workspace_json, fields);
 }
 
@@ -850,7 +909,8 @@ std::string mergeSnapshot(const std::string& workspace_json, const std::string& 
 std::string failureResponse(const std::string& stage,
                             const std::string& message,
                             const std::string& request_json,
-                            const std::vector<std::string>& details = {}) {
+                            const std::vector<std::string>& details = {},
+                            const std::string& extra_fields = {}) {
   const std::string node = simpleJsonStringField(request_json, "node_id",
       simpleJsonStringField(request_json, "id", "pipeline"));
   const std::string port = simpleJsonStringField(request_json, "port",
@@ -875,6 +935,7 @@ std::string failureResponse(const std::string& stage,
      << "\"message\":\"" << jsonEscape(message.empty() ? "build failed" : message) << "\"}}";
   os << ",\"port_marks\":{\"" << jsonEscape(node + ":" + port) << "\":{\"severity\":\"error\","
      << "\"message\":\"" << jsonEscape(message.empty() ? "build failed" : message) << "\"}}";
+  if (!extra_fields.empty()) os << "," << extra_fields;
   os << "}";
   return os.str();
 }
@@ -1202,7 +1263,8 @@ BuildOrchestrator::WorkspaceRecord& BuildOrchestrator::openProjectLocked(const s
   record.source_path = (fs::path(root_dir_) / projectConfigRelPath(sanitized_project)).string();
   record.workspace_dir = (fs::temp_directory_path() / "audio-studio-gui-workspaces" /
                           safeId(root_dir_) / workspace_id).string();
-  record.input_path = (fs::path(record.workspace_dir) / "project.json").string();
+  record.input_path = (fs::path(record.workspace_dir) /
+                       (record.project_name + "_pipeline_all.json")).string();
   record.output_dir = (fs::path(record.workspace_dir) / "build").string();
 
   fs::create_directories(record.workspace_dir);
@@ -1222,7 +1284,8 @@ HttpResponse BuildOrchestrator::openProjectByName(const std::string& project) {
             "{\"ok\":false,\"error\":\"project config not found\"}"};
   }
   return {200, "application/json; charset=utf-8",
-          workspaceResponse(record.workspace_id, record.input_path, record.source_path, body)};
+          workspaceResponse(record.workspace_id, record.input_path, record.source_path, body,
+                            record.workspace_revision)};
 }
 
 HttpResponse BuildOrchestrator::openProjectRequest(const std::string& request_json) {
@@ -1244,13 +1307,12 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
       return {404, "application/json; charset=utf-8",
               failureResponse("open", "workspace_id not found", request_json)};
     }
-    found->build_ok = false;
     record = *found;
   }
 
   const std::string snapshot = jsonMemberValue(request_json, "snapshot");
-  const std::string current_json = readTextFile(record.input_path);
-  if (current_json.empty()) {
+  const std::string all_json = readTextFile(record.input_path);
+  if (all_json.empty()) {
     return {404, "application/json; charset=utf-8",
             failureResponse("open", "workspace project JSON is missing", request_json)};
   }
@@ -1258,22 +1320,70 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   std::string regenerated_pipelines;
   std::set<std::string> generated_node_keys;
   std::vector<std::string> workspace_diagnostics;
-  if (!regeneratePipelinesFromSnapshot(current_json, snapshot_json, regenerated_pipelines, generated_node_keys, workspace_diagnostics)) {
+  if (!regeneratePipelinesFromSnapshot(all_json, snapshot_json, regenerated_pipelines, generated_node_keys, workspace_diagnostics)) {
     return {200, "application/json; charset=utf-8",
             failureResponse("workspace",
                             workspace_diagnostics.empty() ? "failed to regenerate workspace pipelines" : workspace_diagnostics.front(),
                             request_json,
                             workspace_diagnostics)};
   }
-  const std::string filtered_json = filterPresetNodeValues(current_json, generated_node_keys);
-  if (!writeTextFile(record.input_path, mergeSnapshotWithRegeneratedPipelines(filtered_json, snapshot_json, regenerated_pipelines))) {
+  const std::string pipeline_object = singlePipelineObjectFromArray(regenerated_pipelines);
+  if (pipeline_object.empty()) {
+    return {200, "application/json; charset=utf-8",
+            failureResponse("workspace", "build requires exactly one selected pipeline", request_json)};
+  }
+  const std::string pipeline_id = pipelineIdentity(pipeline_object);
+  uint64_t workspace_revision = record.workspace_revision;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(record.workspace_id);
+    if (!found) {
+      return {404, "application/json; charset=utf-8",
+              failureResponse("open", "workspace_id not found", request_json)};
+    }
+    if (found->loaded_pipeline_ids.count(pipeline_id)) {
+      return {200, "application/json; charset=utf-8",
+              failureResponse("runtime",
+                              "pipeline already_loaded; unload before building again",
+                              request_json,
+                              {},
+                              buildExtraFields(pipeline_object, found->workspace_revision))};
+    }
+    record = *found;
+    workspace_revision = found->workspace_revision;
+  }
+
+  const std::string single_file_name = record.project_name + "_pipeline_" + safeId(pipeline_id) + ".json";
+  const std::string single_input_path = (fs::path(record.workspace_dir) / single_file_name).string();
+  const std::string single_output_dir = (fs::path(record.output_dir) / safeId(pipeline_id)).string();
+  const std::string single_json = mergeSnapshot(
+      upsertObjectMember(filterPresetNodeValues(all_json, generated_node_keys),
+                         "pipelines", "[" + pipeline_object + "]"),
+      snapshot_json);
+  const std::string all_json_next = mergeSnapshot(upsertPipelineObject(all_json, pipeline_object), snapshot_json);
+  if (!writeTextFile(single_input_path, single_json) ||
+      !writeTextFile(record.input_path, all_json_next)) {
     return {500, "application/json; charset=utf-8",
             failureResponse("workspace", "failed to update workspace JSON", request_json)};
   }
 
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(record.workspace_id);
+    if (found) {
+      found->dirty_pipeline_ids.insert(pipeline_id);
+      found->loaded_pipeline_ids.erase(pipeline_id);
+      found->validated_pipeline_ids.erase(pipeline_id);
+      found->build_ok = false;
+      found->workspace_revision += 1;
+      workspace_revision = found->workspace_revision;
+      record = *found;
+    }
+  }
+
   GuiConfigCompileRequest compile_request;
-  compile_request.input_path = record.input_path;
-  compile_request.output_dir = record.output_dir;
+  compile_request.input_path = single_input_path;
+  compile_request.output_dir = single_output_dir;
   compile_request.project_name = record.project_name;
   compile_request.alsatplg = (fs::path(root_dir_) / "third_party/alsatplg/bin/alsatplg").string();
   compile_request.as_server = resolveCompileServerPath(root_dir_);
@@ -1284,11 +1394,12 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   auto compile_result = compile_client_->compile(compile_request);
   if (!compile_result.ok) {
     return {200, "application/json; charset=utf-8",
-            failureResponse("compile", compile_result.message, request_json, compile_result.diagnostics)};
+            failureResponse("compile", compile_result.message, request_json, compile_result.diagnostics,
+                            buildExtraFields(pipeline_object, workspace_revision))};
   }
 
-  fs::create_directories(record.output_dir);
-  const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
+  fs::create_directories(single_output_dir);
+  const std::string test_list_path = (fs::path(single_output_dir) / "audio_studio_test_list.txt").string();
   const std::string test_list =
       "ac_run --endpoint as_datalink --mtu 512\n"
       "trace on\n"
@@ -1314,21 +1425,88 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   auto validation_result = validation_runner_->run(validation_request);
   if (!validation_result.ok) {
     return {200, "application/json; charset=utf-8",
-            failureResponse("validation", validation_result.message, request_json, validation_result.diagnostics)};
+            failureResponse("validation", validation_result.message, request_json, validation_result.diagnostics,
+                            buildExtraFields(pipeline_object, workspace_revision))};
   }
 
   {
     std::lock_guard<std::mutex> lk(mutex_);
     auto* found = findWorkspaceLocked(record.workspace_id);
-    if (found) found->build_ok = true;
+    if (found) {
+      found->dirty_pipeline_ids.erase(pipeline_id);
+      found->validated_pipeline_ids.insert(pipeline_id);
+      found->loaded_pipeline_ids.insert(pipeline_id);
+      found->build_ok = found->dirty_pipeline_ids.empty() && !found->validated_pipeline_ids.empty();
+      workspace_revision = found->workspace_revision;
+    }
   }
 
   std::ostringstream os;
   os << "{\"ok\":true,\"status\":\"PIPE_LOADED\",\"runtime_state\":\"PIPE_LOADED\""
      << ",\"workspace_id\":\"" << jsonEscape(record.workspace_id) << "\""
+     << ",\"pipeline_id\":\"" << jsonEscape(pipeline_id) << "\""
      << ",\"tplg_path\":\"" << jsonEscape(compile_result.tplg_path) << "\""
      << ",\"test_list_path\":\"" << jsonEscape(test_list_path) << "\""
-     << ",\"validation\":\"" << jsonEscape(validation_result.message) << "\"}";
+     << ",\"validation\":\"" << jsonEscape(validation_result.message) << "\""
+     << ",\"updated_pipeline\":" << pipeline_object
+     << ",\"workspace_revision\":" << workspace_revision
+     << "}";
+  return {200, "application/json; charset=utf-8", os.str()};
+}
+
+HttpResponse BuildOrchestrator::unloadPipeline(const std::string& request_json) {
+  WorkspaceRecord record;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    std::string workspace_id = simpleJsonStringField(request_json, "workspace_id");
+    if (workspace_id.empty()) {
+      auto& opened = openProjectLocked(simpleJsonStringField(request_json, "project", "a2/A2.json"));
+      workspace_id = opened.workspace_id;
+    }
+    auto* found = findWorkspaceLocked(workspace_id);
+    if (!found) {
+      return {404, "application/json; charset=utf-8",
+              failureResponse("open", "workspace_id not found", request_json)};
+    }
+    record = *found;
+  }
+
+  const std::string all_json = readTextFile(record.input_path);
+  const std::string snapshot = jsonMemberValue(request_json, "snapshot");
+  const std::string snapshot_json = snapshot.empty() ? request_json : snapshot;
+  std::string pipeline_id = jsonStringFieldAny(request_json, {"pipeline_id", "pipe_id", "group_id", "groupId"});
+  std::string pipeline_object;
+  if (!all_json.empty() && !snapshot_json.empty()) {
+    std::string regenerated_pipelines;
+    std::set<std::string> generated_node_keys;
+    std::vector<std::string> diagnostics;
+    if (regeneratePipelinesFromSnapshot(all_json, snapshot_json, regenerated_pipelines,
+                                        generated_node_keys, diagnostics)) {
+      pipeline_object = singlePipelineObjectFromArray(regenerated_pipelines);
+      if (!pipeline_object.empty()) pipeline_id = pipelineIdentity(pipeline_object);
+    }
+  }
+  if (pipeline_id.empty() || pipeline_id == "ALL") {
+    return {200, "application/json; charset=utf-8",
+            failureResponse("runtime", "pipeline_id is required to unload a pipeline", request_json)};
+  }
+
+  uint64_t workspace_revision = record.workspace_revision;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(record.workspace_id);
+    if (found) {
+      found->loaded_pipeline_ids.erase(pipeline_id);
+      workspace_revision = found->workspace_revision;
+    }
+  }
+
+  std::ostringstream os;
+  os << "{\"ok\":true,\"status\":\"UNLOADED\",\"runtime_state\":\"NOT_READY\""
+     << ",\"workspace_id\":\"" << jsonEscape(record.workspace_id) << "\""
+     << ",\"pipeline_id\":\"" << jsonEscape(pipeline_id) << "\"";
+  if (!pipeline_object.empty()) os << ",\"updated_pipeline\":" << pipeline_object;
+  os << ",\"workspace_revision\":" << workspace_revision << "}";
   return {200, "application/json; charset=utf-8", os.str()};
 }
 
@@ -1356,6 +1534,107 @@ HttpResponse BuildOrchestrator::saveProject(const std::string& request_json) {
   }
   return {200, "application/json; charset=utf-8",
           "{\"ok\":true,\"status\":\"saved\",\"source_path\":\"" + jsonEscape(record.source_path) + "\"}"};
+}
+
+GuiRuntimeEngine::GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator)
+  : build_orchestrator_(std::move(build_orchestrator)) {
+  if (!build_orchestrator_) build_orchestrator_ = std::make_shared<BuildOrchestrator>(".");
+  rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+}
+
+double GuiRuntimeEngine::rnd(double min, double max) {
+  std::lock_guard<std::mutex> lk(rng_mutex_);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(rng_);
+}
+
+int GuiRuntimeEngine::rndi(int min, int max) {
+  std::lock_guard<std::mutex> lk(rng_mutex_);
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(rng_);
+}
+
+std::string GuiRuntimeEngine::validatePipeline(const std::string& pipeline_json) {
+  const bool has_nodes = pipeline_json.find("nodes") != std::string::npos;
+  std::ostringstream os;
+  os << "{\"ok\":" << (has_nodes ? "true" : "false")
+     << ",\"warnings\":[],\"errors\":";
+  if (has_nodes) os << "[]";
+  else os << "[\"No node section found\"]";
+  os << "}";
+  return os.str();
+}
+
+std::string GuiRuntimeEngine::buildPipeline(const std::string& pipeline_json) {
+  return build_orchestrator_->buildPipeline(pipeline_json).body;
+}
+
+std::string GuiRuntimeEngine::unloadPipeline(const std::string& pipeline_json) {
+  return build_orchestrator_->unloadPipeline(pipeline_json).body;
+}
+
+std::string GuiRuntimeEngine::run(const std::string& session_id) {
+  (void)session_id;
+  running_.store(true);
+  return "{\"ok\":true,\"running\":true,\"runtime_state\":\"RUNNING\"}";
+}
+
+std::string GuiRuntimeEngine::stop(const std::string& session_id) {
+  (void)session_id;
+  running_.store(false);
+  return "{\"ok\":true,\"running\":false,\"runtime_state\":\"NOT_READY\"}";
+}
+
+std::string GuiRuntimeEngine::pipelineEditEvent(const std::string& request_json) {
+  (void)request_json;
+  return "{\"ok\":true,\"callback\":\"IRuntimeEngine::pipelineEditEvent\",\"message\":\"edit event accepted\"}";
+}
+
+std::string GuiRuntimeEngine::pipelineToolAction(const std::string& request_json) {
+  (void)request_json;
+  return "{\"ok\":true,\"callback\":\"IRuntimeEngine::pipelineToolAction\",\"message\":\"tool action accepted\"}";
+}
+
+std::string GuiRuntimeEngine::telemetry(const std::vector<std::string>& node_ids) {
+  const bool run = running_.load();
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(2);
+  os << "{\"running\":" << (run ? "true" : "false")
+     << ",\"timestamp\":" << static_cast<long long>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::system_clock::now().time_since_epoch()).count());
+  os << ",\"nodeCost\":{";
+  for (size_t i = 0; i < node_ids.size(); ++i) {
+    if (i) os << ",";
+    os << "\"" << jsonEscape(node_ids[i]) << "\":{"
+       << "\"cpu\":" << (run ? rnd(0.2, 8.8) : rnd(0.0, 0.18))
+       << ",\"memKb\":" << rndi(64, 720)
+       << ",\"latencyMs\":" << (run ? rnd(0.04, 2.8) : 0.0)
+       << ",\"core\":" << rndi(0, 3)
+       << ",\"rms\":" << rnd(-35, -8)
+       << ",\"peak\":" << rnd(-12, -0.4) << "}";
+  }
+  os << "},\"cores\":[";
+  for (int i = 0; i < 4; ++i) {
+    if (i) os << ",";
+    os << "{\"id\":" << i
+       << ",\"load\":" << (run ? rnd(12, 86) : rnd(0, 5))
+       << ",\"temperature\":" << (run ? rnd(42, 66) : rnd(35, 40))
+       << ",\"powerMw\":" << (run ? rndi(420, 1700) : rndi(60, 180)) << "}";
+  }
+  os << "],\"health\":{"
+     << "\"latencyMs\":" << (run ? rnd(14, 23) : 0)
+     << ",\"bufferOccupancy\":" << (run ? rnd(30, 58) : 0)
+     << ",\"throughput\":" << (run ? rnd(88, 108) : 0)
+     << ",\"xruns\":0"
+     << ",\"memoryMb\":" << rnd(260, 365)
+     << ",\"powerW\":" << (run ? rnd(3.1, 4.8) : rnd(0.25, 0.55)) << "}";
+  os << ",\"meters\":{"
+     << "\"inL\":" << (run ? -rnd(8, 28) : -60)
+     << ",\"inR\":" << (run ? -rnd(8, 28) : -60)
+     << ",\"outL\":" << (run ? -rnd(4, 18) : -60)
+     << ",\"outR\":" << (run ? -rnd(4, 18) : -60) << "}}";
+  return os.str();
 }
 
 } // namespace audiostudio

@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,6 +50,7 @@ public:
   virtual ~IRuntimeEngine() = default;
   virtual std::string validatePipeline(const std::string& pipeline_json) = 0;
   virtual std::string buildPipeline(const std::string& pipeline_json) = 0;
+  virtual std::string unloadPipeline(const std::string& pipeline_json) = 0;
   virtual std::string run(const std::string& session_id) = 0;
   virtual std::string stop(const std::string& session_id) = 0;
   virtual std::string telemetry(const std::vector<std::string>& node_ids) = 0;
@@ -125,6 +127,7 @@ public:
   HttpResponse openProjectByName(const std::string& project);
   HttpResponse openProjectRequest(const std::string& request_json);
   HttpResponse buildPipeline(const std::string& request_json);
+  HttpResponse unloadPipeline(const std::string& request_json);
   HttpResponse saveProject(const std::string& request_json);
 
 private:
@@ -137,6 +140,10 @@ private:
     std::string input_path;
     std::string output_dir;
     bool build_ok = false;
+    uint64_t workspace_revision = 0;
+    std::set<std::string> dirty_pipeline_ids;
+    std::set<std::string> loaded_pipeline_ids;
+    std::set<std::string> validated_pipeline_ids;
   };
 
   WorkspaceRecord* findWorkspaceLocked(const std::string& workspace_id);
@@ -146,6 +153,27 @@ private:
   std::shared_ptr<IValidationRunner> validation_runner_;
   std::map<std::string, WorkspaceRecord> workspaces_;
   std::mutex mutex_;
+};
+
+class GuiRuntimeEngine final : public IRuntimeEngine {
+public:
+  explicit GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator = nullptr);
+  std::string validatePipeline(const std::string& pipeline_json) override;
+  std::string buildPipeline(const std::string& pipeline_json) override;
+  std::string unloadPipeline(const std::string& pipeline_json) override;
+  std::string run(const std::string& session_id) override;
+  std::string stop(const std::string& session_id) override;
+  std::string telemetry(const std::vector<std::string>& node_ids) override;
+  std::string pipelineEditEvent(const std::string& request_json) override;
+  std::string pipelineToolAction(const std::string& request_json) override;
+
+private:
+  std::shared_ptr<BuildOrchestrator> build_orchestrator_;
+  std::atomic<bool> running_{false};
+  std::mutex rng_mutex_;
+  std::mt19937 rng_;
+  double rnd(double min, double max);
+  int rndi(int min, int max);
 };
 
 
@@ -409,23 +437,14 @@ private:
   std::mt19937 rng_;
 };
 
-class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
+class MockRuntimeEngine final : public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
-  std::string validatePipeline(const std::string& pipeline_json) override;
-  std::string buildPipeline(const std::string& pipeline_json) override;
-  std::string run(const std::string& session_id) override;
-  std::string stop(const std::string& session_id) override;
-  std::string telemetry(const std::vector<std::string>& node_ids) override;
-  std::string pipelineEditEvent(const std::string& request_json) override;
-  std::string pipelineToolAction(const std::string& request_json) override;
   std::string onNodeAction(const std::string& request_json) override;
   std::string updateParameter(const std::string& request_json) override;
-  bool running() const { return running_.load(); }
 private:
   double rnd(double min, double max);
   int rndi(int min, int max);
-  std::atomic<bool> running_{false};
   std::mutex rng_mutex_;
   std::mt19937 rng_;
 };

@@ -321,6 +321,12 @@
       background: rgba(130, 30, 30, .25)
     }
 
+    .btn.btnRuntimeUnload {
+      border-color: rgba(255, 177, 66, .72);
+      color: #ffe2ad;
+      background: rgba(153, 84, 22, .28)
+    }
+
     .btn:hover {
       filter: brightness(1.25)
     }
@@ -5455,6 +5461,11 @@
         toast('External debug ports can connect only to HOST external ports', 'warn');
         return false;
       }
+      if (!runtimeAllowsNodeMutation([from, to], 'connection_added')) {
+        connectFrom = null;
+        clearActivePorts();
+        return false;
+      }
 
       pushHistory('Add connection');
       const replaced = state.edges.filter(e => {
@@ -5519,6 +5530,10 @@
 
         dragNodes = state.nodes.filter(x => selectedNodeIds.has(x.id));
         if (!dragNodes.length) dragNodes = [n];
+        if (!runtimeAllowsNodeMutation(dragNodes.map(x => x.id), 'node_moved')) {
+          dragNodes = [];
+          return;
+        }
         origPos = new Map(dragNodes.map(x => [x.id, { x: x.x, y: x.y }]));
         pushHistory(dragNodes.length > 1 ? 'Move selection' : 'Move node');
 
@@ -5712,6 +5727,7 @@
       if (running) { toast('Run 状态下不能删除连线，请先 Stop'); return false; }
       const keys = selectedEdgeKeys.size ? new Set(selectedEdgeKeys) : (selectedEdgeKey ? new Set([selectedEdgeKey]) : new Set());
       if (!keys.size) return false;
+      if (!runtimeAllowsEdgeMutation([...keys], 'connections_removed')) return false;
       pushHistory('Delete connection(s)');
       const removed = [];
       state.edges = state.edges.filter(e => {
@@ -5736,6 +5752,8 @@
       if (selectedEdgeKey) edgeKeys.add(selectedEdgeKey);
       if (!nodeKeys.size && !edgeKeys.size && selectedNodeId) nodeKeys.add(selectedNodeId);
       if (!nodeKeys.size && !edgeKeys.size) return false;
+      if (nodeKeys.size && !runtimeAllowsNodeMutation([...nodeKeys], 'selection_deleted')) return false;
+      if (edgeKeys.size && !runtimeAllowsEdgeMutation([...edgeKeys], 'selection_deleted')) return false;
       pushHistory('Delete selection');
       const removedNodes = state.nodes.filter(n => nodeKeys.has(n.id)).map(n => ({ id: n.id, name: n.name }));
       const removedEdges = [];
@@ -5826,6 +5844,7 @@
       selectedEdgeKey = '';
       if (running) { toast('Run 状态下不能删除节点，请先 Stop'); return; }
       const n = nodeById(id); if (!n) return;
+      if (!runtimeAllowsNodeMutation([id], 'node_removed')) return;
       pushHistory('Delete node');
       state.nodes = state.nodes.filter(x => x.id !== id);
       state.edges = state.edges.filter(e => { const p = edgeParts(e); return p.from !== id && p.to !== id; });
@@ -8972,6 +8991,7 @@
       if (running) { toast('Run 状态下不能对调端口方向，请先 Stop'); return; }
       const n = nodeById(selectedNodeId);
       if (!n) { toast('请先选择一个算法组件'); return; }
+      if (!runtimeAllowsNodeMutation([n.id], 'swap_ports')) return;
       pushHistory('Swap ports');
       if (isDaiFileIoNode(n)) {
         const maxCh = Math.max(1, ...nodePortList(n, 'in').map(p => Number(p.max_ch || 1)), ...nodePortList(n, 'out').map(p => Number(p.max_ch || 1)));
@@ -12009,7 +12029,7 @@
       });
       wrap.addEventListener('dragover', e => { e.preventDefault(); wrap.classList.add('dragover') });
       wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
-      wrap.addEventListener('drop', e => { e.preventDefault(); wrap.classList.remove('dragover'); const name = e.dataTransfer.getData('text/plain'); if (!name) return; if (running) { toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return; } const c = componentByName(name); const pt = worldPointFromEvent(e); pushHistory('Add node'); const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + (++nodeSeq + 10); const n = mkNode(id, name, c.type, c.icon, pt.x - 64, pt.y - 58); n.moduleTypeId = c.moduleTypeId || ''; n.core = Math.floor(Math.random() * 4); state.nodes.push(n); selectedNodeId = n.id; renderAll(true); backendEdit('node_added', { node_id: n.id, node_name: name }); addLog('info', 'Node added', name); });
+      wrap.addEventListener('drop', e => { e.preventDefault(); wrap.classList.remove('dragover'); const name = e.dataTransfer.getData('text/plain'); if (!name) return; if (running) { toast('Run 状态下锁定 pipeline，请 Stop 后再添加组件'); return; } if (!runtimeAllowsNodeMutation([], 'node_added')) return; const c = componentByName(name); const pt = worldPointFromEvent(e); pushHistory('Add node'); const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + (++nodeSeq + 10); const n = mkNode(id, name, c.type, c.icon, pt.x - 64, pt.y - 58); n.moduleTypeId = c.moduleTypeId || ''; n.core = Math.floor(Math.random() * 4); state.nodes.push(n); selectedNodeId = n.id; renderAll(true); backendEdit('node_added', { node_id: n.id, node_name: name }); addLog('info', 'Node added', name); });
       $('#autoBtn').addEventListener('click', () => autoArrange());
       $('#selectTool')?.addEventListener('click', () => { if ($('#selectTool')?.dataset.mode === 'renamePipeline') renamePipeline(); });
       $('#zoomOut').addEventListener('click', () => setZoom(state.zoom - .1));
@@ -12021,7 +12041,12 @@
       $$('#panelMenu input').forEach(cb => cb.addEventListener('change', e => setPanelVisible(e.target.dataset.panel, e.target.checked)));
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));
       $('#validateBtn').addEventListener('click', async () => { const res = await apiPost('/api/pipeline/validate', pipelineSnapshot()); const warnings = res?.warnings || []; const errors = res?.errors || []; $('#warnCount').textContent = String(warnings.length); $('#errCount').textContent = String(errors.length); addLog(errors.length ? 'warn' : 'ok', 'Pipeline validated', 'Backend callback: /api/pipeline/validate'); toast(errors.length ? 'Validate failed' : 'Validate success'); });
-      $('#buildBtn').addEventListener('click', async () => { await buildRuntimeGroup(); });
+      $('#buildBtn').addEventListener('click', async () => {
+        const groupId = targetRuntimeGroupId();
+        const status = runtimeStatusForGroupId(groupId);
+        if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup(groupId);
+        else await buildRuntimeGroup(groupId);
+      });
       $('#runBtn').addEventListener('click', async () => { await startRuntimeGroup(); });
       $('#stopBtn').addEventListener('click', async () => { await stopRuntimeGroup(); });
       $('#playBtn').addEventListener('click', () => { if (running) { $('#stopBtn').click(); } else { $('#runBtn').click(); } });
@@ -12197,6 +12222,39 @@
       setGlobalRunningFromGroups();
       renderRuntimeStateVisuals();
     }
+    function runtimeGroupAllowsGraphMutation(groupId, kind = '') {
+      const status = runtimeStatusForGroupId(groupId);
+      if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.RUNNING) return true;
+      const label = runtimeGroupById(groupId)?.displayName || runtimeGroupById(groupId)?.name || groupId;
+      const action = status === RUNTIME_STATES.RUNNING ? 'Stop' : 'Unload';
+      toast(`${label} is ${RUNTIME_STATUS_META[status].label}; ${action} before editing`, 'warn');
+      addLog('warn', 'Graph edit blocked', `${label} is ${RUNTIME_STATUS_META[status].label}; ${action} before ${kind || 'editing'}`);
+      return false;
+    }
+    function runtimeGroupIdsForNodeIds(nodeIds = []) {
+      const ids = new Set();
+      nodeIds.filter(Boolean).forEach(id => { const g = runtimeGroupForNodeId(id); if (g) ids.add(g.id); });
+      if (!ids.size) {
+        const target = targetRuntimeGroupId();
+        if (target && target !== 'ALL') ids.add(target);
+      }
+      if (!ids.size && targetRuntimeGroupId() === 'ALL') runtimeGroups().forEach(g => ids.add(g.id));
+      return ids;
+    }
+    function runtimeGroupIdsForEdgeKeys(edgeKeys = []) {
+      const ids = new Set();
+      edgeKeys.filter(Boolean).forEach(key => { const g = runtimeGroupForEdgeKey(key); if (g) ids.add(g.id); });
+      return ids.size ? ids : runtimeGroupIdsForNodeIds([]);
+    }
+    function runtimeGroupsAllowGraphMutation(groupIds, kind = '') {
+      return [...groupIds].every(id => runtimeGroupAllowsGraphMutation(id, kind));
+    }
+    function runtimeAllowsNodeMutation(nodeIds = [], kind = '') {
+      return runtimeGroupsAllowGraphMutation(runtimeGroupIdsForNodeIds(nodeIds), kind);
+    }
+    function runtimeAllowsEdgeMutation(edgeKeys = [], kind = '') {
+      return runtimeGroupsAllowGraphMutation(runtimeGroupIdsForEdgeKeys(edgeKeys), kind);
+    }
     function markGroupsNotReadyForGraphMutation(kind = '', payload = {}) {
       const mutationKinds = new Set(['connection_added', 'connections_removed', 'selection_deleted', 'selection_pasted', 'selection_cut', 'undo', 'redo', 'node_added', 'node_removed']);
       if (!mutationKinds.has(kind)) return;
@@ -12208,7 +12266,8 @@
       if (!ids.size) runtimeGroups().forEach(g => ids.add(g.id));
       ids.forEach(id => {
         const st = runtimeStatusForGroupId(id);
-        if (st === RUNTIME_STATES.PIPE_LOADED || st === RUNTIME_STATES.ERROR) setRuntimeStatusForGroup(id, RUNTIME_STATES.NOT_READY, kind);
+        if (!runtimeGroupAllowsGraphMutation(id, kind)) return;
+        if (st === RUNTIME_STATES.ERROR) setRuntimeStatusForGroup(id, RUNTIME_STATES.NOT_READY, kind);
       });
     }
     function runtimeStatusText(status) {
@@ -12263,8 +12322,31 @@
       decorateRuntimeSelectOptions();
       updateNodeRuntimeClasses();
       updateInspectorRuntimeStatus();
+      updateBuildRuntimeButtonState();
       drawEdges();
       updateHistoryButtons();
+    }
+    function updateBuildRuntimeButtonState(groupId = targetRuntimeGroupId()) {
+      const buildBtn = $('#buildBtn');
+      if (!buildBtn) return;
+      buildBtn.classList.remove('btnRuntimeUnload');
+      if (buildingRuntimeGroupId) {
+        buildBtn.disabled = true;
+        buildBtn.textContent = '▣ Building';
+        return;
+      }
+      const status = runtimeStatusForGroupId(groupId);
+      if (status === RUNTIME_STATES.PIPE_LOADED) {
+        buildBtn.disabled = false;
+        buildBtn.textContent = '▣ Unload';
+        buildBtn.classList.add('btnRuntimeUnload');
+      } else if (status === RUNTIME_STATES.RUNNING) {
+        buildBtn.disabled = true;
+        buildBtn.textContent = '▣ Running';
+      } else {
+        buildBtn.disabled = false;
+        buildBtn.textContent = '▣ Build';
+      }
     }
     async function postRuntimeGroupState(action, groupId, status) {
       const groups = runtimeGroups();
@@ -12283,17 +12365,32 @@
       const path = action === 'stop' ? '/api/runtime/stop' : '/api/runtime/run';
       try { return await apiPost(path, payload); } catch (e) { return null; }
     }
+    function upsertUpdatedPipelineFromBuildResponse(res = {}) {
+      const updated = res?.updated_pipeline;
+      if (!updated || typeof updated !== 'object') return false;
+      currentProjectConfig = currentProjectConfig || {};
+      currentProjectConfig.pipelines = Array.isArray(currentProjectConfig.pipelines) ? currentProjectConfig.pipelines : [];
+      const pipelines = currentProjectConfig.pipelines;
+      const pipeId = String(updated.pipe_id || '');
+      const name = String(updated.name || '');
+      let idx = pipeId ? pipelines.findIndex(p => String(p?.pipe_id || '') === pipeId) : -1;
+      if (idx < 0 && name) idx = pipelines.findIndex(p => String(p?.name || '') === name);
+      if (idx >= 0) pipelines[idx] = { ...pipelines[idx], ...updated };
+      else pipelines.push(updated);
+      return true;
+    }
     async function buildRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const buildBtn = $('#buildBtn');
       buildingRuntimeGroupId = groupId;
       buildState = 'building';
       running = false;
-      if (buildBtn) { buildBtn.disabled = true; buildBtn.dataset.originalText = buildBtn.dataset.originalText || buildBtn.textContent; buildBtn.textContent = '▣ Building'; }
+      if (buildBtn) updateBuildRuntimeButtonState(groupId);
       $('#playBtn').textContent = '▶';
       $('.badge.ok').textContent = '◌ BUILDING';
       toast('Building...', 'info');
       addLog('info', 'Build started', 'Calling /api/pipeline/build');
       const res = await apiPost('/api/pipeline/build', pipelineSnapshot());
+      upsertUpdatedPipelineFromBuildResponse(res);
       applyBuildDiagnostics(res || {});
       const backendOk = res && res.ok === true;
       const pipeLoaded = normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
@@ -12304,11 +12401,36 @@
       if (res?.core_map) {
         state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
       }
-      if (buildBtn) { buildBtn.disabled = false; buildBtn.textContent = buildBtn.dataset.originalText || '▣ Build'; }
       buildingRuntimeGroupId = '';
+      if (buildBtn) updateBuildRuntimeButtonState(groupId);
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Build successful' : 'Build failed', 'Backend callback: /api/pipeline/build');
       toast(ok ? 'Build success' : 'Build failed', ok ? 'ok' : 'error');
+      return ok;
+    }
+    async function unloadRuntimeGroup(groupId = targetRuntimeGroupId()) {
+      const group = runtimeGroupById(groupId);
+      const payload = {
+        ...pipelineSnapshot(),
+        group_id: groupId,
+        target_group: {
+          id: groupId,
+          name: group?.displayName || group?.name || groupId,
+          nodes: group?.nodes?.map(n => n.id) || [],
+          edges: group?.edges?.map(edgeKeyForEdge) || []
+        }
+      };
+      addLog('info', 'Unload started', 'Calling /api/pipeline/unload');
+      const res = await apiPost('/api/pipeline/unload', payload);
+      const ok = res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.NOT_READY;
+      if (ok) {
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.NOT_READY, 'unload_success');
+      } else {
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'unload_failed');
+      }
+      renderAll(true);
+      addLog(ok ? 'ok' : 'warn', ok ? 'Unload successful' : 'Unload failed', 'Backend callback: /api/pipeline/unload');
+      toast(ok ? 'Unload success' : 'Unload failed', ok ? 'ok' : 'error');
       return ok;
     }
     async function startRuntimeGroup(groupId = targetRuntimeGroupId()) {

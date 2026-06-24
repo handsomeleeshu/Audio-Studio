@@ -4852,25 +4852,25 @@ apps/as_config
 
 #### 5.X.1 GUI backend build workspace 与 config.compile RPC
 
-Audio Studio GUI backend 不直接修改源平台 JSON。页面初始化加载平台配置时，backend 为当前 project 创建临时 workspace，将原始 JSON 拷贝为 workspace copy，并把 copy 返回前端。Build 时前端提交完整 layout snapshot，backend 以该 snapshot 重生成 workspace copy 根上的 `pipelines[]`，再把完整 GUI snapshot 写入 `audio_studio_gui` 字段，用于 UI 恢复、debug file metadata 和审计。`POST /api/pipeline/build` 接受前端直接提交的裸 snapshot，也兼容 `{ "snapshot": ... }` 包装格式。
+Audio Studio GUI backend 不直接修改源平台 JSON。页面初始化加载平台配置时，backend 为当前 project 创建临时 workspace，将原始 JSON 拷贝为 `${platform}_pipeline_all.json`，并把该 all copy 返回前端。前端编辑阶段不写 workspace；Build 时前端提交完整 layout snapshot，backend 只为目标 working group 生成单条 pipeline JSON `${platform}_pipeline_<pipe_id>.json`，再把同一条 pipeline upsert 回 `${platform}_pipeline_all.json` 的根 `pipelines[]`，并把完整 GUI snapshot 写入 `audio_studio_gui` 字段，用于 UI 恢复、debug file metadata 和审计。`POST /api/pipeline/build` 接受前端直接提交的裸 snapshot，也兼容 `{ "snapshot": ... }` 包装格式。
 
 重生成规则：
 
 ```text
-1. backend 先读取 snapshot 的 `group_id`。当 `group_id != "ALL"` 时，只重生成该 working group 对应的 pipeline；当 `group_id == "ALL"` 时，每个 frontend working group 生成一个 pipeline object。
+1. backend 先读取 snapshot 的 `group_id`。Build 必须指向单个 working group；backend 只重生成该 working group 对应的 pipeline。
 2. 能唯一对应原始 pipeline 的 group 沿用原 `pipe_id`、`domain`、`frame`、`runtime`；新增/拆分/合并 group 使用稳定 `GUI_PIPE_<index>` 和项目默认模板。
 3. 原始 module instance 节点生成 `{ node_id, kind: "module", inst_ref }`；新增算法节点生成 `{ node_id, kind: "module_inline", inline: ... }`。
 4. HOST/DAI 节点必须引用已有 module instance；缺少 `inst_ref` 时 build 在 workspace stage 失败并返回 diagnostics。
 5. `builtin.file_input` / `builtin.file_output` debug 节点和 external/debug 连接全部剔除，不进入根 `pipelines[]`。
-6. `as_config` 只读取重生成后的根 `pipelines[]`，不读取 `audio_studio_gui.as_config_payload`。
+6. `as_config` 只读取单条 pipeline JSON 根 `pipelines[]`，不读取 `audio_studio_gui.as_config_payload`。
 ```
 
 Build 的编译阶段必须通过 as_server JSON-RPC 调用 `config.compile`，参数与 CLI `as_config` 对齐。GUI backend 优先连接常驻 `as_server` socket；如果 socket 不可用，则调用 `as_server --rpc-once <jsonrpc>` 作为过渡期真实实现路径，避免前端 build 回退到 mock 成功：
 
 ```json
 {
-  "input_path": "/tmp/audio-studio-gui-workspaces/.../project.json",
-  "output_dir": "/tmp/audio-studio-gui-workspaces/.../build",
+  "input_path": "/tmp/audio-studio-gui-workspaces/.../a2_pipeline_PLAYBACK_MAIN.json",
+  "output_dir": "/tmp/audio-studio-gui-workspaces/.../build/PLAYBACK_MAIN",
   "project_name": "a2",
   "alsatplg": "third_party/alsatplg/bin/alsatplg",
   "build_tplg": true,
@@ -4889,9 +4889,9 @@ pipeinstall <compiled.tplg>
 
 然后调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log`，由该脚本负责重启 simulator 和验证用 as_server。backend 会从启动目录和父目录向上查找 `application/rv32qemu/sof-build-test.py`、验证用 `out/linux/simulator/rpc_socket/Debug/as_server`、`as_log` 与 `application/rv32qemu/build/sof.ldc`；必要时可通过 `AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH`、`AUDIO_STUDIO_VALIDATION_AS_LOG_PATH`、`AUDIO_STUDIO_VALIDATION_TRACE_LDC` 显式指定。
 
-当前 simulator profile 中 `PLAYBACK_MAIN` 可以完整通过 `config.compile`、tplg build、rv32qemu `trace on` 和 `pipeinstall`。一次性 `group_id:"ALL"` 安装 playback/capture/DSP coverage 可能因当前 rv32qemu/SOF 资源限制返回 `sof_pipeline_install failed: -12`；因此 GUI 默认 Build 应使用当前选中 node 所在 working group 的 `group_id`，只有用户明确选择 ALL 时才执行全量 pipeline build。
+当前 simulator profile 中 `PLAYBACK_MAIN` 可以完整通过 `config.compile`、tplg build、rv32qemu `trace on` 和 `pipeinstall`。GUI Build 使用当前选中 node 所在 working group 的 `group_id`，backend 成功后返回 `runtime_state:"PIPE_LOADED"` 与 `updated_pipeline`，frontend 将其 upsert 到内存中的 all config，确保 All/单 pipeline 视图一致。
 
-GUI `Save` 只有在当前 workspace 最近一次 build 成功后才允许写回原始平台 JSON；开始新的 build 会先清除成功标记。
+已 `PIPE_LOADED` 的 pipeline 再次 build 会被拒绝，必须先调用 `POST /api/pipeline/unload`。当前 unload v1 只清理 backend 状态，真实 as_server 拆除动作后续接入。GUI `Save` 只有 dirty pipeline 均已成功 build 后才允许把 `${platform}_pipeline_all.json` 写回原始平台 JSON。
 
 #### 5.X.2 GUI/runtime state 与 Inspector preset
 
