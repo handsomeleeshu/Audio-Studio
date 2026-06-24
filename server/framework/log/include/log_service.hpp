@@ -3,11 +3,14 @@
 #include <map>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include "log_device.hpp"
 #include "status.hpp"
+
+struct audio_studio_sof_logger_decoder;
 
 namespace audio_studio::framework::log {
 
@@ -48,6 +51,8 @@ class LogService {
 public:
   using EntryInterceptor = std::function<bool(const LogEntry&)>;
 
+  ~LogService();
+
   void configureDeviceRegistry(drivers::log::LogDeviceRegistry* registry);
   void setDefaultSessionConfig(LogSessionConfig config);
   void setEntryInterceptor(EntryInterceptor interceptor);
@@ -74,9 +79,14 @@ private:
     bool running = false;
     size_t entries_read = 0;
     size_t raw_chunks_read = 0;
-    size_t decoded_entries_read = 0;
     std::string raw_trace_path;
     std::string decoded_trace_path;
+    bool raw_trace_owned = false;
+    bool decoded_trace_owned = false;
+    std::string text_pending;
+    std::string sof_decoded_pending;
+    std::vector<uint8_t> sof_raw_pending;
+    audio_studio_sof_logger_decoder* sof_decoder = nullptr;
   };
 
   static bool sofLoggerEnabled(const Session& session);
@@ -86,13 +96,21 @@ private:
   static LogEntry decodeLine(int sequence, const std::string& line);
   static LogEntry decodeSofLoggerLine(int sequence, const std::string& line);
   static bool passesLevel(const std::string& level, const std::string& min_level);
+  static void destroySofDecoder(Session& session);
+  framework::Status prepareTraceFiles(Session& session, bool truncate);
+  framework::Status ensureSofDecoder(Session& session);
+  framework::Status readRawLocked(const std::string& id, size_t max_chunks, std::vector<drivers::log::LogRawChunk>& chunks);
   framework::Status appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks);
   framework::Status decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries);
+  void parseTextLines(Session& session, const std::string& text, size_t max_entries, std::vector<LogEntry>& entries);
+  void parseSofLoggerText(Session& session, const std::string& text, size_t max_entries, std::vector<LogEntry>& entries);
+  void appendEntry(LogEntry entry);
   bool shouldIntercept(const LogEntry& entry) const;
   framework::Status requireSession(const std::string& id, Session*& session);
   framework::Status requireSession(const std::string& id, const Session*& session) const;
   LogSessionInfo infoFor(const Session& session) const;
 
+  mutable std::mutex mutex_;
   int next_sequence_ = 1;
   std::vector<LogEntry> entries_;
   EntryInterceptor entry_interceptor_;

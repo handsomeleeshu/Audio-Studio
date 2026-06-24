@@ -1,5 +1,6 @@
 #include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -135,6 +136,92 @@ private:
   std::vector<uint8_t> rx_;
   std::vector<uint8_t> written_;
 };
+
+class ScriptedLogDevice final : public audio_studio::drivers::log::ILogDevice {
+public:
+  explicit ScriptedLogDevice(std::vector<std::vector<uint8_t>> chunks) : chunks_(std::move(chunks)) {}
+
+  audio_studio::framework::Status open(const audio_studio::drivers::log::LogDeviceConfig& config) override {
+    config_ = config;
+    open_ = true;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status configure(const audio_studio::drivers::log::LogDeviceConfig& config) override {
+    if (!open_) return audio_studio::framework::Status::unavailable("scripted log device is not open");
+    config_ = config;
+    configured_options_ = config.options;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status start() override {
+    if (!open_) return audio_studio::framework::Status::unavailable("scripted log device is not open");
+    running_ = true;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status stop() override {
+    running_ = false;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status readChunk(audio_studio::drivers::log::LogRawChunk& chunk, uint32_t) override {
+    if (!running_) return audio_studio::framework::Status::unavailable("scripted log device is not running");
+    if (read_index_ >= chunks_.size()) return audio_studio::framework::Status::unavailable("scripted log device has no chunk");
+    chunk.sequence = static_cast<uint32_t>(read_index_ + 1);
+    chunk.bytes = chunks_[read_index_++];
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status getStats(audio_studio::drivers::log::LogDeviceStats& stats) override {
+    stats = {chunks_.size(), read_index_, running_};
+    return audio_studio::framework::Status::success();
+  }
+
+  void close() override {
+    open_ = false;
+    running_ = false;
+  }
+
+  const std::map<std::string, std::string>& configuredOptions() const { return configured_options_; }
+
+private:
+  audio_studio::drivers::log::LogDeviceConfig config_;
+  bool open_ = false;
+  bool running_ = false;
+  size_t read_index_ = 0;
+  std::vector<std::vector<uint8_t>> chunks_;
+  std::map<std::string, std::string> configured_options_;
+};
+
+class ScriptedLogDeviceFactory final : public audio_studio::drivers::log::ILogDeviceFactory {
+public:
+  explicit ScriptedLogDeviceFactory(std::vector<std::vector<uint8_t>> chunks) : chunks_(std::move(chunks)) {}
+
+  std::string name() const override { return "scripted-log"; }
+
+  std::unique_ptr<audio_studio::drivers::log::ILogDevice> create(const audio_studio::drivers::log::LogDeviceConfig& config) const override {
+    auto device = std::make_unique<ScriptedLogDevice>(chunks_);
+    if (!device->open(config).ok()) return nullptr;
+    last_device_ = device.get();
+    return device;
+  }
+
+  ScriptedLogDevice* lastDevice() const { return last_device_; }
+
+private:
+  std::vector<std::vector<uint8_t>> chunks_;
+  mutable ScriptedLogDevice* last_device_ = nullptr;
+};
+
+std::string tempPath(const std::string& name) {
+  return "/tmp/audio-studio-log-service-test-" + std::to_string(static_cast<long long>(getpid())) + "-" + name;
+}
+
+bool pathExists(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  return input.good();
+}
 
 uint16_t findFreePort(audio_studio::drivers::socket::ISocketDriver& driver) {
   for (uint16_t port = 29170; port < 29220; ++port) {
@@ -662,6 +749,93 @@ int main() {
     assert(log_service.stop(session.session_id).ok());
     assert(log_service.closeSession(session.session_id).ok());
 
+    {
+      audio_studio::framework::log::LogService split_log_service;
+      audio_studio::drivers::log::LogDeviceRegistry split_registry;
+      assert(split_registry.registerFactory(std::make_unique<ScriptedLogDeviceFactory>(
+        std::vector<std::vector<uint8_t>>{
+          std::vector<uint8_t>{'i','n','f','o','|','F','W','|','h','e','l'},
+          std::vector<uint8_t>{'l','o','\n','w','a','r','n','i','n','g','|','F','W','|','d','o','n','e','\n'}
+        })).ok());
+      split_log_service.configureDeviceRegistry(&split_registry);
+      framework::log::LogSessionConfig split_config;
+      split_config.session_id = "split-text-log";
+      split_config.driver_factory = "scripted-log";
+      split_config.source = "firmware";
+      framework::log::LogSessionInfo split_session;
+      assert(split_log_service.createSession(split_config, split_session).ok());
+      assert(split_log_service.start(split_session.session_id).ok());
+      std::vector<framework::log::LogEntry> split_entries;
+      assert(split_log_service.readEntries(split_session.session_id, 2, split_entries).ok());
+      assert(split_entries.size() == 2);
+      assert(split_entries[0].message == "hello");
+      assert(split_entries[1].level == "warning");
+      assert(split_entries[1].message == "done");
+      assert(split_log_service.closeSession(split_session.session_id).ok());
+    }
+
+    {
+      audio_studio::framework::log::LogService configured_log_service;
+      audio_studio::drivers::log::LogDeviceRegistry configured_registry;
+      auto factory = std::make_unique<ScriptedLogDeviceFactory>(std::vector<std::vector<uint8_t>>{});
+      auto* scripted_factory = factory.get();
+      assert(configured_registry.registerFactory(std::move(factory)).ok());
+      configured_log_service.configureDeviceRegistry(&configured_registry);
+      framework::log::LogSessionConfig defaults;
+      defaults.driver_factory = "scripted-log";
+      defaults.source = "firmware";
+      defaults.options["endpoint"] = "as_datalink";
+      defaults.options["trace_ldc"] = "sof.ldc";
+      configured_log_service.setDefaultSessionConfig(defaults);
+      framework::log::LogSessionConfig configured_config;
+      configured_config.session_id = "configured-log";
+      configured_config.driver_factory.clear();
+      configured_config.source.clear();
+      configured_config.min_level.clear();
+      framework::log::LogSessionInfo configured_session;
+      assert(configured_log_service.createSession(configured_config, configured_session).ok());
+      framework::log::LogSessionConfig update;
+      update.options["mtu"] = "512";
+      assert(configured_log_service.configureSession(configured_session.session_id, update, configured_session).ok());
+      assert(scripted_factory->lastDevice());
+      const auto& configured_options = scripted_factory->lastDevice()->configuredOptions();
+      assert(configured_options.at("endpoint") == "as_datalink");
+      assert(configured_options.at("trace_ldc") == "sof.ldc");
+      assert(configured_options.at("mtu") == "512");
+      assert(configured_log_service.closeSession(configured_session.session_id).ok());
+    }
+
+    {
+      audio_studio::framework::log::LogService path_log_service;
+      framework::log::LogSessionConfig bad_path_config;
+      bad_path_config.session_id = "bad-trace-path";
+      bad_path_config.options["trace_ldc"] = "sof.ldc";
+      bad_path_config.options["raw_trace_path"] = tempPath("missing/raw.trace");
+      framework::log::LogSessionInfo bad_path_session;
+      assert(!path_log_service.createSession(bad_path_config, bad_path_session).ok());
+
+      const std::string user_raw = tempPath("user.raw");
+      const std::string user_decoded = tempPath("user.decoded");
+      {
+        std::ofstream raw(user_raw, std::ios::binary | std::ios::trunc);
+        std::ofstream decoded(user_decoded, std::ios::binary | std::ios::trunc);
+        raw << "raw";
+        decoded << "decoded";
+      }
+      framework::log::LogSessionConfig user_path_config;
+      user_path_config.session_id = "user-trace-path";
+      user_path_config.options["trace_ldc"] = "sof.ldc";
+      user_path_config.options["raw_trace_path"] = user_raw;
+      user_path_config.options["decoded_trace_path"] = user_decoded;
+      framework::log::LogSessionInfo user_path_session;
+      assert(path_log_service.createSession(user_path_config, user_path_session).ok());
+      assert(path_log_service.closeSession(user_path_session.session_id).ok());
+      assert(pathExists(user_raw));
+      assert(pathExists(user_decoded));
+      std::remove(user_raw.c_str());
+      std::remove(user_decoded.c_str());
+    }
+
     rpc::JsonValue create_params = rpc::JsonValue::object();
     create_params["session_id"] = "log-rpc-2";
     create_params["driver_factory"] = "linux-host";
@@ -677,6 +851,29 @@ int main() {
     assert(read_entries.at("entries").asArray()[0].at("text").asString().find("audio controller") != std::string::npos);
     assert(audio_client.call("log.stop", session_params).at("session").at("running").asBool() == false);
     assert(audio_client.call("log.closeSession", session_params).at("closed").asBool());
+
+    {
+      const std::string binary_log = tempPath("binary.raw");
+      {
+        std::ofstream out(binary_log, std::ios::binary | std::ios::trunc);
+        const char bytes[] = {0x00, 0x01, 0x02, static_cast<char>(0xff)};
+        out.write(bytes, sizeof(bytes));
+      }
+      rpc::JsonValue raw_create = rpc::JsonValue::object();
+      raw_create["session_id"] = "log-raw-binary";
+      raw_create["driver_factory"] = "linux-host";
+      raw_create["source"] = binary_log;
+      assert(audio_client.call("log.createSession", raw_create).at("session").at("session_id").asString() == "log-raw-binary");
+      rpc::JsonValue raw_session = rpc::JsonValue::object();
+      raw_session["session_id"] = "log-raw-binary";
+      assert(audio_client.call("log.start", raw_session).at("session").at("running").asBool());
+      auto raw_result = audio_client.call("log.readRaw", raw_session);
+      const auto& raw_item = raw_result.at("chunks").asArray().front();
+      assert(raw_item.at("encoding").asString() == "base64");
+      assert(raw_item.at("bytes_base64").asString() == "AAEC/w==");
+      assert(audio_client.call("log.closeSession", raw_session).at("closed").asBool());
+      std::remove(binary_log.c_str());
+    }
   }
 
 #if defined(CONFIG_FRAMEWORK_CONFIG)

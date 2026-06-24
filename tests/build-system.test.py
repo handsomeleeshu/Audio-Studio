@@ -382,19 +382,29 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')
 
 
-def assert_sof_logger_follow_ignores_decoder_footer():
+def assert_sof_logger_follow_decodes_incrementally():
     log_service_h = read_text(ROOT / 'server' / 'framework' / 'log' / 'include' / 'log_service.hpp')
     log_service = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'log_service.cpp')
     decoder_c = read_text(ROOT / 'server' / 'framework' / 'log' / 'src' / 'sof_logger_decoder_c.c')
 
-    require_contains(log_service_h, 'decoded_entries_read')
+    require_contains(log_service_h, 'sof_raw_pending')
+    require_contains(log_service_h, 'sof_decoded_pending')
+    assert 'decoded_entries_read' not in log_service_h
     assert 'decoded_lines_read' not in log_service_h
     require_contains(log_service, 'isSofLoggerDiagnosticLine')
     require_contains(log_service, 'Skipped ')
     require_contains(log_service, 'Potential mailbox wrap')
     require_contains(log_service, 'Found valid LDC address')
     require_contains(log_service, 'if (!isSofLoggerEntryLine(line)) continue;')
-    require_contains(log_service, 'entry_index++ < session.decoded_entries_read')
+    require_contains(log_service, 'audio_studio_sof_logger_decoder_record_size')
+    require_contains(log_service, 'audio_studio_sof_logger_decoder_decode_buffer')
+    require_contains(log_service, 'kSofTraceResyncBytes')
+    require_contains(log_service, 'sofLoggerDecodeMutex')
+    require_contains(decoder_c, 'audio_studio_sof_logger_decoder_create')
+    require_contains(decoder_c, 'audio_studio_sof_logger_decoder_record_size')
+    require_contains(decoder_c, 'audio_studio_sof_logger_decoder_decode_buffer')
+    require_contains(decoder_c, 'fmemopen')
+    require_contains(decoder_c, 'open_memstream')
     assert 'config.trace = 1' not in decoder_c
 
 
@@ -421,6 +431,10 @@ def assert_rv32_audio_controller_log_uses_regular_trace_source():
     rv32_ac_platform = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'platform' / 'rv32qemu' / 'ac_platform.c')
 
     require_contains(rv32_runner, 'ensure_data_file(log_fifo_path)')
+    require_contains(rv32_runner, 'maybe_wrap_audio_controller_test_list')
+    require_contains(rv32_runner, 'ac_run --endpoint')
+    require_contains(rv32_runner, 'trace on')
+    require_contains(rv32_runner, 'ac_run --stop')
     assert 'ensure_fifo(log_fifo_path)' not in rv32_runner
     assert 'if (count == 0 || (count < 0 && errno != EAGAIN &&' not in rv32_ac_platform
     require_contains(rv32_ac_platform, 'if (timeout_ms == 0u || waited_ms >= timeout_ms)')
@@ -636,7 +650,7 @@ def main():
     assert_audio_controller_transport_channels_are_layered()
     assert_simulator_audio_transport_channels_are_stream_scoped()
     assert_audio_cli_lets_server_select_default_driver()
-    assert_sof_logger_follow_ignores_decoder_footer()
+    assert_sof_logger_follow_decodes_incrementally()
     assert_sof_test_ac_run_uses_getopt_long()
     assert_rv32_log_datalink_files_are_session_scoped()
     assert_rv32_audio_controller_log_uses_regular_trace_source()

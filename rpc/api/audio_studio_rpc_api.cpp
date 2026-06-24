@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "autoconfig.h"
 #include "audio_service.hpp"
@@ -45,6 +46,24 @@ std::string defaultAudioDriverFactory() {
 #else
   return "alsa";
 #endif
+}
+
+std::string base64Encode(const std::vector<uint8_t>& bytes) {
+  static constexpr char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((bytes.size() + 2) / 3) * 4);
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    const uint32_t b0 = bytes[i];
+    const uint32_t b1 = i + 1 < bytes.size() ? bytes[i + 1] : 0;
+    const uint32_t b2 = i + 2 < bytes.size() ? bytes[i + 2] : 0;
+    const uint32_t value = (b0 << 16) | (b1 << 8) | b2;
+    out.push_back(kAlphabet[(value >> 18) & 0x3f]);
+    out.push_back(kAlphabet[(value >> 12) & 0x3f]);
+    out.push_back(i + 1 < bytes.size() ? kAlphabet[(value >> 6) & 0x3f] : '=');
+    out.push_back(i + 2 < bytes.size() ? kAlphabet[value & 0x3f] : '=');
+  }
+  return out;
 }
 
 JsonValue statusResult(const framework::Status& status) {
@@ -414,6 +433,8 @@ JsonValue readLogRaw(RpcRuntimeContext& context, const JsonValue& params) {
     JsonValue item = JsonValue::object();
     item["sequence"] = chunk.sequence;
     item["bytes"] = std::string(chunk.bytes.begin(), chunk.bytes.end());
+    item["encoding"] = "base64";
+    item["bytes_base64"] = base64Encode(chunk.bytes);
     array.pushBack(std::move(item));
   }
   JsonValue result = JsonValue::object();
