@@ -28,6 +28,9 @@
 #if defined(CONFIG_FRAMEWORK_LOG)
 #include "log_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+#include "system_info_service.hpp"
+#endif
 #if defined(CONFIG_FRAMEWORK_TRANSPORT)
 #include "transport_manager.hpp"
 #endif
@@ -137,6 +140,21 @@ audio_studio::framework::log::LogSessionConfig defaultLogConfigFromOptions(const
   config.min_level = options.log_level;
   if (!options.log_trace_ldc.empty()) config.options["trace_ldc"] = options.log_trace_ldc;
   return config;
+}
+#endif
+
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+audio_studio::framework::system_info::SystemInfoService& systemInfoService() {
+  static audio_studio::framework::system_info::SystemInfoService service;
+  return service;
+}
+
+void configureSystemInfoLogInterceptor() {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  logService().setEntryInterceptor([](const audio_studio::framework::log::LogEntry& entry) {
+    return systemInfoService().consumeLogEntry(entry);
+  });
+#endif
 }
 #endif
 
@@ -278,6 +296,9 @@ audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefa
 #if defined(CONFIG_FRAMEWORK_LOG)
   context->setLogService(&logService());
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+  context->setSystemInfoService(&systemInfoService());
+#endif
   audio_studio::rpc::registerAudioStudioRpcMethods(endpoint, context);
 #else
   audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
@@ -294,6 +315,9 @@ RpcEndpointBundle makeEndpointBundle(audio_studio::rpc::RpcStreamDefaults stream
 #endif
 #if defined(CONFIG_FRAMEWORK_LOG)
   bundle.context->setLogService(&logService());
+#endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+  bundle.context->setSystemInfoService(&systemInfoService());
 #endif
   audio_studio::rpc::registerAudioStudioRpcMethods(bundle.endpoint, bundle.context);
   return bundle;
@@ -357,6 +381,9 @@ int main(int argc, char** argv) {
 #if defined(CONFIG_FRAMEWORK_LOG)
     logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+    configureSystemInfoLogInterceptor();
+#endif
     std::cout << handleRpcOnce(options.rpc_once) << "\n";
     drivers.shutdown();
     return 0;
@@ -395,6 +422,9 @@ int main(int argc, char** argv) {
 #endif
 #if defined(CONFIG_FRAMEWORK_LOG)
       logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
+#endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      configureSystemInfoLogInterceptor();
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {

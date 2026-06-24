@@ -18,6 +18,10 @@ namespace audio_studio::framework::log {
 class LogService;
 }
 
+namespace audio_studio::framework::system_info {
+class SystemInfoService;
+}
+
 namespace audio_studio::rpc {
 
 struct RpcStreamDefaults {
@@ -42,6 +46,9 @@ public:
   void setLogService(framework::log::LogService* log_service);
   bool hasLogService() const;
   framework::log::LogService& log();
+  void setSystemInfoService(framework::system_info::SystemInfoService* system_info_service);
+  bool hasSystemInfoService() const;
+  framework::system_info::SystemInfoService& systemInfo();
   const RpcStreamDefaults& streamDefaults() const;
   void setStreamDefaults(RpcStreamDefaults defaults);
 
@@ -55,6 +62,7 @@ private:
   framework::audio::AudioService& audio_service_;
   framework::config::ConfigService* config_service_ = nullptr;
   framework::log::LogService* log_service_ = nullptr;
+  framework::system_info::SystemInfoService* system_info_service_ = nullptr;
   RpcStreamDefaults stream_defaults_;
   std::atomic<uint32_t> next_id_ {1};
   mutable std::mutex ids_mutex_;

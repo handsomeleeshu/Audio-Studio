@@ -1,0 +1,4 @@
+config FRAMEWORK_SYSTEM_INFO
+  bool "Build System Info framework service"
+  default y if FRAMEWORK_LOG
+  depends on FRAMEWORK_COMMON && FRAMEWORK_LOG

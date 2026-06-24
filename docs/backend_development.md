@@ -18,11 +18,12 @@
 |---|---|---|
 | GET | `/` | 前端页面 |
 | GET | `/api/config` | 打开产品 JSON，创建临时 workspace，并返回 workspace copy |
-| GET | `/api/telemetry?nodes=A,B` | 返回 mock telemetry |
+| GET | `/api/telemetry?nodes=A,B` | 返回 runtime telemetry；PER-ALGORITHM COST / DSP CORE LOADING / SYSTEM HEALTH 优先来自 as_server `systemInfo.*` |
 | POST | `/api/pipeline/validate` | Pipeline 校验 |
 | POST | `/api/pipeline/build` | 用完整 layout snapshot 重建 workspace all JSON，通过 as_server `config.compile` 编译 tplg，生成 SOF test list 并启动 keep-alive 验证 session |
 | POST | `/api/pipeline/unload` | 停止当前 keep-alive validation session，并清理全局 loaded 状态 |
-| POST | `/api/runtime/run` | 启动 runtime |
+| POST | `/api/runtime/run` | 启动 runtime；可携带 File Input 的 WAV playback 描述 |
+| POST | `/api/runtime/audio/frame` | 前端推送一帧 PCM data，backend 入队后立即返回 queue/backpressure 状态 |
 | POST | `/api/runtime/stop` | 停止 runtime |
 | POST | `/api/param/update` | 动态参数下发 |
 | POST | `/api/node/action` | 节点点击/控制扩展 |
@@ -69,6 +70,15 @@ Build 成功后 frontend 锁定结构编辑：不能新增/删除组件、连接
 
 `GuiRuntimeEngine` 是生产路径的 `IRuntimeEngine` 实现；`buildPipeline()` / `unloadPipeline()` 委托 `BuildOrchestrator` 完成 workspace JSON、`config.compile` RPC 和 simulator validation。`MockRuntimeEngine` 不再继承 `IRuntimeEngine`，只保留为 node/parameter 等非真实 runtime 控制的测试替身。
 
+RUN/playback 采用双阶段数据路径：
+
+1. `/api/runtime/run` 接收 frontend 的 `playback` 描述，包括 `sample_rate`、`channels`、`bits_per_sample`、`frame_bytes`、`data_offset`、`data_bytes` 和 `edge_key`。
+2. `GuiRuntimeEngine` 创建 as_server playback session，并启动独立 worker thread。
+3. frontend 通过 `/api/runtime/audio/frame?...` 发送 `application/octet-stream` PCM frame；backend 只入队并立即返回 `{accepted, queued_bytes, next_push_ms, stalled, blocked_edge_key}`。
+4. worker thread 从 queue 中取 frame，通过 `AudioRpcClient` 写入 as_server；queue 高水位、RPC 未就绪或 100ms 没有 dequeue 时返回 `stalled:true`，frontend 按 `blocked_edge_key` 标红闪烁对应连接。
+
+System info 采用 as_server 侧 `server/framework/system_info`。`LogService` 拦截 SOF trace 中以 `ASINFO|` 开头的 decoded entry，更新 `SystemInfoService` snapshot，并从普通 `as_log` 输出中隐藏这些内部 telemetry 行。GUI/backend controller 通过 `systemInfo.snapshot`、`systemInfo.components`、`systemInfo.buffers`、`systemInfo.health` 读取真实状态；1s 没有 heartbeat 时返回 disconnected 和清空后的 runtime 值。
+
 后续替换 runtime 能力时，优先在现有接口后面挂真实实现，保持 HTTP/RPC API 不变：
 
 ```cpp
@@ -79,6 +89,7 @@ public:
   std::string unloadPipeline(const std::string& pipeline_json) override;
   std::string run(const std::string& session_id) override;
   std::string stop(const std::string& session_id) override;
+  std::string pushAudioFrame(const std::string& query, const std::string& frame) override;
   std::string telemetry(const std::vector<std::string>& node_ids) override;
 };
 ```

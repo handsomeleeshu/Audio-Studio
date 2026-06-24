@@ -3760,6 +3760,20 @@
       }
       return null;
     }
+    async function apiPostBinary(path, bytes) {
+      try {
+        const r = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: bytes
+        });
+        if (r.ok) return await r.json();
+        console.warn('[AudioStudio API] binary POST non-OK response', path, r.status);
+      } catch (e) {
+        console.warn('[AudioStudio API] binary POST failed:', path, e.message);
+      }
+      return null;
+    }
     async function apiGet(path) {
       try {
         const r = await fetch(path, { cache: 'no-store' });
@@ -4271,6 +4285,8 @@
     let inspectorLiveState = { running: false, general: null, ports: [], node_id: '' };
     let inspectorBackendLiveFallbackLogged = false;
     let bufferDumpState = { active: false, edgeKey: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], fallback: false, format: null, lastTimestamp: 0, timer: null, writeChain: Promise.resolve(), pumpBusy: false };
+    const debugFileIoFiles = new Map();
+    const playbackFramePump = { active: false, busy: false, timer: 0, generation: 0, file: null, audio: null, nodeId: '', fileName: '', edgeKey: '', blockedEdgeKey: '', offset: 0, end: 0, frameIndex: 0, frameBytes: 3840, nextPushMs: 20, groupId: '' };
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -6012,6 +6028,7 @@
               if (!file) return;
               const info = await readAudioFileInfo(file);
               const pathHint = file.webkitRelativePath || file.name;
+              debugFileIoFiles.set(n.id, { file, info, path_hint: pathHint, selected_at: Date.now() });
               n.debugFileIo = { direction: 'input', file_name: file.name, path_hint: pathHint, audio: info };
               writeInspectorPresetParam(n, p, pathHint);
               renderInspectorParameters(n);
@@ -6032,6 +6049,7 @@
               if (!pathHint) return;
               n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint };
             }
+            debugFileIoFiles.delete(n.id);
             writeInspectorPresetParam(n, p, pathHint);
             renderInspectorParameters(n);
             backendEdit('debug_file_io_save_path', { node_id: n.id, path_hint: pathHint });
@@ -6041,27 +6059,205 @@
       });
     }
     async function readAudioFileInfo(file) {
-      const header = await file.slice(0, 64).arrayBuffer();
+      const scanBytes = Math.min(file.size, 1024 * 1024);
+      const header = await file.slice(0, scanBytes).arrayBuffer();
       const view = new DataView(header);
-      const text = (off, len) => String.fromCharCode(...new Uint8Array(header, off, len));
-      const info = { bytes: file.size, sample_rate: null, channels: null, bits_per_sample: null, duration_sec: null };
+      const text = (off, len) => (off + len <= header.byteLength) ? String.fromCharCode(...new Uint8Array(header, off, len)) : '';
+      const info = { bytes: file.size, sample_rate: null, channels: null, bits_per_sample: null, duration_sec: null, data_offset: 0, data_bytes: 0, block_align: 0, byte_rate: 0, format_code: null };
       if (text(0, 4) !== 'RIFF' || text(8, 4) !== 'WAVE') return info;
       let off = 12;
       while (off + 8 <= view.byteLength) {
         const chunk = text(off, 4);
         const size = view.getUint32(off + 4, true);
-        if (chunk === 'fmt ' && off + 24 <= view.byteLength) {
-          info.channels = view.getUint16(off + 10, true);
-          info.sample_rate = view.getUint32(off + 12, true);
-          info.bits_per_sample = view.getUint16(off + 22, true);
+        const chunkData = off + 8;
+        if (chunk === 'fmt ' && chunkData + 16 <= view.byteLength) {
+          info.format_code = view.getUint16(chunkData, true);
+          info.channels = view.getUint16(chunkData + 2, true);
+          info.sample_rate = view.getUint32(chunkData + 4, true);
+          info.byte_rate = view.getUint32(chunkData + 8, true);
+          info.block_align = view.getUint16(chunkData + 12, true);
+          info.bits_per_sample = view.getUint16(chunkData + 14, true);
         }
-        if (chunk === 'data' && info.sample_rate && info.channels && info.bits_per_sample) {
-          info.duration_sec = size / (info.sample_rate * info.channels * (info.bits_per_sample / 8));
+        if (chunk === 'data') {
+          info.data_offset = chunkData;
+          info.data_bytes = Math.min(size, Math.max(0, file.size - chunkData));
+          if (info.sample_rate && info.channels && info.bits_per_sample) {
+            info.duration_sec = info.data_bytes / (info.sample_rate * info.channels * (info.bits_per_sample / 8));
+          }
           break;
         }
-        off += 8 + size + (size % 2);
+        const next = chunkData + size + (size % 2);
+        if (next <= off) break;
+        off = next;
       }
       return info;
+    }
+    function groupsForRuntimeId(groupId = targetRuntimeGroupId()) {
+      if (groupId === 'ALL') return runtimeGroups();
+      const g = runtimeGroupById(groupId);
+      return g ? [g] : [];
+    }
+    function playbackFileRecordForNode(n) {
+      if (!n) return null;
+      const stored = debugFileIoFiles.get(n.id);
+      if (stored?.file) return stored;
+      return null;
+    }
+    function playbackEdgeForNode(n, groups) {
+      const edges = groups.flatMap(g => g?.edges || []);
+      const outgoing = edges.find(e => edgeParts(e).from === n.id);
+      const incoming = edges.find(e => edgeParts(e).to === n.id);
+      const edge = outgoing || incoming || null;
+      return edge ? edgeParts(edge) : null;
+    }
+    function buildPlaybackRequestForGroup(groupId = targetRuntimeGroupId()) {
+      const groups = groupsForRuntimeId(groupId);
+      const seen = new Set();
+      const nodes = groups.flatMap(g => g?.nodes || []).filter(n => n && !seen.has(n.id) && seen.add(n.id));
+      const source = nodes.find(n => {
+        const d = String(n?.debugFileIo?.direction || debugFileIoDirection(n)).toLowerCase();
+        return d === 'input' && (isDebugFileIoNode(n) || isDaiFileIoNode(n)) && playbackFileRecordForNode(n);
+      });
+      if (!source) return null;
+      const record = playbackFileRecordForNode(source);
+      const info = { ...(record.info || source.debugFileIo?.audio || {}) };
+      const ep = playbackEdgeForNode(source, groups);
+      const edgeKey = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : '';
+      const edgeFmt = ep ? inferredEdgeFormat(ep) : null;
+      const fmt = normalizeRuntimeFormat({
+        channels: info.channels,
+        sampleRate: info.sample_rate,
+        bits: info.bits_per_sample,
+        frameSamples: edgeFmt?.frameSamples || 480
+      }, edgeFmt);
+      const bits = Number(info.bits_per_sample || fmt.bits || 16);
+      const channels = Math.max(1, Number(info.channels || fmt.channels || 2));
+      const sampleRate = Math.max(1, Number(info.sample_rate || fmt.sampleRate || 48000));
+      const blockAlign = Math.max(1, Number(info.block_align || channels * Math.max(1, bits / 8)));
+      const frameSamples = Math.max(64, Math.min(4096, Number(fmt.frameSamples || Math.round(sampleRate * 0.02)) || 480));
+      const frameBytes = Math.max(blockAlign, Math.floor(frameSamples * blockAlign / blockAlign) * blockAlign);
+      const dataOffset = Math.max(0, Number(info.data_offset || 0));
+      const parsedDataBytes = Number(info.data_bytes || 0);
+      const dataBytes = parsedDataBytes > 0 ? Math.min(parsedDataBytes, Math.max(0, record.file.size - dataOffset)) : 0;
+      if (!record.file || dataBytes <= 0) return null;
+      return {
+        enabled: true,
+        node_id: source.id,
+        node_name: source.name,
+        file_name: record.file.name,
+        file_size: record.file.size,
+        edge_key: edgeKey,
+        from: ep ? `${ep.from}.${ep.fromPort}` : '',
+        to: ep ? `${ep.to}.${ep.toPort}` : '',
+        sample_rate: sampleRate,
+        channels,
+        bits_per_sample: bits,
+        frame_samples: frameSamples,
+        frame_bytes: frameBytes,
+        frame_ms: frameSamples * 1000 / sampleRate,
+        data_offset: dataOffset,
+        data_bytes: dataBytes,
+        audio: { ...info, sample_rate: sampleRate, channels, bits_per_sample: bits, data_offset: dataOffset, data_bytes: dataBytes }
+      };
+    }
+    function clearPlaybackBackpressure(redraw = true) {
+      const had = !!playbackFramePump.blockedEdgeKey;
+      playbackFramePump.blockedEdgeKey = '';
+      if (had && redraw) drawEdges();
+    }
+    function isPlaybackBlockedEdgeV104(key = '') {
+      return !!(key && playbackFramePump.active && playbackFramePump.blockedEdgeKey === key);
+    }
+    function applyPlaybackBackpressure(res = {}) {
+      const blocked = res?.stalled ? String(res.blocked_edge_key || res.blockedEdgeKey || playbackFramePump.edgeKey || '') : '';
+      const changed = blocked !== playbackFramePump.blockedEdgeKey;
+      playbackFramePump.blockedEdgeKey = blocked;
+      if (changed) {
+        drawEdges();
+        if (blocked) addLog('warn', 'Playback backpressure', blocked);
+      }
+    }
+    function stopPlaybackFramePump(reason = '') {
+      playbackFramePump.generation++;
+      playbackFramePump.active = false;
+      playbackFramePump.busy = false;
+      if (playbackFramePump.timer) clearTimeout(playbackFramePump.timer);
+      playbackFramePump.timer = 0;
+      playbackFramePump.file = null;
+      playbackFramePump.audio = null;
+      playbackFramePump.offset = 0;
+      playbackFramePump.end = 0;
+      playbackFramePump.frameIndex = 0;
+      clearPlaybackBackpressure(false);
+      if (reason && reason !== 'replace') addLog(reason === 'eof' ? 'ok' : 'info', reason === 'eof' ? 'Playback file finished' : 'Playback frame pump stopped', reason);
+      drawEdges();
+    }
+    function schedulePlaybackFramePump(delayMs = 0) {
+      if (!playbackFramePump.active) return;
+      if (playbackFramePump.timer) clearTimeout(playbackFramePump.timer);
+      playbackFramePump.timer = setTimeout(() => pumpPlaybackFrame(playbackFramePump.generation), Math.max(0, Number(delayMs) || 0));
+    }
+    async function pumpPlaybackFrame(generation) {
+      if (!playbackFramePump.active || playbackFramePump.busy || generation !== playbackFramePump.generation) return;
+      if (!playbackFramePump.file || playbackFramePump.offset >= playbackFramePump.end) {
+        stopPlaybackFramePump('eof');
+        return;
+      }
+      playbackFramePump.busy = true;
+      try {
+        const start = playbackFramePump.offset;
+        const end = Math.min(playbackFramePump.end, start + playbackFramePump.frameBytes);
+        const frame = await playbackFramePump.file.slice(start, end).arrayBuffer();
+        if (!playbackFramePump.active || generation !== playbackFramePump.generation) return;
+        const qp = new URLSearchParams({
+          edge_key: playbackFramePump.edgeKey || '',
+          node_id: playbackFramePump.nodeId || '',
+          file_name: playbackFramePump.fileName || '',
+          offset: String(start),
+          frame_index: String(playbackFramePump.frameIndex),
+          sample_rate: String(playbackFramePump.audio?.sample_rate || 48000),
+          channels: String(playbackFramePump.audio?.channels || 2),
+          bits: String(playbackFramePump.audio?.bits_per_sample || 16)
+        });
+        const res = await apiPostBinary('/api/runtime/audio/frame?' + qp.toString(), frame);
+        if (!playbackFramePump.active || generation !== playbackFramePump.generation) return;
+        const accepted = !!res && res.ok !== false && res.accepted !== false;
+        applyPlaybackBackpressure(res || { stalled: true, blocked_edge_key: playbackFramePump.edgeKey });
+        playbackFramePump.nextPushMs = Math.max(1, Math.min(250, Number(res?.next_push_ms || res?.nextPushMs || playbackFramePump.nextPushMs || 20)));
+        if (accepted) {
+          playbackFramePump.offset = end;
+          playbackFramePump.frameIndex++;
+        }
+      } finally {
+        playbackFramePump.busy = false;
+      }
+      if (!playbackFramePump.active || generation !== playbackFramePump.generation) return;
+      if (playbackFramePump.offset >= playbackFramePump.end) stopPlaybackFramePump('eof');
+      else schedulePlaybackFramePump(playbackFramePump.nextPushMs);
+    }
+    function startPlaybackFramePump(playbackRequest, groupId = targetRuntimeGroupId()) {
+      if (!playbackRequest?.enabled) return false;
+      const record = debugFileIoFiles.get(playbackRequest.node_id);
+      if (!record?.file) return false;
+      stopPlaybackFramePump('replace');
+      playbackFramePump.generation++;
+      playbackFramePump.active = true;
+      playbackFramePump.busy = false;
+      playbackFramePump.file = record.file;
+      playbackFramePump.audio = playbackRequest.audio || record.info || {};
+      playbackFramePump.nodeId = playbackRequest.node_id || '';
+      playbackFramePump.fileName = playbackRequest.file_name || record.file.name;
+      playbackFramePump.edgeKey = playbackRequest.edge_key || '';
+      playbackFramePump.blockedEdgeKey = '';
+      playbackFramePump.offset = Math.max(0, Number(playbackRequest.data_offset || 0));
+      playbackFramePump.end = Math.min(record.file.size, playbackFramePump.offset + Math.max(0, Number(playbackRequest.data_bytes || record.file.size)));
+      playbackFramePump.frameIndex = 0;
+      playbackFramePump.frameBytes = Math.max(256, Number(playbackRequest.frame_bytes || 3840));
+      playbackFramePump.nextPushMs = Math.max(1, Math.min(100, Number(playbackRequest.frame_ms || 20)));
+      playbackFramePump.groupId = groupId;
+      addLog('info', 'Playback frame pump started', `${playbackFramePump.fileName} -> ${playbackFramePump.edgeKey || 'as_server'}`);
+      schedulePlaybackFramePump(0);
+      return true;
     }
     function portSignalLabel(n, dir, p, idx) {
       const ch = Number(p.max_ch || String(n.ch || '2').replace(/\D/g, '') || 2);
@@ -12408,8 +12604,14 @@
         nodes: selectedGroups.flatMap(g => g.nodes.map(n => n.id)),
         edges: selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge))
       };
+      const playbackRequest = action === 'run' ? buildPlaybackRequestForGroup(groupId) : null;
+      if (playbackRequest) payload.playback = playbackRequest;
       const path = action === 'stop' ? '/api/runtime/stop' : '/api/runtime/run';
-      try { return await apiPost(path, payload); } catch (e) { return null; }
+      try {
+        const res = await apiPost(path, payload);
+        if (res && playbackRequest) res.playback_request = playbackRequest;
+        return res;
+      } catch (e) { return null; }
     }
     function upsertUpdatedPipelineFromBuildResponse(res = {}) {
       currentProjectConfig = currentProjectConfig || {};
@@ -12517,6 +12719,8 @@
       const res = await postRuntimeGroupState('run', groupId, RUNTIME_STATES.RUNNING);
       const ok = res?.ok !== false;
       setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
+      if (ok && res?.playback_request) startPlaybackFramePump(res.playback_request, groupId);
+      if (!ok) stopPlaybackFramePump('run_rejected');
       if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();
       if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
       if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
@@ -12534,6 +12738,7 @@
     async function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const stopId = groupId === 'ALL' ? 'ALL' : groupId;
       await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.NOT_READY);
+      stopPlaybackFramePump('pipeline_stopped');
       setRuntimeStatusForGroup(stopId, RUNTIME_STATES.NOT_READY, 'stop_button');
       if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
       if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
@@ -12913,9 +13118,12 @@
         const style = document.createElement('style');
         style.id = 'runtimeEdgeStyleV101';
         style.textContent = `
+          @keyframes playbackBlockedPulseV104{0%,100%{opacity:.96}50%{opacity:.42}}
           .edge-rate-label-v101{font-size:10px;fill:#92b7d7;paint-order:stroke;stroke:#07101d;stroke-width:3px;pointer-events:none;font-weight:800;letter-spacing:.02em}
           .edge-particle-v101{fill:var(--cyan);filter:drop-shadow(0 0 7px var(--cyan));pointer-events:none}
           .edge-particle-v101.dumping{fill:var(--yellow);filter:drop-shadow(0 0 9px rgba(255,204,69,.95))}
+          .edge-glow.playback-blocked-v104{stroke:#ff5151!important;filter:drop-shadow(0 0 15px rgba(255,81,81,.95)) drop-shadow(0 0 26px rgba(255,81,81,.45))!important;animation:playbackBlockedPulseV104 .56s ease-in-out infinite}
+          .edge-particle-v101.playback-blocked-v104{fill:#ff5151;filter:drop-shadow(0 0 11px rgba(255,81,81,.98));animation:playbackBlockedPulseV104 .56s ease-in-out infinite}
         `;
         document.head.appendChild(style);
       }
@@ -12987,10 +13195,13 @@
           const key = edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort);
           const path = paths.find(p => p.getAttribute('d') === d && !p.dataset.edgeKeyV101);
           if (!path) return;
+          const blocked = isPlaybackBlockedEdgeV104(key);
           path.dataset.edgeKeyV101 = key;
           path.dataset.edgePhaseV101 = String(edgePhaseSeedV101(key));
+          path.classList.toggle('playback-blocked-v104', blocked);
+          if (blocked) path.style.filter = 'drop-shadow(0 0 15px rgba(255,81,81,.95)) drop-shadow(0 0 26px rgba(255,81,81,.45))';
           if (!isRuntimeEdgeRunningV101(ep)) return;
-          runningEdges.push({ key, ep, path, dumping: path.classList.contains('dumping') });
+          runningEdges.push({ key, ep, path, dumping: path.classList.contains('dumping'), blocked });
         });
         return runningEdges;
       }
@@ -13024,12 +13235,12 @@
       function renderStableRuntimeParticlesV101(runningEdges) {
         const svg = $('#edgeSvg');
         if (!svg) return;
-        runningEdges.forEach(({ key, path, dumping }) => {
+        runningEdges.forEach(({ key, path, dumping, blocked }) => {
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          dot.setAttribute('r', dumping ? '4' : '3');
-          dot.setAttribute('class', `edge-particle edge-particle-v101 ${dumping ? 'dumping' : ''}`);
+          dot.setAttribute('r', blocked || dumping ? '4' : '3');
+          dot.setAttribute('class', `edge-particle edge-particle-v101 ${dumping ? 'dumping' : ''} ${blocked ? 'playback-blocked-v104' : ''}`);
           dot.dataset.edgeKeyV101 = key;
-          dot.dataset.edgeDurationV101 = dumping ? '1650' : '2300';
+          dot.dataset.edgeDurationV101 = blocked ? '950' : (dumping ? '1650' : '2300');
           dot.dataset.edgePhaseV101 = path.dataset.edgePhaseV101 || String(edgePhaseSeedV101(key));
           svg.appendChild(dot);
         });

@@ -74,6 +74,10 @@ void LogService::setDefaultSessionConfig(LogSessionConfig config) {
   default_config_ = std::move(config);
 }
 
+void LogService::setEntryInterceptor(EntryInterceptor interceptor) {
+  entry_interceptor_ = std::move(interceptor);
+}
+
 framework::Status LogService::createSession(LogSessionConfig config, LogSessionInfo& out) {
   out = {};
   config = mergeDefaultConfig(std::move(config));
@@ -256,6 +260,7 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
           if (line.empty()) continue;
           auto entry = decodeLine(next_sequence_++, line);
           if (!passesLevel(entry.level, session->config.min_level)) continue;
+          if (shouldIntercept(entry)) continue;
           entries.push_back(entry);
           entries_.push_back(entry);
           ++session->entries_read;
@@ -276,6 +281,7 @@ framework::Status LogService::append(std::string level, std::string message) {
   entry.tag = "APP";
   entry.message = std::move(message);
   entry.text = entry.message;
+  if (shouldIntercept(entry)) return framework::Status::success();
   entries_.push_back(std::move(entry));
   return framework::Status::success();
 }
@@ -390,6 +396,7 @@ framework::Status LogService::decodeSofTrace(Session& session, size_t max_entrie
     if (entry_index++ < session.decoded_entries_read) continue;
     auto entry = decodeSofLoggerLine(next_sequence_++, line);
     if (!passesLevel(entry.level, session.config.min_level)) continue;
+    if (shouldIntercept(entry)) continue;
     entries.push_back(entry);
     entries_.push_back(entry);
     ++session.entries_read;
@@ -400,6 +407,10 @@ framework::Status LogService::decodeSofTrace(Session& session, size_t max_entrie
 
 bool LogService::passesLevel(const std::string& level, const std::string& min_level) {
   return levelRank(normalizeLevel(level)) <= levelRank(normalizeLevel(min_level));
+}
+
+bool LogService::shouldIntercept(const LogEntry& entry) const {
+  return entry_interceptor_ && entry_interceptor_(entry);
 }
 
 framework::Status LogService::requireSession(const std::string& id, Session*& session) {

@@ -235,6 +235,10 @@ static void logApiRequest(const HttpRequest& req) {
   if (req.path.rfind("/api/", 0) != 0) return;
   std::cout << "\n[AudioStudio HTTP API] " << req.method << " " << req.path;
   if (!req.query.empty()) std::cout << "?" << req.query;
+  if (req.path == "/api/runtime/audio/frame") {
+    std::cout << "\n  Binary body bytes: " << req.body.size() << "\n" << std::flush;
+    return;
+  }
   if (!req.body.empty()) {
     std::cout << "\n  Body: " << req.body.substr(0, 1200)
               << (req.body.size() > 1200 ? "...(truncated)" : "");
@@ -483,6 +487,7 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     return {200, "application/json", ss.str()};
   }
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
+  if (req.method == "POST" && req.path == "/api/runtime/audio/frame") return {200, "application/json", runtime_->pushAudioFrame(req.query, req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
   if (req.method == "POST" && req.path == "/api/inspector/inspect") {

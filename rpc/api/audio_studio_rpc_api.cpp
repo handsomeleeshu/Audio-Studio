@@ -13,6 +13,9 @@
 #if defined(CONFIG_FRAMEWORK_LOG)
 #include "log_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+#include "system_info_service.hpp"
+#endif
 #include "rpc_runtime_context.hpp"
 
 namespace audio_studio::rpc {
@@ -443,6 +446,191 @@ JsonValue logCreateParamsExample() {
 }
 #endif
 
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+JsonValue coreJson(const framework::system_info::SystemCoreInfo& core) {
+  JsonValue value = JsonValue::object();
+  value["id"] = core.id;
+  value["freq_mhz"] = core.freq_mhz;
+  value["load_percent"] = core.load_percent;
+  return value;
+}
+
+JsonValue componentJson(const framework::system_info::SystemModuleInfo& module) {
+  JsonValue value = JsonValue::object();
+  value["node_id"] = module.node_id;
+  value["pipeline_id"] = module.pipeline_id;
+  value["state"] = module.state;
+  value["core"] = module.core;
+  value["cpu_percent"] = module.cpu_percent;
+  value["memory_bytes"] = module.memory_bytes;
+  value["latency_ms"] = module.latency_ms;
+  return value;
+}
+
+JsonValue bufferJson(const framework::system_info::SystemBufferInfo& buffer) {
+  JsonValue value = JsonValue::object();
+  value["edge_key"] = buffer.edge_key;
+  value["from"] = buffer.from;
+  value["to"] = buffer.to;
+  value["size_bytes"] = buffer.size_bytes;
+  value["avail_bytes"] = buffer.avail_bytes;
+  value["produced_bytes"] = buffer.produced_bytes;
+  value["consumed_bytes"] = buffer.consumed_bytes;
+  value["stalled"] = buffer.stalled;
+  return value;
+}
+
+JsonValue heapJson(const framework::system_info::SystemHeapInfo& heap) {
+  JsonValue value = JsonValue::object();
+  value["category"] = heap.category;
+  value["index"] = heap.index;
+  value["block_size"] = heap.block_size;
+  value["free_count"] = heap.free_count;
+  value["total_count"] = heap.total_count;
+  value["used_bytes"] = heap.used_bytes;
+  value["free_bytes"] = heap.free_bytes;
+  return value;
+}
+
+JsonValue pipelineJson(const framework::system_info::SystemPipelineInfo& pipeline) {
+  JsonValue value = JsonValue::object();
+  value["id"] = pipeline.id;
+  value["latency_ms"] = pipeline.latency_ms;
+  value["xruns"] = pipeline.xruns;
+  value["dropouts"] = pipeline.dropouts;
+  return value;
+}
+
+std::string heapDisplayName(const framework::system_info::SystemHeapInfo& heap) {
+  std::string category = heap.category;
+  for (auto& ch : category) {
+    if (ch == '_' || ch == '-') ch = ' ';
+  }
+  std::string name = "Heap " + category + " Memory Usage";
+  if (heap.block_size != 0) name += " block " + std::to_string(heap.block_size);
+  return name;
+}
+
+JsonValue healthRowJson(const std::string& id,
+                        const std::string& name,
+                        const std::string& status,
+                        uint64_t free_count,
+                        uint64_t total_count,
+                        uint64_t used_bytes,
+                        uint64_t free_bytes) {
+  JsonValue row = JsonValue::object();
+  row["id"] = id;
+  row["name"] = name;
+  row["status"] = status;
+  row["free_count"] = free_count;
+  row["total_count"] = total_count;
+  row["used_bytes"] = used_bytes;
+  row["free_bytes"] = free_bytes;
+  return row;
+}
+
+JsonValue systemInfoSnapshotJson(const framework::system_info::SystemInfoSnapshot& snapshot) {
+  JsonValue cores = JsonValue::array();
+  for (const auto& core : snapshot.cores) cores.pushBack(coreJson(core));
+
+  JsonValue components = JsonValue::array();
+  for (const auto& module : snapshot.modules) components.pushBack(componentJson(module));
+
+  JsonValue buffers = JsonValue::array();
+  for (const auto& buffer : snapshot.buffers) buffers.pushBack(bufferJson(buffer));
+
+  JsonValue heap = JsonValue::array();
+  for (const auto& item : snapshot.heap) heap.pushBack(heapJson(item));
+
+  JsonValue pipelines = JsonValue::array();
+  for (const auto& pipeline : snapshot.pipelines) pipelines.pushBack(pipelineJson(pipeline));
+
+  JsonValue result = JsonValue::object();
+  result["ok"] = true;
+  result["connected"] = snapshot.connected;
+  result["running"] = snapshot.running;
+  result["sequence"] = snapshot.sequence;
+  result["timestamp_ms"] = static_cast<uint64_t>(snapshot.timestamp_ms < 0 ? 0 : snapshot.timestamp_ms);
+  result["cores"] = std::move(cores);
+  result["components"] = std::move(components);
+  result["buffers"] = std::move(buffers);
+  result["heap"] = std::move(heap);
+  result["pipelines"] = std::move(pipelines);
+  return result;
+}
+
+framework::system_info::SystemInfoSnapshot requireSystemInfoSnapshot(RpcRuntimeContext& context) {
+  if (!context.hasSystemInfoService()) {
+    throw JsonRpcError(JsonRpcErrorCode::kInternalError, "system info service is not configured");
+  }
+  return context.systemInfo().snapshot();
+}
+
+JsonValue systemInfoSnapshot(RpcRuntimeContext& context, const JsonValue&) {
+  return systemInfoSnapshotJson(requireSystemInfoSnapshot(context));
+}
+
+JsonValue systemInfoComponents(RpcRuntimeContext& context, const JsonValue&) {
+  const auto snapshot = requireSystemInfoSnapshot(context);
+  JsonValue components = JsonValue::array();
+  for (const auto& module : snapshot.modules) components.pushBack(componentJson(module));
+  JsonValue result = JsonValue::object();
+  result["ok"] = true;
+  result["connected"] = snapshot.connected;
+  result["components"] = std::move(components);
+  return result;
+}
+
+JsonValue systemInfoBuffers(RpcRuntimeContext& context, const JsonValue&) {
+  const auto snapshot = requireSystemInfoSnapshot(context);
+  JsonValue buffers = JsonValue::array();
+  for (const auto& buffer : snapshot.buffers) buffers.pushBack(bufferJson(buffer));
+  JsonValue result = JsonValue::object();
+  result["ok"] = true;
+  result["connected"] = snapshot.connected;
+  result["buffers"] = std::move(buffers);
+  return result;
+}
+
+JsonValue systemInfoHealth(RpcRuntimeContext& context, const JsonValue&) {
+  const auto snapshot = requireSystemInfoSnapshot(context);
+  JsonValue rows = JsonValue::array();
+  rows.pushBack(healthRowJson("connection",
+                              "Audio Studio Info Heartbeat",
+                              snapshot.connected ? "ok" : "disconnected",
+                              snapshot.connected ? 1 : 0,
+                              1,
+                              0,
+                              0));
+  for (const auto& heap : snapshot.heap) {
+    rows.pushBack(healthRowJson("heap/" + heap.category + "/" + std::to_string(heap.index) + "/" + std::to_string(heap.block_size),
+                                heapDisplayName(heap),
+                                heap.free_count > 0 ? "ok" : "warning",
+                                heap.free_count,
+                                heap.total_count,
+                                heap.used_bytes,
+                                heap.free_bytes));
+  }
+
+  JsonValue summary = JsonValue::object();
+  summary["connected"] = snapshot.connected;
+  summary["running"] = snapshot.running;
+  summary["heap_rows"] = static_cast<uint32_t>(snapshot.heap.size());
+
+  JsonValue result = JsonValue::object();
+  result["ok"] = true;
+  result["connected"] = snapshot.connected;
+  result["timestamp_ms"] = static_cast<uint64_t>(snapshot.timestamp_ms < 0 ? 0 : snapshot.timestamp_ms);
+  result["summary"] = std::move(summary);
+  result["rows"] = std::move(rows);
+  return result;
+}
+
+JsonValue systemInfoParamsExample() {
+  return JsonValue::object();
+}
+#endif
+
 JsonValue listDevices(RpcRuntimeContext&, const JsonValue&) {
   JsonValue devices = JsonValue::array();
   JsonValue host = JsonValue::object();
@@ -673,6 +861,24 @@ RpcApiRegistry& audioStudioRpcApiRegistry() {
     api.addMethod({"log.readRaw", "Read raw log chunks", "log", "1.0",
                    read_raw_params, JsonValue::object(),
                    {{}, ""}, {false, JsonValue::object()}, readLogRaw});
+#endif
+
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+    api.addMethod({"systemInfo.snapshot", "Get the latest Audio Studio system information snapshot", "systemInfo", "1.0",
+                   systemInfoParamsExample(), JsonValue::object(),
+                   {{}, ""}, {true, JsonValue::object()}, systemInfoSnapshot});
+
+    api.addMethod({"systemInfo.components", "Get latest SOF component state and resource information", "systemInfo", "1.0",
+                   systemInfoParamsExample(), JsonValue::object(),
+                   {{}, ""}, {true, JsonValue::object()}, systemInfoComponents});
+
+    api.addMethod({"systemInfo.buffers", "Get latest SOF inter-component buffer telemetry", "systemInfo", "1.0",
+                   systemInfoParamsExample(), JsonValue::object(),
+                   {{}, ""}, {true, JsonValue::object()}, systemInfoBuffers});
+
+    api.addMethod({"systemInfo.health", "Get latest system health rows for GUI display", "systemInfo", "1.0",
+                   systemInfoParamsExample(), JsonValue::object(),
+                   {{}, ""}, {true, JsonValue::object()}, systemInfoHealth});
 #endif
 
     return api;

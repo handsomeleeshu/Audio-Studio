@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,8 +46,11 @@ struct LogSessionStats {
 
 class LogService {
 public:
+  using EntryInterceptor = std::function<bool(const LogEntry&)>;
+
   void configureDeviceRegistry(drivers::log::LogDeviceRegistry* registry);
   void setDefaultSessionConfig(LogSessionConfig config);
+  void setEntryInterceptor(EntryInterceptor interceptor);
 
   framework::Status createSession(LogSessionConfig config, LogSessionInfo& out);
   framework::Status configureSession(const std::string& id, const LogSessionConfig& config, LogSessionInfo& out);
@@ -84,12 +88,14 @@ private:
   static bool passesLevel(const std::string& level, const std::string& min_level);
   framework::Status appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks);
   framework::Status decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries);
+  bool shouldIntercept(const LogEntry& entry) const;
   framework::Status requireSession(const std::string& id, Session*& session);
   framework::Status requireSession(const std::string& id, const Session*& session) const;
   LogSessionInfo infoFor(const Session& session) const;
 
   int next_sequence_ = 1;
   std::vector<LogEntry> entries_;
+  EntryInterceptor entry_interceptor_;
   drivers::log::LogDeviceRegistry* registry_ = nullptr;
   LogSessionConfig default_config_;
   std::map<std::string, Session> sessions_;

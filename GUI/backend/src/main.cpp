@@ -9,10 +9,10 @@ int main(int argc, char** argv) {
   auto node_controls = std::make_shared<audiostudio::MockRuntimeEngine>();
   auto target_config = std::make_shared<audiostudio::FakeTargetConfigController>();
   auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
-  auto algorithm_cost = std::make_shared<audiostudio::FakeAlgorithmCostController>();
-  auto dsp_core_loading = std::make_shared<audiostudio::FakeDspCoreLoadingController>();
+  auto algorithm_cost = std::make_shared<audiostudio::RpcAlgorithmCostController>();
+  auto dsp_core_loading = std::make_shared<audiostudio::RpcDspCoreLoadingController>();
   auto event_log = std::make_shared<audiostudio::FakeEventLogController>();
-  auto system_health = std::make_shared<audiostudio::FakeSystemHealthController>();
+  auto system_health = std::make_shared<audiostudio::RpcSystemHealthController>();
   auto audio_io = std::make_shared<audiostudio::FakeAudioIoController>();
   auto real_time_probe = std::make_shared<audiostudio::FakeRealTimeProbeController>();
   audiostudio::HttpServer server(root, port, runtime, node_controls, node_controls, target_config,

@@ -4933,6 +4933,68 @@ ERROR
 
 `builtin.file_input` 与 `builtin.file_output` 是 debug-only 前端虚拟组件，不进入 `pipelines[]` 或 as_config payload；它们只能连接 HOST component，用于前端/后端调试音频文件选择、保存和音频格式传递。
 
+#### 5.X.4 SOF Audio Studio telemetry 与 SystemInfo RPC
+
+SOF 侧提供可选 `CONFIG_AUDIO_STUDIO` 模块，源码位于 SOF 仓库 `sof/src/audio_studio/`。该模块在 platform init 中注册一个 low-latency task，每 100ms 运行一次，并统一用 `ASINFO|` 前缀通过 SOF trace 打印 Audio Studio 运行状态。该前缀是 Audio Studio log server 的拦截 contract：被识别为 `ASINFO|` 的记录只进入 SystemInfoService，不再进入普通 `as_log` 输出。
+
+首版 telemetry 打通完整链路，字段按前端三类面板组织：
+
+```text
+heartbeat: seq/timestamp，用于 1s 心跳断连判断。
+core: core id、CPU 主频、core load。
+module: SOF component id、pipeline id、core、真实 component state、module CPU、memory、latency。
+buffer: buffer id、from/to component、size、avail、过去 100ms produced/consumed bytes、stalled。
+pipeline: pipeline id、latency、XRUN、dropout。
+heap: heap/system/block 子类，free_count、total_count、used/free bytes。
+```
+
+SOF 目前尚未对所有指标提供稳定公开 API，因此 CPU 占比、module memory、pipeline latency、XRUN/dropout 和部分 heap 子项允许先使用 fake/derived data；module 工作状态必须从 SOF component state 正确读取。后续 SOF 暴露更细指标时，只替换 `sof/src/audio_studio/audio_studio.c` 内的数据来源，不改变 `ASINFO|type|key=value` trace contract。
+
+Audio Studio Server 在 `server/framework/system_info/` 中维护 SystemInfoService。`LogService` 提供 decoded entry interceptor，`as_server` 启动时把 `ASINFO|` entry 转交给 SystemInfoService 并从普通 log session 中隐藏。SystemInfoService 解析后维护清晰的 snapshot：connected/running、cores、components、buffers、heap rows、pipelines。连续 1s 没收到 heartbeat 时，snapshot 对外返回 disconnected，并清空 runtime 值，避免 GUI 显示历史状态；log server session 不释放，trace 恢复后继续更新。
+
+RPC API 通过 `rpc/api/audio_studio_rpc_api.cpp` 暴露：
+
+```text
+systemInfo.snapshot
+systemInfo.components
+systemInfo.buffers
+systemInfo.health
+```
+
+GUI/backend 的 PER-ALGORITHM COST、DSP CORE LOADING、SYSTEM HEALTH controller 优先直接调用这些 JSON-RPC API。`SYSTEM HEALTH` 不再只显示单条 Memory Usage，而是按 heap/system/block 子类展开为多行，例如 system runtime heap、system heap、buffer heap、block-size heap，每行保留 free_count/total_count 或 used/free bytes。
+
+#### 5.X.5 GUI RUN playback frame pump
+
+Build 成功并返回 `PIPE_LOADED` 后，GUI RUN 不再只切换 mock runtime state。前端 File Input 组件选择 WAV 时缓存浏览器 `File` 对象，并解析 RIFF `fmt ` 与 `data` chunk，只把 PCM data 区间用于运行期推送；工程 JSON 和 workspace snapshot 只保存文件名、path hint 与音频参数，不保存浏览器 File 对象。
+
+用户按 RUN 后，frontend 在 `/api/runtime/run` payload 中附带 `playback` 描述：
+
+```json
+{
+  "enabled": true,
+  "node_id": "PLAYBACK_MAIN__FILE_IN",
+  "edge_key": "PLAYBACK_MAIN__FILE_IN:out->PLAYBACK_MAIN__HOST_IN:in",
+  "sample_rate": 48000,
+  "channels": 2,
+  "bits_per_sample": 16,
+  "frame_samples": 480,
+  "frame_bytes": 1920,
+  "data_offset": 44,
+  "data_bytes": 96000
+}
+```
+
+GUI/backend 的 `GuiRuntimeEngine` 根据该描述创建 as_server playback session，并启动独立 worker thread。frontend 随后通过 `POST /api/runtime/audio/frame?...` 发送 `application/octet-stream` frame；backend 只把 frame 放入内存 queue 后立即返回 `{accepted, queued_bytes, next_push_ms, stalled, blocked_edge_key}`，不阻塞 UI。worker thread 负责把 queue 中的数据通过 `AudioRpcClient` 写入 as_server `audio.createPlaybackSession` 对应 stream。
+
+堵塞判定分两层：
+
+```text
+1. backend queue 高水位、RPC 未就绪或 100ms 没有 dequeue 时，立即在 frame response 中报告 stalled。
+2. GUI/backend 可结合 systemInfo.buffers 中某个 buffer 连续 100ms consumed_bytes 为 0 的状态，把 blocked_edge_key 映射回前端连接线。
+```
+
+frontend 收到 `stalled` 后，按 `blocked_edge_key` 给对应连接 buffer 添加红色闪烁运行态；仍保持原 UI 结构、布局和面板风格不变。恢复消费后，后端返回 `stalled:false`，前端清除闪烁。
+
 关键实现边界：
 
 ```text

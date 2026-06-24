@@ -259,6 +259,8 @@ int main() {
 
   runtime->run("{\"session_id\":\"standalone_html_demo\"}");
   assert(runtime->telemetry({"file_1"}).find("\"running\":true") != std::string::npos);
+  auto frame_accept = runtime->pushAudioFrame("edge_key=file_1.out%2D%3Ehost_1.in", std::string(512, '\0'));
+  assert(frame_accept.find("\"accepted\":true") != std::string::npos);
 
   auto tel = runtime->telemetry({"file_1","eq_1","out_1"});
   assert(tel.find("nodeCost") != std::string::npos);
@@ -274,6 +276,19 @@ int main() {
   auto buffer_live = inspector->bufferLiveData({{"edge_key","eq_1.out->out_1.in"},{"running","1"},{"channels","2"},{"sample_rate","48000"},{"bits","16"}});
   assert(buffer_live.find("\"buffer\"") != std::string::npos);
   assert(buffer_live.find("\"pcm16\"") != std::string::npos);
+
+  audiostudio::RpcAlgorithmCostController rpc_cost("127.0.0.1", 9);
+  auto rpc_cost_disconnected = rpc_cost.liveCosts({{"nodes","eq_1"}});
+  assert(rpc_cost_disconnected.find("\"connected\":false") != std::string::npos);
+  assert(rpc_cost_disconnected.find("\"costs\":[]") != std::string::npos);
+  audiostudio::RpcDspCoreLoadingController rpc_loading("127.0.0.1", 9);
+  auto rpc_core_disconnected = rpc_loading.liveCoreLoading({{"cores","2"}});
+  assert(rpc_core_disconnected.find("\"connected\":false") != std::string::npos);
+  assert(rpc_core_disconnected.find("\"cores\":[]") != std::string::npos);
+  audiostudio::RpcSystemHealthController rpc_health("127.0.0.1", 9);
+  auto rpc_health_disconnected = rpc_health.liveHealth({});
+  assert(rpc_health_disconnected.find("\"connected\":false") != std::string::npos);
+  assert(rpc_health_disconnected.find("Audio Studio Info Heartbeat") != std::string::npos);
 
   audiostudio::HttpServer server(AUDIO_STUDIO_TEST_ROOT, 0, runtime, engine, engine, target_config, inspector);
   audiostudio::HttpRequest req;
@@ -293,6 +308,14 @@ int main() {
   assert(rpc_res.status == 200);
   assert(rpc_res.body.find("\"jsonrpc\":\"2.0\"") != std::string::npos);
   assert(rpc_res.body.find("\"result\"") != std::string::npos);
+
+  audiostudio::HttpRequest frame_req;
+  frame_req.method = "POST";
+  frame_req.path = "/api/runtime/audio/frame";
+  frame_req.query = "edge_key=eq_1.out%2D%3Eout_1.in";
+  frame_req.body.assign(256, '\1');
+  auto frame_res = server.handle(frame_req);
+  assert(frame_res.body.find("\"accepted\":true") != std::string::npos);
 
   audiostudio::HttpRequest page;
   page.method = "GET";

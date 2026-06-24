@@ -53,6 +53,7 @@ public:
   virtual std::string unloadPipeline(const std::string& pipeline_json) = 0;
   virtual std::string run(const std::string& session_id) = 0;
   virtual std::string stop(const std::string& session_id) = 0;
+  virtual std::string pushAudioFrame(const std::string& query, const std::string& frame) = 0;
   virtual std::string telemetry(const std::vector<std::string>& node_ids) = 0;
   virtual std::string pipelineEditEvent(const std::string& request_json) = 0;
   virtual std::string pipelineToolAction(const std::string& request_json) = 0;
@@ -158,17 +159,21 @@ private:
 class GuiRuntimeEngine final : public IRuntimeEngine {
 public:
   explicit GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator = nullptr);
+  ~GuiRuntimeEngine() override;
   std::string validatePipeline(const std::string& pipeline_json) override;
   std::string buildPipeline(const std::string& pipeline_json) override;
   std::string unloadPipeline(const std::string& pipeline_json) override;
   std::string run(const std::string& session_id) override;
   std::string stop(const std::string& session_id) override;
+  std::string pushAudioFrame(const std::string& query, const std::string& frame) override;
   std::string telemetry(const std::vector<std::string>& node_ids) override;
   std::string pipelineEditEvent(const std::string& request_json) override;
   std::string pipelineToolAction(const std::string& request_json) override;
 
 private:
+  struct PlaybackWorker;
   std::shared_ptr<BuildOrchestrator> build_orchestrator_;
+  std::unique_ptr<PlaybackWorker> playback_;
   std::atomic<bool> running_{false};
   std::mutex rng_mutex_;
   std::mt19937 rng_;
@@ -292,6 +297,15 @@ private:
   std::mt19937 rng_;
 };
 
+class RpcAlgorithmCostController final : public IAlgorithmCostController {
+public:
+  RpcAlgorithmCostController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveCosts(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
+};
+
 
 struct DspCoreLoadingEntry {
   int id = 0;
@@ -324,6 +338,15 @@ private:
   int rndi(int min, int max);
   std::mutex mutex_;
   std::mt19937 rng_;
+};
+
+class RpcDspCoreLoadingController final : public IDspCoreLoadingController {
+public:
+  RpcDspCoreLoadingController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveCoreLoading(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
 };
 
 
@@ -381,6 +404,15 @@ private:
   int rndi(int min, int max);
   std::mutex mutex_;
   std::mt19937 rng_;
+};
+
+class RpcSystemHealthController final : public ISystemHealthController {
+public:
+  RpcSystemHealthController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveHealth(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
 };
 
 struct AudioIoChannelMeter {

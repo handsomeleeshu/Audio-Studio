@@ -18,6 +18,7 @@
 #include "service_registry.hpp"
 #include "status.hpp"
 #include "log_service.hpp"
+#include "system_info_service.hpp"
 #include "transport_manager.hpp"
 #include "audio_rpc.hpp"
 #include "audio_rpc_client.hpp"
@@ -581,6 +582,70 @@ int main() {
 
   {
     using namespace audio_studio;
+    framework::system_info::SystemInfoService system_info;
+    assert(system_info.consumeLogEntry({1, "info", "SOF",
+      "SOF 0 INFO ASINFO|heartbeat|seq=7|timestamp_ms=123400", ""}));
+    assert(system_info.consumeLogEntry({2, "info", "SOF",
+      "SOF 0 INFO ASINFO|core|id=0|freq_mhz=600|load_percent=37.5", ""}));
+    assert(system_info.consumeLogEntry({3, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|pipeline=10|state=ACTIVE|core=0|cpu_percent=12.5|memory_bytes=4096|latency_ms=0.7", ""}));
+    assert(system_info.consumeLogEntry({4, "info", "SOF",
+      "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|from=eq_1.out|to=sink.in|size_bytes=8192|avail_bytes=2048|produced_bytes=4800|consumed_bytes=4700", ""}));
+    assert(system_info.consumeLogEntry({5, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=system_runtime|index=0|block_size=256|free_count=5|total_count=16|used_bytes=2816|free_bytes=1280", ""}));
+    auto snapshot = system_info.snapshot();
+    assert(snapshot.connected);
+    assert(snapshot.cores.size() == 1);
+    assert(snapshot.cores.front().load_percent == 37.5);
+    assert(snapshot.modules.size() == 1);
+    assert(snapshot.modules.front().node_id == "eq_1");
+    assert(snapshot.modules.front().state == "ACTIVE");
+    assert(snapshot.buffers.size() == 1);
+    assert(snapshot.buffers.front().consumed_bytes == 4700);
+    assert(snapshot.heap.size() == 1);
+    assert(snapshot.heap.front().free_count == 5);
+    assert(system_info.consumeLogEntry({6, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|cpu_percent=13.5|memory_bytes=8192|latency_ms=0.8", ""}));
+    assert(system_info.consumeLogEntry({7, "info", "SOF",
+      "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|stalled=1", ""}));
+    snapshot = system_info.snapshot();
+    assert(snapshot.modules.size() == 1);
+    assert(snapshot.modules.front().pipeline_id == 10);
+    assert(snapshot.modules.front().state == "ACTIVE");
+    assert(snapshot.modules.front().memory_bytes == 8192);
+    assert(snapshot.buffers.size() == 1);
+    assert(snapshot.buffers.front().consumed_bytes == 4700);
+    assert(snapshot.buffers.front().stalled);
+
+    system_info.setHeartbeatTimeoutForTesting(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    auto stale = system_info.snapshot();
+    assert(!stale.connected);
+    assert(stale.modules.empty());
+    assert(stale.buffers.empty());
+    assert(stale.heap.empty());
+
+    system_info.setHeartbeatTimeoutForTesting(std::chrono::milliseconds(1000));
+    log_service.setEntryInterceptor([&](const framework::log::LogEntry& entry) {
+      return system_info.consumeLogEntry(entry);
+    });
+    assert(log_service.append("info", "ASINFO|heartbeat|seq=8|timestamp_ms=123500").ok());
+    assert(log_service.append("info", "ASINFO|module|id=vol_1|pipeline=11|state=READY|core=1|cpu_percent=0.0|memory_bytes=2048|latency_ms=0.0").ok());
+    assert(log_service.append("info", "ordinary firmware line").ok());
+    auto tail = log_service.tail(8);
+    assert(tail.size() == 1);
+    assert(tail.front().message == "ordinary firmware line");
+    assert(system_info.snapshot().modules.front().node_id == "vol_1");
+
+    audio_context->setSystemInfoService(&system_info);
+    auto sys_snapshot = audio_client.call("systemInfo.snapshot");
+    assert(sys_snapshot.at("connected").asBool());
+    assert(sys_snapshot.at("components").asArray().size() == 1);
+    assert(sys_snapshot.at("components").asArray()[0].at("node_id").asString() == "vol_1");
+    assert(audio_client.call("systemInfo.components").at("components").asArray().size() == 1);
+    assert(audio_client.call("systemInfo.buffers").at("buffers").asArray().empty());
+    assert(audio_client.call("systemInfo.health").at("rows").asArray().size() >= 1);
+
     framework::log::LogSessionConfig config;
     config.session_id = "log-rpc-test";
     config.driver_factory = "linux-host";
