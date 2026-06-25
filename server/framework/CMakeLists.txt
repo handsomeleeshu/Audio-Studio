@@ -22,6 +22,10 @@ if(CONFIG_FRAMEWORK_LOG)
   add_subdirectory(log)
 endif()
 
+if(CONFIG_FRAMEWORK_SYSTEM_INFO)
+  add_subdirectory(system_info)
+endif()
+
 if(CONFIG_FRAMEWORK_DUMP)
   add_subdirectory(dump)
 endif()

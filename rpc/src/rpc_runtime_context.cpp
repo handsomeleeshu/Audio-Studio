@@ -43,6 +43,19 @@ framework::log::LogService& RpcRuntimeContext::log() {
   return *log_service_;
 }
 
+void RpcRuntimeContext::setSystemInfoService(framework::system_info::SystemInfoService* system_info_service) {
+  system_info_service_ = system_info_service;
+}
+
+bool RpcRuntimeContext::hasSystemInfoService() const {
+  return system_info_service_ != nullptr;
+}
+
+framework::system_info::SystemInfoService& RpcRuntimeContext::systemInfo() {
+  if (system_info_service_ == nullptr) throw std::runtime_error("system info service is not configured");
+  return *system_info_service_;
+}
+
 const RpcStreamDefaults& RpcRuntimeContext::streamDefaults() const {
   return stream_defaults_;
 }

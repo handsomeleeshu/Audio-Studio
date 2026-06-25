@@ -143,10 +143,14 @@ audio_controller_create(const audio_controller_create_params_t* params)
         driver->free(driver->user, controller);
         return 0;
     }
-    if (ac_log_init(&controller->log, controller->driver.log_source) != 0 ||
+    if (ac_audio_init(&controller->audio, &controller->driver) != 0 ||
+        ac_log_init(&controller->log, controller->driver.log_source) != 0 ||
         ac_log_listen(&controller->log, &controller->transport) != 0 ||
+        ac_audio_listen(&controller->audio, &controller->transport) != 0 ||
         ac_transport_start(&controller->transport) != 0) {
-        ac_report_error(controller, "failed to initialize log transport channel");
+        ac_report_error(controller,
+                        "failed to initialize transport service channels");
+        ac_audio_deinit(&controller->audio);
         ac_log_deinit(&controller->log);
         ac_transport_deinit(&controller->transport);
         driver->free(driver->user, controller);
@@ -165,6 +169,7 @@ void audio_controller_destroy(audio_controller_t* controller)
 
     driver = controller->driver;
     ac_transport_deinit(&controller->transport);
+    ac_audio_deinit(&controller->audio);
     ac_log_deinit(&controller->log);
     ac_topology_clear(&controller->topology, &controller->allocator);
     driver.free(driver.user, controller);

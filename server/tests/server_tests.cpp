@@ -1,5 +1,6 @@
 #include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -18,6 +19,7 @@
 #include "service_registry.hpp"
 #include "status.hpp"
 #include "log_service.hpp"
+#include "system_info_service.hpp"
 #include "transport_manager.hpp"
 #include "audio_rpc.hpp"
 #include "audio_rpc_client.hpp"
@@ -134,6 +136,95 @@ private:
   std::vector<uint8_t> rx_;
   std::vector<uint8_t> written_;
 };
+
+class ScriptedLogDevice final : public audio_studio::drivers::log::ILogDevice {
+public:
+  explicit ScriptedLogDevice(std::vector<std::vector<uint8_t>> chunks) : chunks_(std::move(chunks)) {}
+
+  audio_studio::framework::Status open(const audio_studio::drivers::log::LogDeviceConfig& config) override {
+    config_ = config;
+    open_ = true;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status configure(const audio_studio::drivers::log::LogDeviceConfig& config) override {
+    if (!open_) return audio_studio::framework::Status::unavailable("scripted log device is not open");
+    config_ = config;
+    configured_options_ = config.options;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status start() override {
+    if (!open_) return audio_studio::framework::Status::unavailable("scripted log device is not open");
+    running_ = true;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status stop() override {
+    running_ = false;
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status readChunk(audio_studio::drivers::log::LogRawChunk& chunk, uint32_t) override {
+    if (!running_) return audio_studio::framework::Status::unavailable("scripted log device is not running");
+    if (read_index_ >= chunks_.size()) return audio_studio::framework::Status::unavailable("scripted log device has no chunk");
+    chunk.sequence = static_cast<uint32_t>(read_index_ + 1);
+    chunk.bytes = chunks_[read_index_++];
+    return audio_studio::framework::Status::success();
+  }
+
+  audio_studio::framework::Status getStats(audio_studio::drivers::log::LogDeviceStats& stats) override {
+    stats = {chunks_.size(), read_index_, running_};
+    return audio_studio::framework::Status::success();
+  }
+
+  void close() override {
+    open_ = false;
+    running_ = false;
+  }
+
+  const std::map<std::string, std::string>& configuredOptions() const { return configured_options_; }
+
+private:
+  audio_studio::drivers::log::LogDeviceConfig config_;
+  bool open_ = false;
+  bool running_ = false;
+  size_t read_index_ = 0;
+  std::vector<std::vector<uint8_t>> chunks_;
+  std::map<std::string, std::string> configured_options_;
+};
+
+class ScriptedLogDeviceFactory final : public audio_studio::drivers::log::ILogDeviceFactory {
+public:
+  explicit ScriptedLogDeviceFactory(std::vector<std::vector<uint8_t>> chunks) : chunks_(std::move(chunks)) {}
+
+  std::string name() const override { return "scripted-log"; }
+
+  std::unique_ptr<audio_studio::drivers::log::ILogDevice> create(const audio_studio::drivers::log::LogDeviceConfig& config) const override {
+    auto device = std::make_unique<ScriptedLogDevice>(chunks_);
+    if (!device->open(config).ok()) return nullptr;
+    last_device_ = device.get();
+    ++created_count_;
+    return device;
+  }
+
+  ScriptedLogDevice* lastDevice() const { return last_device_; }
+  size_t createdCount() const { return created_count_; }
+
+private:
+  std::vector<std::vector<uint8_t>> chunks_;
+  mutable ScriptedLogDevice* last_device_ = nullptr;
+  mutable size_t created_count_ = 0;
+};
+
+std::string tempPath(const std::string& name) {
+  return "/tmp/audio-studio-log-service-test-" + std::to_string(static_cast<long long>(getpid())) + "-" + name;
+}
+
+bool pathExists(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  return input.good();
+}
 
 uint16_t findFreePort(audio_studio::drivers::socket::ISocketDriver& driver) {
   for (uint16_t port = 29170; port < 29220; ++port) {
@@ -253,6 +344,81 @@ std::string readFileText(const std::string& path) {
   return out.str();
 }
 
+#if defined(CONFIG_FRAMEWORK_CONFIG)
+bool jsonContainsStringValue(const audio_studio::rpc::JsonValue& value, const std::string& needle) {
+  if (value.isString()) return value.asString() == needle;
+  if (value.isArray()) {
+    for (const auto& item : value.asArray()) {
+      if (jsonContainsStringValue(item, needle)) return true;
+    }
+  }
+  if (value.isObject()) {
+    for (const auto& item : value.asObject()) {
+      if (jsonContainsStringValue(item.second, needle)) return true;
+    }
+  }
+  return false;
+}
+
+bool hasModuleType(const audio_studio::rpc::JsonValue& root, const std::string& type_id) {
+  for (const auto& item : root.at("module_types").asArray()) {
+    if (item.at("type_id").asString() == type_id) return true;
+  }
+  return false;
+}
+
+bool hasModuleInstance(const audio_studio::rpc::JsonValue& root,
+                       const std::string& inst_id,
+                       const std::string& module_type) {
+  for (const auto& item : root.at("module_instances").asArray()) {
+    if (item.at("inst_id").asString() == inst_id && item.at("module_type").asString() == module_type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool hasPreset(const audio_studio::rpc::JsonValue& root,
+               const std::string& preset_id,
+               const std::string& load_mode) {
+  for (const auto& item : root.at("presets").asArray()) {
+    if (item.at("preset_id").asString() == preset_id && item.at("load_mode").asString() == load_mode) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void assertModuleizedEndpointSchema(const std::string& path) {
+  const std::string text = readFileText(path);
+  assert(text.find("inspecrot") == std::string::npos);
+  assert(text.find("inspetpr") == std::string::npos);
+  assert(text.find("\"RUNTIME\"") == std::string::npos);
+
+  const auto root = audio_studio::rpc::parseJson(text);
+  assert(!jsonContainsStringValue(root, "RUNTIME"));
+  assert(root.has("module_instances"));
+  assert(root.has("pipelines"));
+  assert(hasPreset(root, "inspector_preset", "inspector"));
+  assert(hasModuleInstance(root, "PLAY_HOST", "builtin.host"));
+  assert(hasModuleInstance(root, "PLAY_FILEIO_DAI", "builtin.dai"));
+  assert(hasModuleInstance(root, "CAP_HOST", "builtin.host"));
+  assert(hasModuleInstance(root, "CAP_FILEIO_DAI", "builtin.dai"));
+
+  if (root.has("resource_catalog")) {
+    assert(!root.at("resource_catalog").has("audio_endpoints"));
+  }
+
+  for (const auto& pipeline : root.at("pipelines").asArray()) {
+    assert(!pipeline.has("ports"));
+    for (const auto& node : pipeline.at("nodes").asArray()) {
+      assert(node.at("kind").asString() == "module");
+      assert(node.has("inst_ref"));
+    }
+  }
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -327,9 +493,21 @@ int main() {
     ScriptedDataLinkDevice device(256);
     assert(device.open({"transport-sync"}).ok());
     device.enableTransportAck();
-    TransportManager manager;
+    auto& manager = TransportManager::instance();
+    manager.resetForTesting();
+    assert(&manager == &TransportManager::instance());
     assert(manager.bindDataLinkDevice(device).ok());
     assert(manager.openChannel(6, "log").ok());
+    assert(!manager.openChannel(6, "audio-data").ok());
+    assert(manager.openChannel(3, "audio-control").ok());
+    assert(!manager.openChannel(3, "audio-control").ok());
+    assert(!manager.openChannel(3, "audio-data").ok());
+    assert(manager.closeChannel(3).ok());
+    assert(manager.openChannel(3, "audio-control").ok());
+    assert(manager.closeChannel(3).ok());
+    ScriptedDataLinkDevice second_device(256);
+    assert(second_device.open({"transport-second"}).ok());
+    assert(!manager.bindDataLinkDevice(second_device).ok());
     TransportFrame response;
     auto sync_status = manager.sendSync(6, 1, {0x01, 0x02}, response, 100);
     if (!sync_status.ok()) std::cerr << "sendSync failed: " << sync_status.message() << "\n";
@@ -351,6 +529,7 @@ int main() {
       assert(callback_called);
     }
     assert(manager.closeChannel(6).ok());
+    manager.resetForTesting();
   }
 
   using audio_studio::rpc::InProcessJsonRpcTransport;
@@ -493,6 +672,123 @@ int main() {
 
   {
     using namespace audio_studio;
+    framework::system_info::SystemInfoService system_info;
+    assert(system_info.consumeLogEntry({1, "info", "SOF",
+      "SOF 0 INFO ASINFO|heartbeat|seq=7|timestamp_ms=123400", ""}));
+    assert(system_info.consumeLogEntry({2, "info", "SOF",
+      "SOF 0 INFO ASINFO|core|id=0|freq_mhz=600|load_percent=37.5", ""}));
+    assert(system_info.consumeLogEntry({3, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|pipeline=10|state=ACTIVE|core=0|cpu_percent=12.5|memory_bytes=4096|latency_ms=0.7", ""}));
+    assert(system_info.consumeLogEntry({4, "info", "SOF",
+      "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|from=eq_1.out|to=sink.in|size_bytes=8192|avail_bytes=2048|produced_bytes=4800|consumed_bytes=4700", ""}));
+    assert(system_info.consumeLogEntry({5, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=system_runtime|index=0|block_size=256|free_count=5|total_count=16|used_bytes=2816|free_bytes=1280", ""}));
+    auto snapshot = system_info.snapshot();
+    assert(snapshot.connected);
+    assert(snapshot.cores.size() == 1);
+    assert(snapshot.cores.front().load_percent == 37.5);
+    assert(snapshot.modules.size() == 1);
+    assert(snapshot.modules.front().node_id == "eq_1");
+    assert(snapshot.modules.front().state == "ACTIVE");
+    assert(snapshot.buffers.size() == 1);
+    assert(snapshot.buffers.front().consumed_bytes == 4700);
+    assert(snapshot.heap.size() == 1);
+    assert(snapshot.heap.front().free_count == 5);
+    assert(system_info.consumeLogEntry({6, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|cpu_percent=13.5|memory_bytes=8192|latency_ms=0.8", ""}));
+    assert(system_info.consumeLogEntry({7, "info", "SOF",
+      "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|stalled=1", ""}));
+    assert(system_info.consumeLogEntry({8, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|state=6", ""}));
+    snapshot = system_info.snapshot();
+    assert(snapshot.modules.size() == 1);
+    assert(snapshot.modules.front().pipeline_id == 10);
+    assert(snapshot.modules.front().state == "ACTIVE");
+    assert(snapshot.modules.front().memory_bytes == 8192);
+    assert(snapshot.buffers.size() == 1);
+    assert(snapshot.buffers.front().consumed_bytes == 4700);
+    assert(snapshot.buffers.front().stalled);
+
+    system_info.setHeartbeatTimeoutForTesting(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    auto stale = system_info.snapshot();
+    assert(!stale.connected);
+    assert(stale.modules.empty());
+    assert(stale.buffers.empty());
+    assert(stale.heap.empty());
+
+    system_info.setHeartbeatTimeoutForTesting(std::chrono::milliseconds(1000));
+    log_service.setEntryInterceptor([&](const framework::log::LogEntry& entry) {
+      return system_info.consumeLogEntry(entry);
+    });
+    assert(log_service.append("info", "ASINFO|heartbeat|seq=8|timestamp_ms=123500").ok());
+    assert(log_service.append("info", "ASINFO|module|id=vol_1|pipeline=11|state=READY|core=1|cpu_percent=0.0|memory_bytes=2048|latency_ms=0.0").ok());
+    assert(log_service.append("info", "ordinary firmware line").ok());
+    auto tail = log_service.tail(8);
+    assert(tail.size() == 1);
+    assert(tail.front().message == "ordinary firmware line");
+    assert(system_info.snapshot().modules.front().node_id == "vol_1");
+
+    audio_studio::framework::log::LogService pump_log_service;
+    audio_studio::drivers::log::LogDeviceRegistry pump_registry;
+    auto pump_factory = std::make_unique<ScriptedLogDeviceFactory>(
+      std::vector<std::vector<uint8_t>>{
+        std::vector<uint8_t>{
+          'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','h','e','a','r','t','b','e','a','t','|','s','e','q','=','2','1','|','t','i','m','e','s','t','a','m','p','_','m','s','=','1','0','0','\n',
+          'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','m','o','d','u','l','e','|','i','d','=','p','u','m','p','_','v','o','l','|','p','i','p','e','l','i','n','e','=','2','|','s','t','a','t','e','=','A','C','T','I','V','E','|','c','o','r','e','=','0','|','c','p','u','_','p','e','r','c','e','n','t','=','4','.','0','|','m','e','m','o','r','y','_','b','y','t','e','s','=','1','0','2','4','|','l','a','t','e','n','c','y','_','m','s','=','0','.','2','\n',
+          'i','n','f','o','|','F','W','|','o','r','d','i','n','a','r','y',' ','p','u','m','p',' ','l','o','g','\n'
+        }
+      });
+    auto* pump_factory_ptr = pump_factory.get();
+    assert(pump_registry.registerFactory(std::move(pump_factory)).ok());
+    pump_log_service.configureDeviceRegistry(&pump_registry);
+    framework::system_info::SystemInfoService pump_system_info;
+    pump_log_service.setEntryInterceptor([&](const framework::log::LogEntry& entry) {
+      return pump_system_info.consumeLogEntry(entry);
+    });
+    framework::log::LogSessionConfig pump_config;
+    pump_config.session_id = "system-info-pump-test";
+    pump_config.driver_factory = "scripted-log";
+    pump_config.source = "firmware";
+    assert(pump_system_info.startLogPump(pump_log_service, pump_config).ok());
+    bool pump_updated = false;
+    for (int i = 0; i < 20; ++i) {
+      if (!pump_system_info.snapshot().modules.empty()) {
+        pump_updated = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    assert(pump_updated);
+    assert(pump_system_info.snapshot().modules.front().node_id == "pump_vol");
+    assert(pump_log_service.tail(8).size() == 1);
+    assert(pump_log_service.tail(8).front().message == "ordinary pump log");
+    assert(pump_factory_ptr->createdCount() == 1);
+    framework::log::LogSessionConfig mirror_config;
+    mirror_config.session_id = "as_log";
+    mirror_config.driver_factory = "scripted-log";
+    mirror_config.source = "firmware";
+    framework::log::LogSessionInfo mirror_session;
+    assert(pump_log_service.createSession(mirror_config, mirror_session).ok());
+    assert(pump_log_service.start(mirror_session.session_id).ok());
+    std::vector<framework::log::LogEntry> mirrored_entries;
+    assert(pump_log_service.readEntries(mirror_session.session_id, 8, mirrored_entries).ok());
+    assert(mirrored_entries.size() == 1);
+    assert(mirrored_entries.front().message == "ordinary pump log");
+    assert(pump_factory_ptr->createdCount() == 1);
+    assert(pump_log_service.closeSession(mirror_session.session_id).ok());
+    assert(pump_system_info.stopLogPump().ok());
+    assert(!pump_system_info.logPumpRunning());
+
+    audio_context->setSystemInfoService(&system_info);
+    auto sys_snapshot = audio_client.call("systemInfo.snapshot");
+    assert(sys_snapshot.at("connected").asBool());
+    assert(sys_snapshot.at("components").asArray().size() == 1);
+    assert(sys_snapshot.at("components").asArray()[0].at("node_id").asString() == "vol_1");
+    assert(audio_client.call("systemInfo.components").at("components").asArray().size() == 1);
+    assert(audio_client.call("systemInfo.buffers").at("buffers").asArray().empty());
+    assert(audio_client.call("systemInfo.health").at("rows").asArray().size() >= 1);
+
     framework::log::LogSessionConfig config;
     config.session_id = "log-rpc-test";
     config.driver_factory = "linux-host";
@@ -509,6 +805,93 @@ int main() {
     assert(log_service.stop(session.session_id).ok());
     assert(log_service.closeSession(session.session_id).ok());
 
+    {
+      audio_studio::framework::log::LogService split_log_service;
+      audio_studio::drivers::log::LogDeviceRegistry split_registry;
+      assert(split_registry.registerFactory(std::make_unique<ScriptedLogDeviceFactory>(
+        std::vector<std::vector<uint8_t>>{
+          std::vector<uint8_t>{'i','n','f','o','|','F','W','|','h','e','l'},
+          std::vector<uint8_t>{'l','o','\n','w','a','r','n','i','n','g','|','F','W','|','d','o','n','e','\n'}
+        })).ok());
+      split_log_service.configureDeviceRegistry(&split_registry);
+      framework::log::LogSessionConfig split_config;
+      split_config.session_id = "split-text-log";
+      split_config.driver_factory = "scripted-log";
+      split_config.source = "firmware";
+      framework::log::LogSessionInfo split_session;
+      assert(split_log_service.createSession(split_config, split_session).ok());
+      assert(split_log_service.start(split_session.session_id).ok());
+      std::vector<framework::log::LogEntry> split_entries;
+      assert(split_log_service.readEntries(split_session.session_id, 2, split_entries).ok());
+      assert(split_entries.size() == 2);
+      assert(split_entries[0].message == "hello");
+      assert(split_entries[1].level == "warning");
+      assert(split_entries[1].message == "done");
+      assert(split_log_service.closeSession(split_session.session_id).ok());
+    }
+
+    {
+      audio_studio::framework::log::LogService configured_log_service;
+      audio_studio::drivers::log::LogDeviceRegistry configured_registry;
+      auto factory = std::make_unique<ScriptedLogDeviceFactory>(std::vector<std::vector<uint8_t>>{});
+      auto* scripted_factory = factory.get();
+      assert(configured_registry.registerFactory(std::move(factory)).ok());
+      configured_log_service.configureDeviceRegistry(&configured_registry);
+      framework::log::LogSessionConfig defaults;
+      defaults.driver_factory = "scripted-log";
+      defaults.source = "firmware";
+      defaults.options["endpoint"] = "as_datalink";
+      defaults.options["trace_ldc"] = "sof.ldc";
+      configured_log_service.setDefaultSessionConfig(defaults);
+      framework::log::LogSessionConfig configured_config;
+      configured_config.session_id = "configured-log";
+      configured_config.driver_factory.clear();
+      configured_config.source.clear();
+      configured_config.min_level.clear();
+      framework::log::LogSessionInfo configured_session;
+      assert(configured_log_service.createSession(configured_config, configured_session).ok());
+      framework::log::LogSessionConfig update;
+      update.options["mtu"] = "512";
+      assert(configured_log_service.configureSession(configured_session.session_id, update, configured_session).ok());
+      assert(scripted_factory->lastDevice());
+      const auto& configured_options = scripted_factory->lastDevice()->configuredOptions();
+      assert(configured_options.at("endpoint") == "as_datalink");
+      assert(configured_options.at("trace_ldc") == "sof.ldc");
+      assert(configured_options.at("mtu") == "512");
+      assert(configured_log_service.closeSession(configured_session.session_id).ok());
+    }
+
+    {
+      audio_studio::framework::log::LogService path_log_service;
+      framework::log::LogSessionConfig bad_path_config;
+      bad_path_config.session_id = "bad-trace-path";
+      bad_path_config.options["trace_ldc"] = "sof.ldc";
+      bad_path_config.options["raw_trace_path"] = tempPath("missing/raw.trace");
+      framework::log::LogSessionInfo bad_path_session;
+      assert(!path_log_service.createSession(bad_path_config, bad_path_session).ok());
+
+      const std::string user_raw = tempPath("user.raw");
+      const std::string user_decoded = tempPath("user.decoded");
+      {
+        std::ofstream raw(user_raw, std::ios::binary | std::ios::trunc);
+        std::ofstream decoded(user_decoded, std::ios::binary | std::ios::trunc);
+        raw << "raw";
+        decoded << "decoded";
+      }
+      framework::log::LogSessionConfig user_path_config;
+      user_path_config.session_id = "user-trace-path";
+      user_path_config.options["trace_ldc"] = "sof.ldc";
+      user_path_config.options["raw_trace_path"] = user_raw;
+      user_path_config.options["decoded_trace_path"] = user_decoded;
+      framework::log::LogSessionInfo user_path_session;
+      assert(path_log_service.createSession(user_path_config, user_path_session).ok());
+      assert(path_log_service.closeSession(user_path_session.session_id).ok());
+      assert(pathExists(user_raw));
+      assert(pathExists(user_decoded));
+      std::remove(user_raw.c_str());
+      std::remove(user_decoded.c_str());
+    }
+
     rpc::JsonValue create_params = rpc::JsonValue::object();
     create_params["session_id"] = "log-rpc-2";
     create_params["driver_factory"] = "linux-host";
@@ -524,10 +907,43 @@ int main() {
     assert(read_entries.at("entries").asArray()[0].at("text").asString().find("audio controller") != std::string::npos);
     assert(audio_client.call("log.stop", session_params).at("session").at("running").asBool() == false);
     assert(audio_client.call("log.closeSession", session_params).at("closed").asBool());
+
+    {
+      const std::string binary_log = tempPath("binary.raw");
+      {
+        std::ofstream out(binary_log, std::ios::binary | std::ios::trunc);
+        const char bytes[] = {0x00, 0x01, 0x02, static_cast<char>(0xff)};
+        out.write(bytes, sizeof(bytes));
+      }
+      rpc::JsonValue raw_create = rpc::JsonValue::object();
+      raw_create["session_id"] = "log-raw-binary";
+      raw_create["driver_factory"] = "linux-host";
+      raw_create["source"] = binary_log;
+      assert(audio_client.call("log.createSession", raw_create).at("session").at("session_id").asString() == "log-raw-binary");
+      rpc::JsonValue raw_session = rpc::JsonValue::object();
+      raw_session["session_id"] = "log-raw-binary";
+      assert(audio_client.call("log.start", raw_session).at("session").at("running").asBool());
+      auto raw_result = audio_client.call("log.readRaw", raw_session);
+      const auto& raw_item = raw_result.at("chunks").asArray().front();
+      assert(raw_item.at("encoding").asString() == "base64");
+      assert(raw_item.at("bytes_base64").asString() == "AAEC/w==");
+      assert(audio_client.call("log.closeSession", raw_session).at("closed").asBool());
+      std::remove(binary_log.c_str());
+    }
   }
 
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   {
+    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json");
+    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/simulator/simulator.json");
+    const auto builtin = audio_studio::rpc::parseJson(
+        readFileText(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/built-in-algorithm.json"));
+    assert(hasModuleType(builtin, "builtin.host"));
+    assert(hasModuleType(builtin, "builtin.dai"));
+    assert(hasModuleType(builtin, "builtin.file_input"));
+    assert(hasModuleType(builtin, "builtin.file_output"));
+    assert(!jsonContainsStringValue(builtin, "RUNTIME"));
+
     audio_studio::framework::config::ConfigService config_service(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
     audio_studio::framework::config::ConfigCompileRequest request;
     request.input_path = std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json";
@@ -543,16 +959,29 @@ int main() {
     audio_studio::framework::config::ConfigCompileOutput output;
     assert(config_service.compile(request, output).ok());
     assert(output.ok);
-    assert(output.module_type_count == 20);
-    assert(output.module_instance_count == 8);
+    assert(output.module_type_count == 23);
+    assert(output.module_instance_count == 14);
     assert(output.pipeline_count == 3);
     assert(output.runtime_control_count == 19);
-    assert(output.install_param_count == 0);
-    assert(output.preset_count == 2);
+    assert(output.install_param_count == 15);
+    assert(output.preset_count == 3);
     assert(output.plugin_count == 1);
 
     audio_studio::drivers::filesystem::FileInfo info;
     assert(drivers.filesystem().stat(output.conf_path, info).ok() && info.size > 0);
+    const auto a2_conf = readFileText(output.conf_path);
+    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Remap\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Delay Line\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN FADER Fader Balance\"") != std::string::npos);
+    assert(a2_conf.find("\"DSP_FILTER_COVERAGE DSP_FILTER DSP Filter\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Layout\"") == std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Max Delay\"") == std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN FADER Balance\"") == std::string::npos);
+    const auto playback_chremap = a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN CHREMAP Channel Remap\"");
+    assert(playback_chremap != std::string::npos);
+    const auto playback_chremap_end = a2_conf.find("}\n\n", playback_chremap);
+    assert(playback_chremap_end != std::string::npos);
+    assert(a2_conf.substr(playback_chremap, playback_chremap_end - playback_chremap).find("max \"224\"") != std::string::npos);
     assert(drivers.filesystem().stat(output.private_bin_path, info).ok() && info.size > 0);
     assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
@@ -579,6 +1008,7 @@ int main() {
     assert(ids.find("AS_CONTROL_PLAYBACK_MAIN_VOLUME_VOLUME_DB") != std::string::npos);
     const std::string presets = readFileText(output.preset_header_path);
     assert(presets.find("AS_PRESET_PLAYBACK_MUSIC") != std::string::npos);
+    assert(presets.find("AS_PRESET_INSPECTOR_PRESET") != std::string::npos);
     const std::string conf = readFileText(output.conf_path);
     assert(conf.find("SectionVendorTokens.\"sof_sched_tokens\"") != std::string::npos);
     assert(conf.find("SectionVendorTokens.\"sof_comp_tokens\"") != std::string::npos);
@@ -587,6 +1017,10 @@ int main() {
     assert(conf.find("SectionDAI.") != std::string::npos);
     assert(conf.find("SectionBE.") != std::string::npos);
     assert(conf.find("SOF_TKN_DAI_TYPE \"FILE_IO\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_INDEX \"0\"") != std::string::npos);
+    assert(conf.find("SOF_TKN_DAI_INDEX \"1\"") != std::string::npos);
+    assert(conf.find("stream_name \"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
+    assert(conf.find("stream_name \"FILE_IO_DSP_FILTER_DAI1\"") != std::string::npos);
     assert(conf.find("SOF_TKN_DAI_TYPE \"VSI_TDM\"") == std::string::npos);
     assert(conf.find("SectionControlBytes.") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"CHAN_REMAP\"") != std::string::npos);
@@ -599,6 +1033,8 @@ int main() {
     assert(private_payload.find("as-builtin-gain-volume-preset-json-v1") != std::string::npos);
     assert(private_payload.find("\"pipelines\"") != std::string::npos);
     assert(private_payload.find("\"dai_id\":\"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
+    assert(private_payload.find("\"hw_id\":\"FILEIO1\"") != std::string::npos);
+    assert(private_payload.find("\"dai_index\":1") != std::string::npos);
     assert(private_payload.find("\"tdm_slots\":2") != std::string::npos);
     assert(private_payload.find("\"config_format\":\"sof-ipc3-bytes-v1\"") != std::string::npos);
     assert(private_payload.find("\"codec_format\"") == std::string::npos);

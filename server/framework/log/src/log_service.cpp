@@ -11,6 +11,14 @@
 namespace audio_studio::framework::log {
 namespace {
 
+constexpr size_t kMaxStoredEntries = 65536;
+constexpr size_t kSofTraceResyncBytes = sizeof(uint32_t);
+
+std::mutex& sofLoggerDecodeMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
 int levelRank(const std::string& level) {
   if (level == "critical") return 0;
   if (level == "error" || level == "err") return 1;
@@ -35,19 +43,62 @@ bool containsToken(const std::string& line, const std::string& token) {
   return line.find(token) != std::string::npos;
 }
 
+bool startsWith(const std::string& line, const std::string& prefix) {
+  return line.rfind(prefix, 0) == 0;
+}
+
+bool isSofLoggerDiagnosticLine(const std::string& line) {
+  return containsToken(line, "Skipped ") ||
+         containsToken(line, "Potential mailbox wrap") ||
+         startsWith(line, "Found valid LDC address") ||
+         containsToken(line, "Seeking forward 4 bytes") ||
+         containsToken(line, "Re-opening trace input file") ||
+         containsToken(line, "negative DELTA");
+}
+
+bool isSofLoggerEntryLine(const std::string& line) {
+  if (line.empty()) return false;
+  if (isSofLoggerDiagnosticLine(line)) return false;
+  if (containsToken(line, " TIMESTAMP") && containsToken(line, "CONTENT")) return false;
+  return containsToken(line, " ERROR ") ||
+         containsToken(line, " ERR ") ||
+         containsToken(line, " WARNING ") ||
+         containsToken(line, " WARN ") ||
+         containsToken(line, " INFO ") ||
+         containsToken(line, " DEBUG ") ||
+         containsToken(line, " VERBOSE ") ||
+         containsToken(line, " UNKNOWN ");
+}
+
 } // namespace
 
+LogService::~LogService() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto& item : sessions_) {
+    if (item.second.device) item.second.device->close();
+    destroySofDecoder(item.second);
+  }
+}
+
 void LogService::configureDeviceRegistry(drivers::log::LogDeviceRegistry* registry) {
+  std::lock_guard<std::mutex> lock(mutex_);
   registry_ = registry;
 }
 
 void LogService::setDefaultSessionConfig(LogSessionConfig config) {
+  std::lock_guard<std::mutex> lock(mutex_);
   config.session_id.clear();
   if (!config.min_level.empty()) config.min_level = normalizeLevel(config.min_level);
   default_config_ = std::move(config);
 }
 
+void LogService::setEntryInterceptor(EntryInterceptor interceptor) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  entry_interceptor_ = std::move(interceptor);
+}
+
 framework::Status LogService::createSession(LogSessionConfig config, LogSessionInfo& out) {
+  std::lock_guard<std::mutex> lock(mutex_);
   out = {};
   config = mergeDefaultConfig(std::move(config));
   if (config.session_id.empty()) {
@@ -57,6 +108,17 @@ framework::Status LogService::createSession(LogSessionConfig config, LogSessionI
   if (config.source.empty()) return framework::Status::invalidArgument("log source is empty");
   if (sessions_.find(config.session_id) != sessions_.end()) {
     return framework::Status::invalidArgument("log session already exists: " + config.session_id);
+  }
+
+  if (shouldMirrorEntriesLocked(config)) {
+    Session session;
+    session.config = std::move(config);
+    session.config.min_level = normalizeLevel(session.config.min_level);
+    session.mirror_entries = true;
+    session.mirror_entry_cursor = 0;
+    auto inserted = sessions_.emplace(session.config.session_id, std::move(session));
+    out = infoFor(inserted.first->second);
+    return framework::Status::success();
   }
 
   std::unique_ptr<drivers::log::ILogDevice> device;
@@ -71,14 +133,9 @@ framework::Status LogService::createSession(LogSessionConfig config, LogSessionI
   Session session;
   session.config = std::move(config);
   session.config.min_level = normalizeLevel(session.config.min_level);
-  const auto safe_id = safePathToken(session.config.session_id);
-  session.raw_trace_path = optionString(session.config, "raw_trace_path");
-  if (session.raw_trace_path.empty()) session.raw_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.raw";
-  session.decoded_trace_path = optionString(session.config, "decoded_trace_path");
-  if (session.decoded_trace_path.empty()) session.decoded_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.log";
   if (sofLoggerEnabled(session)) {
-    std::ofstream raw(session.raw_trace_path, std::ios::binary | std::ios::trunc);
-    std::ofstream decoded(session.decoded_trace_path, std::ios::binary | std::ios::trunc);
+    auto status = prepareTraceFiles(session, true);
+    if (!status.ok()) return status;
   }
   session.device = std::move(device);
   auto inserted = sessions_.emplace(session.config.session_id, std::move(session));
@@ -87,25 +144,28 @@ framework::Status LogService::createSession(LogSessionConfig config, LogSessionI
 }
 
 framework::Status LogService::configureSession(const std::string& id, const LogSessionConfig& config, LogSessionInfo& out) {
+  std::lock_guard<std::mutex> lock(mutex_);
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (session->running) return framework::Status::unavailable("cannot configure running log session: " + id);
+  if (session->mirror_entries) return framework::Status::unavailable("cannot configure mirrored log session: " + id);
   session->config.min_level = normalizeLevel(config.min_level.empty() ? session->config.min_level : config.min_level);
   session->config.raw = config.raw;
-  if (!config.options.empty()) session->config.options = config.options;
-  if (!config.options.empty()) {
-    session->raw_trace_path = optionString(session->config, "raw_trace_path");
-    if (session->raw_trace_path.empty()) {
-      session->raw_trace_path = "/tmp/audio_studio_" + safePathToken(session->config.session_id) + ".trace.raw";
-    }
-    session->decoded_trace_path = optionString(session->config, "decoded_trace_path");
-    if (session->decoded_trace_path.empty()) {
-      session->decoded_trace_path = "/tmp/audio_studio_" + safePathToken(session->config.session_id) + ".trace.log";
-    }
-    session->decoded_lines_read = 0;
+  const bool options_changed = !config.options.empty();
+  if (options_changed) {
+    for (const auto& item : config.options) session->config.options[item.first] = item.second;
   }
-  if ((!config.source.empty() && config.source != session->config.source) || !config.options.empty()) {
+  if (!config.options.empty()) {
+    destroySofDecoder(*session);
+    session->sof_raw_pending.clear();
+    session->sof_decoded_pending.clear();
+    if (sofLoggerEnabled(*session)) {
+      status = prepareTraceFiles(*session, true);
+      if (!status.ok()) return status;
+    }
+  }
+  if ((!config.source.empty() && config.source != session->config.source) || options_changed) {
     if (!config.source.empty()) session->config.source = config.source;
     if (session->device) {
       drivers::log::LogDeviceConfig device_config;
@@ -120,9 +180,18 @@ framework::Status LogService::configureSession(const std::string& id, const LogS
 }
 
 framework::Status LogService::start(const std::string& id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) {
+    session->running = true;
+    return framework::Status::success();
+  }
+  if (sofLoggerEnabled(*session)) {
+    status = ensureSofDecoder(*session);
+    if (!status.ok()) return status;
+  }
   if (session->device) {
     status = session->device->start();
     if (!status.ok()) return status;
@@ -132,9 +201,14 @@ framework::Status LogService::start(const std::string& id) {
 }
 
 framework::Status LogService::stop(const std::string& id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) {
+    session->running = false;
+    return framework::Status::success();
+  }
   if (session->device) {
     status = session->device->stop();
     if (!status.ok()) return status;
@@ -144,19 +218,22 @@ framework::Status LogService::stop(const std::string& id) {
 }
 
 framework::Status LogService::closeSession(const std::string& id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (session->device) session->device->close();
+  destroySofDecoder(*session);
   if (sofLoggerEnabled(*session)) {
-    if (!session->raw_trace_path.empty()) std::remove(session->raw_trace_path.c_str());
-    if (!session->decoded_trace_path.empty()) std::remove(session->decoded_trace_path.c_str());
+    if (session->raw_trace_owned && !session->raw_trace_path.empty()) std::remove(session->raw_trace_path.c_str());
+    if (session->decoded_trace_owned && !session->decoded_trace_path.empty()) std::remove(session->decoded_trace_path.c_str());
   }
   sessions_.erase(id);
   return framework::Status::success();
 }
 
 framework::Status LogService::getSession(const std::string& id, LogSessionInfo& out) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   const Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
@@ -165,6 +242,7 @@ framework::Status LogService::getSession(const std::string& id, LogSessionInfo& 
 }
 
 framework::Status LogService::getStats(const std::string& id, LogSessionStats& out) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   const Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
@@ -177,11 +255,19 @@ framework::Status LogService::getStats(const std::string& id, LogSessionStats& o
 framework::Status LogService::readRaw(const std::string& id,
                                       size_t max_chunks,
                                       std::vector<drivers::log::LogRawChunk>& chunks) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return readRawLocked(id, max_chunks, chunks);
+}
+
+framework::Status LogService::readRawLocked(const std::string& id,
+                                            size_t max_chunks,
+                                            std::vector<drivers::log::LogRawChunk>& chunks) {
   chunks.clear();
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (!session->running) return framework::Status::unavailable("log session is not running: " + id);
+  if (session->mirror_entries) return framework::Status::unavailable("mirrored log session does not expose raw chunks: " + id);
   if (max_chunks == 0) return framework::Status::invalidArgument("log read max_chunks is zero");
 
   if (!session->device) return framework::Status::unavailable("log session has no device: " + id);
@@ -200,16 +286,28 @@ framework::Status LogService::readRaw(const std::string& id,
 }
 
 framework::Status LogService::readEntries(const std::string& id, size_t max_entries, std::vector<LogEntry>& entries) {
+  std::lock_guard<std::mutex> lock(mutex_);
   entries.clear();
   if (max_entries == 0) return framework::Status::invalidArgument("log read max_entries is zero");
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) return readMirrorEntriesLocked(*session, max_entries, entries);
 
   while (entries.size() < max_entries) {
     std::vector<drivers::log::LogRawChunk> chunks;
-    status = readRaw(id, 1, chunks);
+    status = readRawLocked(id, 1, chunks);
     if (!status.ok()) {
+      if (!sofLoggerEnabled(*session) && !session->text_pending.empty()) {
+        auto entry = decodeLine(next_sequence_++, session->text_pending);
+        session->text_pending.clear();
+        if (passesLevel(entry.level, session->config.min_level) && !shouldIntercept(entry)) {
+          entries.push_back(entry);
+          appendEntry(entry);
+          ++session->entries_read;
+        }
+        return framework::Status::success();
+      }
       if (entries.empty()) return status;
       break;
     }
@@ -223,16 +321,7 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
         break;
       } else {
         const std::string text(chunk.bytes.begin(), chunk.bytes.end());
-        std::istringstream lines(text);
-        std::string line;
-        while (entries.size() < max_entries && std::getline(lines, line)) {
-          if (line.empty()) continue;
-          auto entry = decodeLine(next_sequence_++, line);
-          if (!passesLevel(entry.level, session->config.min_level)) continue;
-          entries.push_back(entry);
-          entries_.push_back(entry);
-          ++session->entries_read;
-        }
+        parseTextLines(*session, text, max_entries, entries);
       }
     }
   }
@@ -240,6 +329,7 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
 }
 
 framework::Status LogService::append(std::string level, std::string message) {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (level.empty()) return framework::Status::invalidArgument("log level is empty");
   if (message.empty()) return framework::Status::invalidArgument("log message is empty");
   const auto normalized = normalizeLevel(std::move(level));
@@ -249,20 +339,24 @@ framework::Status LogService::append(std::string level, std::string message) {
   entry.tag = "APP";
   entry.message = std::move(message);
   entry.text = entry.message;
-  entries_.push_back(std::move(entry));
+  if (shouldIntercept(entry)) return framework::Status::success();
+  appendEntry(std::move(entry));
   return framework::Status::success();
 }
 
 std::vector<LogEntry> LogService::tail(size_t count) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   const size_t start = count >= entries_.size() ? 0 : entries_.size() - count;
   return std::vector<LogEntry>(entries_.begin() + static_cast<long>(start), entries_.end());
 }
 
 void LogService::clear() {
+  std::lock_guard<std::mutex> lock(mutex_);
   entries_.clear();
 }
 
 size_t LogService::size() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   return entries_.size();
 }
 
@@ -309,6 +403,11 @@ std::string LogService::optionString(const LogSessionConfig& config, const std::
   return it == config.options.end() ? std::string() : it->second;
 }
 
+bool LogService::optionBool(const LogSessionConfig& config, const std::string& key) {
+  const auto value = optionString(config, key);
+  return value == "true" || value == "1" || value == "yes";
+}
+
 std::string LogService::safePathToken(const std::string& value) {
   std::string out;
   out.reserve(value.size());
@@ -333,46 +432,197 @@ LogEntry LogService::decodeSofLoggerLine(int sequence, const std::string& line) 
   return entry;
 }
 
+void LogService::destroySofDecoder(Session& session) {
+  if (session.sof_decoder) {
+    audio_studio_sof_logger_decoder_destroy(session.sof_decoder);
+    session.sof_decoder = nullptr;
+  }
+}
+
+bool LogService::shouldMirrorEntriesLocked(const LogSessionConfig& config) const {
+  if (config.raw || optionBool(config, "system_info_pump")) return false;
+  for (const auto& item : sessions_) {
+    const auto& session = item.second;
+    if (!session.running || session.mirror_entries) continue;
+    if (!optionBool(session.config, "system_info_pump")) continue;
+    if (session.config.driver_factory != config.driver_factory) continue;
+    if (session.config.source != config.source) continue;
+    if (optionString(session.config, "trace_ldc") != optionString(config, "trace_ldc")) continue;
+    return true;
+  }
+  return false;
+}
+
+framework::Status LogService::readMirrorEntriesLocked(Session& session,
+                                                      size_t max_entries,
+                                                      std::vector<LogEntry>& entries) {
+  if (!session.running) return framework::Status::unavailable("log session is not running: " + session.config.session_id);
+  while (session.mirror_entry_cursor < entries_.size() && entries.size() < max_entries) {
+    const auto& entry = entries_[session.mirror_entry_cursor++];
+    if (!passesLevel(entry.level, session.config.min_level)) continue;
+    entries.push_back(entry);
+    ++session.entries_read;
+  }
+  return framework::Status::success();
+}
+
+framework::Status LogService::prepareTraceFiles(Session& session, bool truncate) {
+  const auto safe_id = safePathToken(session.config.session_id);
+  session.raw_trace_path = optionString(session.config, "raw_trace_path");
+  session.raw_trace_owned = session.raw_trace_path.empty();
+  if (session.raw_trace_path.empty()) session.raw_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.raw";
+  session.decoded_trace_path = optionString(session.config, "decoded_trace_path");
+  session.decoded_trace_owned = session.decoded_trace_path.empty();
+  if (session.decoded_trace_path.empty()) session.decoded_trace_path = "/tmp/audio_studio_" + safe_id + ".trace.log";
+
+  if (!truncate) return framework::Status::success();
+  {
+    std::ofstream raw(session.raw_trace_path, std::ios::binary | std::ios::trunc);
+    if (!raw) return framework::Status::unavailable("failed to create SOF raw trace file: " + session.raw_trace_path);
+  }
+  {
+    std::ofstream decoded(session.decoded_trace_path, std::ios::binary | std::ios::trunc);
+    if (!decoded) return framework::Status::unavailable("failed to create SOF decoded trace file: " + session.decoded_trace_path);
+  }
+  return framework::Status::success();
+}
+
+framework::Status LogService::ensureSofDecoder(Session& session) {
+  if (session.sof_decoder) return framework::Status::success();
+  const auto trace_ldc = optionString(session.config, "trace_ldc");
+  audio_studio_sof_logger_decoder* decoder = nullptr;
+  const int rc = audio_studio_sof_logger_decoder_create(trace_ldc.c_str(), &decoder);
+  if (rc != 0) {
+    return framework::Status::unavailable("failed to open SOF logger dictionary: " + trace_ldc);
+  }
+  session.sof_decoder = decoder;
+  return framework::Status::success();
+}
+
 framework::Status LogService::appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks) {
-  std::ofstream raw(session.raw_trace_path, std::ios::binary | std::ios::app);
-  if (!raw) return framework::Status::unavailable("failed to open SOF raw trace file: " + session.raw_trace_path);
+  std::ofstream raw;
+  bool raw_open = false;
+  if (!session.raw_trace_path.empty()) {
+    raw.open(session.raw_trace_path, std::ios::binary | std::ios::app);
+    if (!raw) return framework::Status::unavailable("failed to open SOF raw trace file: " + session.raw_trace_path);
+    raw_open = true;
+  }
   for (const auto& chunk : chunks) {
     if (!chunk.bytes.empty()) {
-      raw.write(reinterpret_cast<const char*>(chunk.bytes.data()),
-                static_cast<std::streamsize>(chunk.bytes.size()));
+      session.sof_raw_pending.insert(session.sof_raw_pending.end(), chunk.bytes.begin(), chunk.bytes.end());
+      if (raw) {
+        raw.write(reinterpret_cast<const char*>(chunk.bytes.data()),
+                  static_cast<std::streamsize>(chunk.bytes.size()));
+      }
     }
   }
-  if (!raw) return framework::Status::unavailable("failed to append SOF raw trace file: " + session.raw_trace_path);
+  if (raw_open && !raw) return framework::Status::unavailable("failed to append SOF raw trace file: " + session.raw_trace_path);
   return framework::Status::success();
 }
 
 framework::Status LogService::decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries) {
-  const auto trace_ldc = optionString(session.config, "trace_ldc");
-  const int rc = audio_studio_sof_logger_decode_file(
-      session.raw_trace_path.c_str(), trace_ldc.c_str(),
-      session.decoded_trace_path.c_str());
-  if (rc != 0) return framework::Status::unavailable("SOF logger decoder failed to decode trace");
+  auto status = ensureSofDecoder(session);
+  if (!status.ok()) return status;
 
-  std::ifstream decoded(session.decoded_trace_path);
-  if (!decoded) return framework::Status::unavailable("failed to open SOF decoded trace file: " + session.decoded_trace_path);
+  std::vector<uint8_t> complete;
+  while (!session.sof_raw_pending.empty()) {
+    unsigned long record_size = 0;
+    const int rc = audio_studio_sof_logger_decoder_record_size(
+        session.sof_decoder, session.sof_raw_pending.data(),
+        static_cast<unsigned long>(session.sof_raw_pending.size()), &record_size);
+    if (rc > 0) break;
+    if (rc < 0 || record_size == 0ul) {
+      const size_t drop = std::min(kSofTraceResyncBytes, session.sof_raw_pending.size());
+      session.sof_raw_pending.erase(session.sof_raw_pending.begin(),
+                                    session.sof_raw_pending.begin() + static_cast<long>(drop));
+      continue;
+    }
+    complete.insert(complete.end(), session.sof_raw_pending.begin(),
+                    session.sof_raw_pending.begin() + static_cast<long>(record_size));
+    session.sof_raw_pending.erase(session.sof_raw_pending.begin(),
+                                  session.sof_raw_pending.begin() + static_cast<long>(record_size));
+  }
+  if (complete.empty()) return framework::Status::success();
 
-  std::string line;
-  size_t line_index = 0;
-  while (entries.size() < max_entries && std::getline(decoded, line)) {
+  char* decoded = nullptr;
+  unsigned long decoded_size = 0;
+  int rc;
+  {
+    std::lock_guard<std::mutex> decode_lock(sofLoggerDecodeMutex());
+    rc = audio_studio_sof_logger_decoder_decode_buffer(
+        session.sof_decoder, complete.data(), static_cast<unsigned long>(complete.size()),
+        &decoded, &decoded_size);
+  }
+  if (rc != 0) {
+    if (decoded) audio_studio_sof_logger_decoder_free_output(decoded);
+    return framework::Status::unavailable("SOF logger decoder failed to decode trace");
+  }
+  const std::string text(decoded ? decoded : "", decoded ? decoded_size : 0ul);
+  if (decoded) audio_studio_sof_logger_decoder_free_output(decoded);
+  if (!session.decoded_trace_path.empty()) {
+    std::ofstream out(session.decoded_trace_path, std::ios::binary | std::ios::app);
+    if (!out) return framework::Status::unavailable("failed to open SOF decoded trace file: " + session.decoded_trace_path);
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!out) return framework::Status::unavailable("failed to append SOF decoded trace file: " + session.decoded_trace_path);
+  }
+  parseSofLoggerText(session, text, max_entries, entries);
+  return framework::Status::success();
+}
+
+void LogService::parseTextLines(Session& session, const std::string& text, size_t max_entries, std::vector<LogEntry>& entries) {
+  session.text_pending += text;
+  size_t line_start = 0;
+  while (entries.size() < max_entries) {
+    const auto newline = session.text_pending.find('\n', line_start);
+    if (newline == std::string::npos) break;
+    std::string line = session.text_pending.substr(line_start, newline - line_start);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    line_start = newline + 1;
     if (line.empty()) continue;
-    if (line_index++ < session.decoded_lines_read) continue;
-    auto entry = decodeSofLoggerLine(next_sequence_++, line);
+    auto entry = decodeLine(next_sequence_++, line);
     if (!passesLevel(entry.level, session.config.min_level)) continue;
+    if (shouldIntercept(entry)) continue;
     entries.push_back(entry);
-    entries_.push_back(entry);
+    appendEntry(entry);
     ++session.entries_read;
   }
-  session.decoded_lines_read = line_index;
-  return framework::Status::success();
+  if (line_start > 0) session.text_pending.erase(0, line_start);
+}
+
+void LogService::parseSofLoggerText(Session& session, const std::string& text, size_t max_entries, std::vector<LogEntry>& entries) {
+  session.sof_decoded_pending += text;
+  size_t line_start = 0;
+  while (entries.size() < max_entries) {
+    const auto newline = session.sof_decoded_pending.find('\n', line_start);
+    if (newline == std::string::npos) break;
+    std::string line = session.sof_decoded_pending.substr(line_start, newline - line_start);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    line_start = newline + 1;
+    if (!isSofLoggerEntryLine(line)) continue;
+    auto entry = decodeSofLoggerLine(next_sequence_++, line);
+    if (!passesLevel(entry.level, session.config.min_level)) continue;
+    if (shouldIntercept(entry)) continue;
+    entries.push_back(entry);
+    appendEntry(entry);
+    ++session.entries_read;
+  }
+  if (line_start > 0) session.sof_decoded_pending.erase(0, line_start);
+}
+
+void LogService::appendEntry(LogEntry entry) {
+  entries_.push_back(std::move(entry));
+  if (entries_.size() > kMaxStoredEntries) {
+    const auto overflow = entries_.size() - kMaxStoredEntries;
+    entries_.erase(entries_.begin(), entries_.begin() + static_cast<long>(overflow));
+  }
 }
 
 bool LogService::passesLevel(const std::string& level, const std::string& min_level) {
   return levelRank(normalizeLevel(level)) <= levelRank(normalizeLevel(min_level));
+}
+
+bool LogService::shouldIntercept(const LogEntry& entry) const {
+  return entry_interceptor_ && entry_interceptor_(entry);
 }
 
 framework::Status LogService::requireSession(const std::string& id, Session*& session) {

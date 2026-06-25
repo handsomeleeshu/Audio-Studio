@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -27,6 +28,15 @@
 #if defined(CONFIG_FRAMEWORK_LOG)
 #include "log_service.hpp"
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+#include "system_info_service.hpp"
+#endif
+#if defined(CONFIG_FRAMEWORK_TRANSPORT)
+#include "transport_manager.hpp"
+#endif
+#if defined(CONFIG_PLATFORM_SIMULATOR)
+#include "simulator_pipe_datalink_device.hpp"
+#endif
 #endif
 
 namespace {
@@ -44,11 +54,10 @@ struct ServerOptions {
   std::string log_driver_factory;
   std::string log_source;
   std::string log_level;
-  std::string log_datalink_endpoint;
-  std::string log_datalink_rx;
-  std::string log_datalink_tx;
-  uint32_t log_datalink_mtu = 0;
   std::string log_trace_ldc;
+  std::string audio_driver_factory;
+  std::string audio_device_name;
+  std::string datalink;
   std::vector<std::string> rpc_args;
 };
 
@@ -67,11 +76,10 @@ int parseServerOptions(int argc, char** argv, ServerOptions& options) {
   app.add_option("--log-driver-factory", options.log_driver_factory, "Default log driver factory for RPC log sessions");
   app.add_option("--log-source", options.log_source, "Default log source for RPC log sessions");
   app.add_option("--log-level", options.log_level, "Default minimum log level for RPC log sessions");
-  app.add_option("--log-datalink-endpoint", options.log_datalink_endpoint, "Default log data-link endpoint prefix");
-  app.add_option("--log-datalink-rx", options.log_datalink_rx, "Default log data-link RX file");
-  app.add_option("--log-datalink-tx", options.log_datalink_tx, "Default log data-link TX file");
-  app.add_option("--log-datalink-mtu", options.log_datalink_mtu, "Default log data-link MTU");
   app.add_option("--log-trace-ldc", options.log_trace_ldc, "Default SOF trace LDC dictionary for log decoding");
+  app.add_option("--audio-driver-factory", options.audio_driver_factory, "Default audio driver factory for RPC audio sessions");
+  app.add_option("--audio-device", options.audio_device_name, "Default audio stream/device name for RPC audio sessions");
+  app.add_option("--datalink", options.datalink, "Simulator data-link endpoint prefix");
   app.add_option("rpc-args", options.rpc_args, "Optional transport and positional transport args");
   app.allow_extras(false);
 
@@ -130,12 +138,73 @@ audio_studio::framework::log::LogSessionConfig defaultLogConfigFromOptions(const
   config.driver_factory = options.log_driver_factory;
   config.source = options.log_source;
   config.min_level = options.log_level;
-  if (!options.log_datalink_endpoint.empty()) config.options["endpoint"] = options.log_datalink_endpoint;
-  if (!options.log_datalink_rx.empty()) config.options["rx_path"] = options.log_datalink_rx;
-  if (!options.log_datalink_tx.empty()) config.options["tx_path"] = options.log_datalink_tx;
-  if (options.log_datalink_mtu > 0) config.options["mtu"] = std::to_string(options.log_datalink_mtu);
   if (!options.log_trace_ldc.empty()) config.options["trace_ldc"] = options.log_trace_ldc;
   return config;
+}
+#endif
+
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+audio_studio::framework::system_info::SystemInfoService& systemInfoService() {
+  static audio_studio::framework::system_info::SystemInfoService service;
+  return service;
+}
+
+void configureSystemInfoLogInterceptor() {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  logService().setEntryInterceptor([](const audio_studio::framework::log::LogEntry& entry) {
+    return systemInfoService().consumeLogEntry(entry);
+  });
+#endif
+}
+
+audio_studio::framework::Status startSystemInfoLogPumpFromOptions(const ServerOptions& options) {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  auto config = defaultLogConfigFromOptions(options);
+  config.session_id = "system_info";
+  return systemInfoService().startLogPump(logService(), std::move(config));
+#else
+  (void)options;
+  return audio_studio::framework::Status::success();
+#endif
+}
+
+void stopSystemInfoLogPump() {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  (void)systemInfoService().stopLogPump();
+#endif
+}
+#endif
+
+audio_studio::framework::audio::AudioServiceConfig defaultAudioConfigFromOptions(const ServerOptions& options) {
+  audio_studio::framework::audio::AudioServiceConfig config;
+  config.driver_factory = options.audio_driver_factory;
+  config.default_device_name = options.audio_device_name;
+  return config;
+}
+
+#if defined(CONFIG_FRAMEWORK_TRANSPORT)
+  audio_studio::drivers::datalink::DataLinkDeviceConfig dataLinkConfigFromEndpoint(const std::string& endpoint) {
+  audio_studio::drivers::datalink::DataLinkDeviceConfig config;
+  config.name = "simulator-datalink";
+  config.endpoint = endpoint;
+  if (!endpoint.empty()) config.options["endpoint"] = endpoint;
+  return config;
+}
+
+audio_studio::framework::Status configureTransportDataLinkFromOptions(const ServerOptions& options) {
+  if (options.datalink.empty()) return audio_studio::framework::Status::success();
+
+#if defined(CONFIG_PLATFORM_SIMULATOR)
+  auto config = dataLinkConfigFromEndpoint(options.datalink);
+  audio_studio::platform::simulator::ensureSimulatorPipeDataLinkDeviceRegistered();
+  audio_studio::framework::transport::DataLinkManagerConfig manager_config;
+  manager_config.ack_timeout_ms = 1000;
+  manager_config.max_retries = 3;
+  return audio_studio::framework::transport::TransportManager::instance().configureDataLinkDevice(
+      "simulator-pipe", config, manager_config);
+#else
+  return audio_studio::framework::Status::invalidArgument("data-link options require simulator platform support");
+#endif
 }
 #endif
 
@@ -244,6 +313,9 @@ audio_studio::rpc::JsonRpcEndpoint makeEndpoint(audio_studio::rpc::RpcStreamDefa
 #if defined(CONFIG_FRAMEWORK_LOG)
   context->setLogService(&logService());
 #endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+  context->setSystemInfoService(&systemInfoService());
+#endif
   audio_studio::rpc::registerAudioStudioRpcMethods(endpoint, context);
 #else
   audio_studio::rpc::registerServerHealthRpcMethod(endpoint);
@@ -260,6 +332,9 @@ RpcEndpointBundle makeEndpointBundle(audio_studio::rpc::RpcStreamDefaults stream
 #endif
 #if defined(CONFIG_FRAMEWORK_LOG)
   bundle.context->setLogService(&logService());
+#endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+  bundle.context->setSystemInfoService(&systemInfoService());
 #endif
   audio_studio::rpc::registerAudioStudioRpcMethods(bundle.endpoint, bundle.context);
   return bundle;
@@ -306,11 +381,25 @@ int main(int argc, char** argv) {
 #if defined(CONFIG_FRAMEWORK_CONFIG)
     configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
 #endif
+#if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_FRAMEWORK_TRANSPORT)
+    status = configureTransportDataLinkFromOptions(options);
+    if (!status.ok()) {
+      std::cerr << status.toJson() << "\n";
+      drivers.shutdown();
+      return 1;
+    }
+#endif
+#if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
+    audioService().configureDeviceRegistry(&drivers.audioRegistry(), defaultAudioConfigFromOptions(options));
+#endif
 #if defined(CONFIG_FRAMEWORK_LOG) && defined(CONFIG_DRIVER_LOG)
     logService().configureDeviceRegistry(&drivers.logRegistry());
 #endif
 #if defined(CONFIG_FRAMEWORK_LOG)
     logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
+#endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+    configureSystemInfoLogInterceptor();
 #endif
     std::cout << handleRpcOnce(options.rpc_once) << "\n";
     drivers.shutdown();
@@ -331,8 +420,16 @@ int main(int argc, char** argv) {
     try {
       audio_studio::rpc::RpcStreamDefaults stream_defaults;
       const std::string transport = positionalOr(options.rpc_args, 0, "socket");
+#if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_FRAMEWORK_TRANSPORT)
+      status = configureTransportDataLinkFromOptions(options);
+      if (!status.ok()) {
+        std::cerr << status.toJson() << "\n";
+        drivers.shutdown();
+        return 1;
+      }
+#endif
 #if defined(CONFIG_RPC_AUDIO_METHODS) && defined(CONFIG_DRIVER_AUDIO)
-      audioService().configureDeviceRegistry(&drivers.audioRegistry());
+      audioService().configureDeviceRegistry(&drivers.audioRegistry(), defaultAudioConfigFromOptions(options));
 #endif
 #if defined(CONFIG_FRAMEWORK_CONFIG) && defined(CONFIG_DRIVER_FILESYSTEM) && defined(CONFIG_DRIVER_OS) && defined(CONFIG_DRIVER_DYNLIB)
       configService().setDrivers(&drivers.filesystem(), &drivers.os(), &drivers.dynlib());
@@ -342,6 +439,15 @@ int main(int argc, char** argv) {
 #endif
 #if defined(CONFIG_FRAMEWORK_LOG)
       logService().setDefaultSessionConfig(defaultLogConfigFromOptions(options));
+#endif
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      configureSystemInfoLogInterceptor();
+      status = startSystemInfoLogPumpFromOptions(options);
+      if (!status.ok()) {
+        std::cerr << status.toJson() << "\n";
+        drivers.shutdown();
+        return 1;
+      }
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {
@@ -357,6 +463,9 @@ int main(int argc, char** argv) {
           return audioStreamResponse(*context, request);
         });
         server.serve(host, port, {options.max_requests, 5000});
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+        stopSystemInfoLogPump();
+#endif
         drivers.shutdown();
         return 0;
       }
@@ -376,15 +485,24 @@ int main(int argc, char** argv) {
           return audioStreamResponse(*context, request);
         });
         server.serve(request_pipe, response_pipe, {options.max_requests, 5000});
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+        stopSystemInfoLogPump();
+#endif
         drivers.shutdown();
         return 0;
       }
 #endif
       std::cerr << "unsupported RPC transport: " << transport << "\n";
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      stopSystemInfoLogPump();
+#endif
       drivers.shutdown();
       return 2;
     } catch (const std::exception& error) {
       std::cerr << "{\"ok\":false,\"error\":\"" << error.what() << "\"}\n";
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      stopSystemInfoLogPump();
+#endif
       drivers.shutdown();
       return 1;
     }

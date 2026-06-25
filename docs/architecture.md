@@ -35,8 +35,8 @@ C++ Backend
 
 ## 后端核心扩展点
 
-- `IRuntimeEngine`：接入真实 DSP runtime / simulator。
+- `IRuntimeEngine`：接入真实 DSP runtime / simulator；生产 GUI backend 使用 `GuiRuntimeEngine`，pipeline build/unload 经 `BuildOrchestrator` 进入真实 workspace、as_server compile 和验证路径。
 - `INodeController`：节点点击、probe、debug、dump 等扩展。
 - `IParameterController`：参数下发、TLV 编码、kcontrol 转换。
 
-当前实现为 `MockRuntimeEngine`，用于维持 UI demo 功能。
+`MockRuntimeEngine` 不再实现 `IRuntimeEngine`，只作为 node/parameter 等非真实控制的测试替身。

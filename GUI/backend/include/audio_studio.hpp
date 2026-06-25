@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,8 +50,13 @@ public:
   virtual ~IRuntimeEngine() = default;
   virtual std::string validatePipeline(const std::string& pipeline_json) = 0;
   virtual std::string buildPipeline(const std::string& pipeline_json) = 0;
+  virtual std::string unloadPipeline(const std::string& pipeline_json) = 0;
   virtual std::string run(const std::string& session_id) = 0;
   virtual std::string stop(const std::string& session_id) = 0;
+  virtual std::string pushAudioStream(const std::string& query, const std::string& frame) = 0;
+  virtual std::string pushAudioFrame(const std::string& query, const std::string& frame) = 0;
+  virtual std::string finishAudioInput(const std::string& request_json) = 0;
+  virtual std::string captureAudioFrame(const std::string& query) = 0;
   virtual std::string telemetry(const std::vector<std::string>& node_ids) = 0;
   virtual std::string pipelineEditEvent(const std::string& request_json) = 0;
   virtual std::string pipelineToolAction(const std::string& request_json) = 0;
@@ -66,6 +72,122 @@ class IParameterController {
 public:
   virtual ~IParameterController() = default;
   virtual std::string updateParameter(const std::string& request_json) = 0;
+};
+
+struct GuiConfigCompileRequest {
+  std::string input_path;
+  std::string output_dir;
+  std::string project_name;
+  std::string working_dir;
+  std::string alsatplg;
+  std::string as_server;
+  bool build_tplg = true;
+  bool strict = true;
+  std::vector<std::string> plugin_paths;
+};
+
+struct GuiConfigCompileResult {
+  bool ok = false;
+  std::string tplg_path;
+  std::string message;
+  std::vector<std::string> diagnostics;
+};
+
+class IConfigCompileClient {
+public:
+  virtual ~IConfigCompileClient() = default;
+  virtual GuiConfigCompileResult compile(const GuiConfigCompileRequest& request) = 0;
+};
+
+struct ValidationRequest {
+  std::string workspace_id;
+  std::string workspace_dir;
+  std::string project_name;
+  std::string tplg_path;
+  std::string test_list_path;
+  std::string script_path;
+  std::string as_server_path;
+  std::string as_log_path;
+  std::string trace_ldc_path;
+};
+
+struct ValidationResult {
+  bool ok = false;
+  std::string message;
+  std::vector<std::string> diagnostics;
+};
+
+class IValidationRunner {
+public:
+  virtual ~IValidationRunner() = default;
+  virtual ValidationResult start(const ValidationRequest& request) = 0;
+  virtual ValidationResult stop(const std::string& workspace_id) = 0;
+};
+
+class BuildOrchestrator {
+public:
+  BuildOrchestrator(std::string root_dir,
+                    std::shared_ptr<IConfigCompileClient> compile_client = nullptr,
+                    std::shared_ptr<IValidationRunner> validation_runner = nullptr);
+
+  HttpResponse openProjectByName(const std::string& project);
+  HttpResponse openProjectRequest(const std::string& request_json);
+  HttpResponse buildPipeline(const std::string& request_json);
+  HttpResponse unloadPipeline(const std::string& request_json);
+  HttpResponse saveProject(const std::string& request_json);
+
+private:
+  struct WorkspaceRecord {
+    std::string workspace_id;
+    std::string project;
+    std::string project_name;
+    std::string source_path;
+    std::string workspace_dir;
+    std::string input_path;
+    std::string output_dir;
+    bool build_ok = false;
+    uint64_t workspace_revision = 0;
+    std::set<std::string> loaded_pipeline_ids;
+    std::set<std::string> validated_pipeline_ids;
+  };
+
+  WorkspaceRecord* findWorkspaceLocked(const std::string& workspace_id);
+  WorkspaceRecord& openProjectLocked(const std::string& project);
+  std::string root_dir_;
+  std::shared_ptr<IConfigCompileClient> compile_client_;
+  std::shared_ptr<IValidationRunner> validation_runner_;
+  std::map<std::string, WorkspaceRecord> workspaces_;
+  std::mutex mutex_;
+};
+
+class GuiRuntimeEngine final : public IRuntimeEngine {
+public:
+  explicit GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator = nullptr);
+  ~GuiRuntimeEngine() override;
+  std::string validatePipeline(const std::string& pipeline_json) override;
+  std::string buildPipeline(const std::string& pipeline_json) override;
+  std::string unloadPipeline(const std::string& pipeline_json) override;
+  std::string run(const std::string& session_id) override;
+  std::string stop(const std::string& session_id) override;
+  std::string pushAudioStream(const std::string& query, const std::string& frame) override;
+  std::string pushAudioFrame(const std::string& query, const std::string& frame) override;
+  std::string finishAudioInput(const std::string& request_json) override;
+  std::string captureAudioFrame(const std::string& query) override;
+  std::string telemetry(const std::vector<std::string>& node_ids) override;
+  std::string pipelineEditEvent(const std::string& request_json) override;
+  std::string pipelineToolAction(const std::string& request_json) override;
+
+private:
+  struct PlaybackWorker;
+  struct CaptureWorker;
+  std::shared_ptr<BuildOrchestrator> build_orchestrator_;
+  std::unique_ptr<PlaybackWorker> playback_;
+  std::unique_ptr<CaptureWorker> capture_;
+  std::atomic<bool> running_{false};
+  std::mutex rng_mutex_;
+  std::mt19937 rng_;
+  double rnd(double min, double max);
+  int rndi(int min, int max);
 };
 
 
@@ -184,6 +306,15 @@ private:
   std::mt19937 rng_;
 };
 
+class RpcAlgorithmCostController final : public IAlgorithmCostController {
+public:
+  RpcAlgorithmCostController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveCosts(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
+};
+
 
 struct DspCoreLoadingEntry {
   int id = 0;
@@ -216,6 +347,15 @@ private:
   int rndi(int min, int max);
   std::mutex mutex_;
   std::mt19937 rng_;
+};
+
+class RpcDspCoreLoadingController final : public IDspCoreLoadingController {
+public:
+  RpcDspCoreLoadingController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveCoreLoading(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
 };
 
 
@@ -275,6 +415,15 @@ private:
   std::mt19937 rng_;
 };
 
+class RpcSystemHealthController final : public ISystemHealthController {
+public:
+  RpcSystemHealthController(std::string host = "127.0.0.1", uint16_t port = 9900);
+  std::string liveHealth(const std::map<std::string, std::string>& query) override;
+private:
+  std::string host_;
+  uint16_t port_ = 9900;
+};
+
 struct AudioIoChannelMeter {
   std::string id;
   std::string label;
@@ -329,23 +478,14 @@ private:
   std::mt19937 rng_;
 };
 
-class MockRuntimeEngine final : public IRuntimeEngine, public INodeController, public IParameterController {
+class MockRuntimeEngine final : public INodeController, public IParameterController {
 public:
   MockRuntimeEngine();
-  std::string validatePipeline(const std::string& pipeline_json) override;
-  std::string buildPipeline(const std::string& pipeline_json) override;
-  std::string run(const std::string& session_id) override;
-  std::string stop(const std::string& session_id) override;
-  std::string telemetry(const std::vector<std::string>& node_ids) override;
-  std::string pipelineEditEvent(const std::string& request_json) override;
-  std::string pipelineToolAction(const std::string& request_json) override;
   std::string onNodeAction(const std::string& request_json) override;
   std::string updateParameter(const std::string& request_json) override;
-  bool running() const { return running_.load(); }
 private:
   double rnd(double min, double max);
   int rndi(int min, int max);
-  std::atomic<bool> running_{false};
   std::mutex rng_mutex_;
   std::mt19937 rng_;
 };
@@ -362,7 +502,8 @@ public:
               std::shared_ptr<IEventLogController> event_log_controller = nullptr,
               std::shared_ptr<ISystemHealthController> system_health_controller = nullptr,
               std::shared_ptr<IAudioIoController> audio_io_controller = nullptr,
-              std::shared_ptr<IRealTimeProbeController> real_time_probe_controller = nullptr);
+              std::shared_ptr<IRealTimeProbeController> real_time_probe_controller = nullptr,
+              std::shared_ptr<BuildOrchestrator> build_orchestrator = nullptr);
   int run();
   HttpResponse handle(const HttpRequest& req);
 private:
@@ -379,6 +520,7 @@ private:
   std::shared_ptr<ISystemHealthController> system_health_controller_;
   std::shared_ptr<IAudioIoController> audio_io_controller_;
   std::shared_ptr<IRealTimeProbeController> real_time_probe_controller_;
+  std::shared_ptr<BuildOrchestrator> build_orchestrator_;
 HttpResponse serveFile(const std::string& rel_path, const std::string& content_type);
 };
 
@@ -387,5 +529,7 @@ std::vector<std::string> splitCsv(const std::string& csv);
 std::string jsonEscape(const std::string& s);
 std::string contentTypeForPath(const std::string& path);
 std::map<std::string, std::string> parseQuery(const std::string& q);
+std::string sanitizeProjectConfigPath(const std::string& input);
+std::string projectConfigRelPath(const std::string& input);
 
 } // namespace audiostudio

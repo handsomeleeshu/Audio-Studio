@@ -65,7 +65,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 enable_testing()
 
+if(CONFIG_FRAMEWORK_COMMON AND NOT CONFIG_SERVER)
+  add_subdirectory(server/framework/common "${CMAKE_BINARY_DIR}/server/framework/common")
+endif()
+
 if(CONFIG_RPC AND NOT CONFIG_SERVER)
+  if(CONFIG_DRIVERS_CORE OR CONFIG_DRIVER_SOCKET OR CONFIG_DRIVER_PIPE)
+    add_subdirectory("${PROJECT_SOURCE_DIR}/drivers" "${CMAKE_BINARY_DIR}/drivers")
+  endif()
   add_subdirectory(rpc)
 endif()
 

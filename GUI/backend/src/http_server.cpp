@@ -235,6 +235,10 @@ static void logApiRequest(const HttpRequest& req) {
   if (req.path.rfind("/api/", 0) != 0) return;
   std::cout << "\n[AudioStudio HTTP API] " << req.method << " " << req.path;
   if (!req.query.empty()) std::cout << "?" << req.query;
+  if (req.path == "/api/runtime/audio/playback/stream") {
+    std::cout << "\n  Binary body bytes: " << req.body.size() << "\n" << std::flush;
+    return;
+  }
   if (!req.body.empty()) {
     std::cout << "\n  Body: " << req.body.substr(0, 1200)
               << (req.body.size() > 1200 ? "...(truncated)" : "");
@@ -287,7 +291,8 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
                         std::shared_ptr<IEventLogController> event_log_controller,
                         std::shared_ptr<ISystemHealthController> system_health_controller,
                         std::shared_ptr<IAudioIoController> audio_io_controller,
-                        std::shared_ptr<IRealTimeProbeController> real_time_probe_controller)
+                        std::shared_ptr<IRealTimeProbeController> real_time_probe_controller,
+                        std::shared_ptr<BuildOrchestrator> build_orchestrator)
   : root_dir_(std::move(root_dir)), port_(port), runtime_(std::move(runtime)),
     node_controller_(std::move(node_controller)), parameter_controller_(std::move(parameter_controller)),
     target_config_controller_(std::move(target_config_controller)),
@@ -297,7 +302,10 @@ HttpServer::HttpServer(std::string root_dir, int port, std::shared_ptr<IRuntimeE
     event_log_controller_(std::move(event_log_controller)),
     system_health_controller_(std::move(system_health_controller)),
     audio_io_controller_(std::move(audio_io_controller)),
-    real_time_probe_controller_(std::move(real_time_probe_controller)) {}
+    real_time_probe_controller_(std::move(real_time_probe_controller)),
+    build_orchestrator_(std::move(build_orchestrator)) {
+  if (!build_orchestrator_) build_orchestrator_ = std::make_shared<BuildOrchestrator>(root_dir_);
+}
 
 HttpResponse HttpServer::serveFile(const std::string& rel_path, const std::string& content_type) {
   HttpResponse res;
@@ -347,7 +355,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   }
   if (req.method == "GET" && req.path == "/api/config") {
     auto q = parseQuery(req.query);
-    return serveFile(projectConfigRelPath(q["project"]), "application/json; charset=utf-8");
+    return build_orchestrator_->openProjectByName(q["project"]);
+  }
+  if (req.method == "POST" && req.path == "/api/project/open") {
+    return build_orchestrator_->openProjectRequest(req.body);
   }
   if (req.method == "GET" && req.path.rfind("/config/", 0) == 0 &&
       req.path.size() >= 12 && req.path.substr(req.path.size() - 5) == ".json") {
@@ -420,6 +431,7 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   }
   if (req.method == "POST" && req.path == "/api/pipeline/validate") return {200, "application/json", runtime_->validatePipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/build") return {200, "application/json", runtime_->buildPipeline(req.body)};
+  if (req.method == "POST" && req.path == "/api/pipeline/unload") return {200, "application/json", runtime_->unloadPipeline(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/edit") return {200, "application/json", runtime_->pipelineEditEvent(req.body)};
   if (req.method == "POST" && req.path == "/api/pipeline/tool") return {200, "application/json", runtime_->pipelineToolAction(req.body)};
   if (req.method == "POST" && req.path == "/api/ui/event") {
@@ -448,7 +460,7 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     if (ui_notifications.size() > 40) ui_notifications.erase(ui_notifications.begin(), ui_notifications.begin() + static_cast<long>(ui_notifications.size() - 40));
     return {200, "application/json", std::string("{\"ok\":true,\"id\":") + std::to_string(ui_notification_seq) + "}"};
   }
-  if (req.method == "POST" && req.path == "/api/project/save") return {200, "application/json", runtime_->pipelineEditEvent(std::string("{\"action\":\"project_save\",\"payload\":") + req.body + "}")};
+  if (req.method == "POST" && req.path == "/api/project/save") return build_orchestrator_->saveProject(req.body);
   if (req.method == "GET" && req.path == "/api/runtime/buffer/formats/live") {
     auto q = parseQuery(req.query);
     const std::string running_value = q["running"];
@@ -475,6 +487,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
     return {200, "application/json", ss.str()};
   }
   if (req.method == "POST" && req.path == "/api/runtime/run") return {200, "application/json", runtime_->run(req.body)};
+  if (req.method == "POST" && req.path == "/api/runtime/audio/playback/stream") return {200, "application/json", runtime_->pushAudioStream(req.query, req.body)};
+  if (req.method == "POST" && req.path == "/api/runtime/audio/playback/frame") return {200, "application/json", runtime_->pushAudioFrame(req.query, req.body)};
+  if (req.method == "POST" && req.path == "/api/runtime/audio/playback/eos") return {200, "application/json", runtime_->finishAudioInput(req.body)};
+  if (req.method == "GET" && req.path == "/api/runtime/audio/capture/frame") return {200, "application/json", runtime_->captureAudioFrame(req.query)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
   if (req.method == "POST" && req.path == "/api/inspector/inspect") {

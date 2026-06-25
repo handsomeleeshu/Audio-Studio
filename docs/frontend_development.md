@@ -74,17 +74,32 @@ Runtime Dashboard
 
 ## 参数与运行态规则
 
+- Frontend/backend runtime state enum 固定为 `NOT_READY`、`PIPE_LOADED`、`RUNNING`、`ERROR`。
 - `parameters[]`：统一参数模型；没有 `RUNNING` settable state 的参数作为 install/static 参数处理。
 - 带 `RUNNING` settable state 的 `bool`、`enum`、`int/float` 参数会在 Inspector 自动显示为 toggle、select、slider 或 number input，running 时调用 `/api/param/update`。
+- Inspector 显示参数值时优先使用 `presets[].preset_id == "inspector_preset"`；不存在时前端自动创建。该 preset 中没有值时，再回退到 module parameter default。
+- `PIPE_LOADED` 参数只在对应 pipeline build 成功后可编辑；进入 `RUNNING` 后，未声明 `RUNNING` settable state 的参数会置灰。
 - `static_schema.fields` 和 `runtime_params` 只作为旧 catalog 的兼容输入，新 built-in catalog 不再以它们为主模型。
 - 节点新增、删除、移动、连线、删线：仅 stopped 状态允许。
 - buffer dump 和 real-time probe 数据必须来自后端接口，前端不生成 fake PCM 或 fake spectrum 数据。
+
+## Endpoint 与 File I/O
+
+- `builtin.host` 和 `builtin.dai` 是普通 module type，pipeline nodes 使用 `kind: "module"` 引用 module instances，不再使用旧的 pipeline `ports` / `audio_endpoints` 描述。
+- `builtin.host` module instance 使用 `stream_name` 字符串参数；配置中仍可保留 `stream_id` 作为 as_config 兼容字段。
+- FILE_IO DAI 不是单独 module type。它是 `builtin.dai` instance，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction` 和 `file_path`。
+- `value_type: "file_io"` 由 Inspector 根据 DAI 当前方向显示为打开 WAV 或选择保存路径；port 方向切换会同步更新 `direction`。
+- `builtin.host` 在 pipeline layout 中始终显示一个 input 和一个 output，其中一侧是 SOF internal port，另一侧是 external debug port。external port 和 file input/output port 渲染为实心小圆孔，颜色仍按 input/output 原规则。
+- `builtin.file_input` 和 `builtin.file_output` 是 debug-only 前端虚拟组件：它们显示为特殊颜色，只能连接 HOST external port，并且不会进入 backend 重生成后的根 `pipelines[]`。
+- Build 请求必须提交完整 layout snapshot，同时用 `group_id` 指明本次 build 的 working group；`group_id:"ALL"` 才表示请求全量 pipeline build。
+- Build 成功只接受 backend 返回 `ok: true` 且 `runtime_state: "PIPE_LOADED"`；无 backend、HTTP 失败或 `null` response 都必须显示 Build failed。
 
 ## 连接策略
 
 连接规则由当前 standalone 入口实现，并由 `GUI/frontend/assets/js/pipelineRules.js` 的单元测试覆盖：
 
 - 必须从 output port 连到 input port。
+- `external` 只能连接 `external`，`sof` 只能连接 `sof`。
 - 不允许同一节点自连。
 - UI 手动编辑时，一个 output port 只能连接一个 input port。
 - 一个 input port 也只能有一个上游 output。

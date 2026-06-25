@@ -10,6 +10,8 @@
 
 namespace audio_studio::platform::simulator {
 
+void ensureSimulatorPipeDataLinkDeviceRegistered();
+
 class SimulatorPipeDataLinkDevice final : public drivers::datalink::IDataLinkDevice {
 public:
   drivers::datalink::DataLinkResult open(const drivers::datalink::DataLinkDeviceConfig& config) override;

@@ -5,7 +5,7 @@ const VIRTUAL_IO_MODULE_TYPES = [
     type_id: 'virtual.file_input',
     name: 'File Input',
     category: 'INPUT / OUTPUT',
-    io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }] },
+    io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }] },
     static_schema: {
       fields: [
         { key: 'source', type: 'enum', enum: ['local_file', 'demo_sine', 'demo_speech'], default: 'local_file' },
@@ -35,7 +35,7 @@ const VIRTUAL_IO_MODULE_TYPES = [
     type_id: 'virtual.audio_output',
     name: 'Audio Output',
     category: 'INPUT / OUTPUT',
-    io: { in_ports: [{ name: 'L', max_ch: 1 }, { name: 'R', max_ch: 1 }], out_ports: [] },
+    io: { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }], out_ports: [] },
     static_schema: {
       fields: [
         { key: 'sink', type: 'enum', enum: ['browser_playback', 'wav_render', 'virtual_speaker'], default: 'browser_playback' }
@@ -98,6 +98,73 @@ function buildParamDefaults(moduleType, presetValues = {}) {
   return { staticParams, runtimeParams };
 }
 
+function instanceMaxChannels(inst, fallback = 2) {
+  const caps = inst && inst.capabilities || {};
+  return Number(
+    caps.channels && caps.channels.max ||
+    caps.max_ch ||
+    caps.channels_max ||
+    inst && inst.max_ch ||
+    fallback ||
+    2
+  );
+}
+
+function endpointInstanceParamValues(inst, moduleTypeId) {
+  if (!inst) return {};
+  if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
+    return { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
+  }
+  if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
+    return {
+      dai_type: inst.dai_type || 'file_io_dai',
+      dai_index: Number(inst.dai_index || 0),
+      direction: inst.direction || 'playback',
+      file_path: inst.file_path || ''
+    };
+  }
+  return {};
+}
+
+function endpointInstancePorts(inst, moduleTypeId, fallbackInputs, fallbackOutputs) {
+  if (!inst) return { inputs: fallbackInputs, outputs: fallbackOutputs };
+  const maxCh = instanceMaxChannels(inst, 2);
+  const direction = String(inst.direction || '').toLowerCase();
+  if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
+    const playback = direction !== 'capture';
+    return {
+      inputs: [{ name: 'in', max_ch: maxCh, domain: playback ? 'external' : 'sof', external: playback }],
+      outputs: [{ name: 'out', max_ch: maxCh, domain: playback ? 'sof' : 'external', external: !playback }]
+    };
+  }
+  if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
+    const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction !== 'capture';
+    return {
+      inputs: hasInput ? [{ name: 'in', max_ch: maxCh, domain: 'sof' }] : [],
+      outputs: hasInput ? [] : [{ name: 'out', max_ch: maxCh, domain: 'sof' }]
+    };
+  }
+  return { inputs: fallbackInputs, outputs: fallbackOutputs };
+}
+
+function portDomain(port) {
+  return String(port && (port.domain || (port.external ? 'external' : 'sof')) || 'sof').toLowerCase() === 'external'
+    ? 'external'
+    : 'sof';
+}
+
+function convertPort(port, dir, index) {
+  const name = port && port.name || `${dir}${index}`;
+  const domain = portDomain(port);
+  return {
+    id: safeName(name),
+    name,
+    maxCh: port && (port.max_ch || port.maxCh) || 0,
+    domain,
+    external: domain === 'external'
+  };
+}
+
 function normalizedLibraryCategory(moduleType) {
   const text = `${moduleType && moduleType.type_id || ''} ${moduleType && moduleType.category || ''} ${moduleType && moduleType.name || ''}`.toLowerCase();
   if (text.includes('virtual.') || text.includes('port.source') || text.includes('port.sink') || text.includes('file') || text.includes('mic_input') || text.includes('audio_output')) return 'INPUT / OUTPUT';
@@ -157,6 +224,73 @@ export function resolveModuleForNode(productConfig, registry, node) {
   return { inst: null, moduleType: null, displayName: node.node_id, presetValues: {} };
 }
 
+function inferFrontendDirection(spec, moduleTypeId) {
+  const explicit = String(spec && spec.direction || '').toLowerCase();
+  if (explicit === 'input' || explicit === 'output') return explicit;
+  const typeText = String(moduleTypeId || '').toLowerCase();
+  if (typeText.includes('output')) return 'output';
+  return 'input';
+}
+
+function frontendModuleTypeFallback(moduleTypeId, direction) {
+  const isOutput = direction === 'output';
+  return {
+    type_id: moduleTypeId || (isOutput ? 'virtual.audio_output' : 'virtual.file_input'),
+    name: isOutput ? 'Audio Output' : 'File Input',
+    category: 'INPUT / OUTPUT',
+    io: isOutput
+      ? { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }], out_ports: [] }
+      : { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }] },
+    static_schema: { fields: [] },
+    runtime_params: []
+  };
+}
+
+function convertFrontendConnection(productConfig, registry, conn, index) {
+  const spec = conn.frontend_node || conn.node || {};
+  const nodeId = spec.node_id || spec.id || conn.frontend_node_id || conn.node_id || `FRONTEND_${index + 1}`;
+  const moduleTypeId = spec.module_type || spec.moduleType || conn.module_type || conn.moduleType ||
+    (String(spec.direction || conn.direction || '').toLowerCase() === 'output' ? 'virtual.audio_output' : 'virtual.file_input');
+  const direction = inferFrontendDirection({ ...conn, ...spec }, moduleTypeId);
+  const moduleType = registry.moduleTypes.get(moduleTypeId) || frontendModuleTypeFallback(moduleTypeId, direction);
+  const defaults = buildParamDefaults(moduleType, spec.static_params || {});
+  const staticParams = {
+    ...defaults.staticParams,
+    ...(spec.params || {}),
+    direction,
+    host_stream: conn.host_stream || conn.hostStream || '',
+    host_node_id: conn.host_node_id || conn.hostNodeId || '',
+    connection_id: conn.connection_id || conn.id || ''
+  };
+  const inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
+  const outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
+  return {
+    id: nodeId,
+    kind: 'frontend',
+    title: spec.name || spec.title || moduleType.name || nodeId,
+    instId: null,
+    moduleTypeId,
+    category: moduleType.category || 'INPUT / OUTPUT',
+    subtitle: `${direction} · ${staticParams.host_stream || 'host stream'}`,
+    raw: deepClone(conn),
+    moduleType: deepClone(moduleType),
+    inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
+    outputs: outputs.map((p, i) => convertPort(p, 'out', i)),
+    staticParams,
+    runtimeParams: defaults.runtimeParams,
+    core: 0,
+    x: Number(spec.ui && spec.ui.x || 0),
+    y: Number(spec.ui && spec.ui.y || 0),
+    cost: { cpu: 0, memKb: 0, latencyMs: 0, rms: -60, peak: -60 },
+    frontendConnection: deepClone(conn)
+  };
+}
+
+function frontendConnectionsForPipeline(productConfig, pipeId) {
+  const connections = Array.isArray(productConfig.frontend_connections) ? productConfig.frontend_connections : [];
+  return connections.filter(conn => conn && conn.pipeline_id === pipeId);
+}
+
 export function convertPipeline(productConfig, pipeId, options = {}) {
   const registry = buildRegistry(productConfig, options);
   const pipelines = productConfig.pipelines || [];
@@ -191,8 +325,11 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
       category = moduleType && moduleType.category || 'module';
       moduleTypeId = moduleType && moduleType.type_id || 'unknown';
       subtitle = moduleTypeId;
+      const endpointPorts = endpointInstancePorts(inst, moduleTypeId, inputs, outputs);
+      inputs = endpointPorts.inputs;
+      outputs = endpointPorts.outputs;
     }
-    const defaults = buildParamDefaults(moduleType, presetValues);
+    const defaults = buildParamDefaults(moduleType, { ...endpointInstanceParamValues(inst, moduleTypeId), ...presetValues });
     nodes.push({
       id: raw.node_id,
       kind: raw.kind,
@@ -203,8 +340,8 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
       subtitle,
       raw: deepClone(raw),
       moduleType: deepClone(moduleType),
-      inputs: inputs.map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
-      outputs: outputs.map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
+      inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
+      outputs: outputs.map((p, i) => convertPort(p, 'out', i)),
       staticParams: defaults.staticParams,
       runtimeParams: defaults.runtimeParams,
       core: moduleType && moduleType.service_binding && moduleType.service_binding.preferred_core ? Number(String(moduleType.service_binding.preferred_core).replace('core', '')) : 0,
@@ -218,7 +355,19 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
     const to = parseEndpoint(e.to);
     return { id: `edge_${idx}_${from.nodeId}_${to.nodeId}`, from, to };
   });
-  return { pipe: deepClone(pipe), nodes, edges, registry };
+  const frontendConnections = frontendConnectionsForPipeline(productConfig, pipe.pipe_id);
+  const frontendNodes = frontendConnections.map((conn, idx) => convertFrontendConnection(productConfig, registry, conn, idx));
+  const frontendEdges = frontendConnections.map((conn, idx) => {
+    const from = parseEndpoint(conn.from);
+    const to = parseEndpoint(conn.to);
+    return {
+      id: `frontend_edge_${idx}_${from.nodeId}_${to.nodeId}`,
+      from,
+      to,
+      frontendConnectionId: conn.connection_id || conn.id || ''
+    };
+  });
+  return { pipe: deepClone(pipe), nodes, edges, frontendNodes, frontendEdges, registry };
 }
 
 export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
@@ -235,8 +384,8 @@ export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
     subtitle: moduleType.type_id,
     raw: { node_id: id, kind: 'module_inline', inline: { module_type: moduleType.type_id, name: title } },
     moduleType: deepClone(moduleType),
-    inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => ({ id: safeName(p.name || `in${i}`), name: p.name || `in${i}`, maxCh: p.max_ch || 0 })),
-    outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => ({ id: safeName(p.name || `out${i}`), name: p.name || `out${i}`, maxCh: p.max_ch || 0 })),
+    inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => convertPort(p, 'in', i)),
+    outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => convertPort(p, 'out', i)),
     staticParams: defaults.staticParams,
     runtimeParams: defaults.runtimeParams,
     core: 0,

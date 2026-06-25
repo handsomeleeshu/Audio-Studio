@@ -3,7 +3,7 @@ menu "Drivers"
 config DRIVERS_CORE
   bool "Build driver manager core"
   default n
-  depends on SERVER && FRAMEWORK_COMMON
+  depends on (SERVER || GUI_BACKEND) && FRAMEWORK_COMMON
 
 source "drivers/os/Kconfig"
 source "drivers/socket/Kconfig"

@@ -35,14 +35,6 @@
 namespace audio_studio::cli {
 namespace {
 
-std::string defaultAudioDriverFactory() {
-#if defined(_WIN32)
-  return "wasapi";
-#else
-  return "alsa";
-#endif
-}
-
 struct CliOptions {
   bool self_test = false;
   std::string target;
@@ -60,7 +52,7 @@ struct CliOptions {
   uint16_t channels = 2;
   uint16_t bytes_per_sample = 2;
   std::string sample_format = "s16le";
-  std::string device = "default";
+  std::string device;
   std::string source = "firmware";
   std::string level = "info";
   bool source_set = false;
@@ -115,7 +107,7 @@ Args argsFromOptions(const CliOptions& options) {
   addValue(values, "--channels", std::to_string(options.channels));
   addValue(values, "--bytes-per-sample", std::to_string(options.bytes_per_sample));
   addValue(values, "--sample-format", options.sample_format);
-  addValue(values, "--device", options.device);
+  addIfSet(values, "--device", options.device);
   if (options.source_set) addValue(values, "--source", options.source);
   if (options.level_set) addValue(values, "--level", options.level);
   addIfSet(values, "--driver-factory", options.driver_factory);
@@ -232,8 +224,8 @@ rpc::AudioSessionConfig audioSessionConfigFromArgs(const Args& args) {
   config.channels = static_cast<uint16_t>(std::stoul(args.valueAfter("--channels", "2")));
   config.bytes_per_sample = static_cast<uint16_t>(std::stoul(args.valueAfter("--bytes-per-sample", "2")));
   config.sample_format = args.valueAfter("--sample-format", "s16le");
-  config.device_name = args.valueAfter("--device", "default");
-  config.driver_factory = args.valueAfter("--driver-factory", defaultAudioDriverFactory());
+  config.device_name = args.valueAfter("--device", "");
+  config.driver_factory = args.valueAfter("--driver-factory", "");
   config.blocking_write = args.has("--nonblocking-write") ? false : boolArg(args, "--blocking-write", true);
   return config;
 }
