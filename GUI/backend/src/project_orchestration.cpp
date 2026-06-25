@@ -1806,6 +1806,20 @@ struct GuiRuntimeEngine::PlaybackWorker {
     std::vector<uint8_t> bytes;
   };
 
+  struct BufferProgress {
+    uint64_t consumed_bytes = 0;
+    int64_t last_change_ms = 0;
+    bool seen = false;
+  };
+
+  struct BlockageStatus {
+    bool stalled = false;
+    bool system_info = false;
+    std::string gui_edge_key;
+    std::string system_edge_key;
+    uint64_t system_consumed_bytes = 0;
+  };
+
   ~PlaybackWorker() {
     stop();
   }
@@ -1827,6 +1841,10 @@ struct GuiRuntimeEngine::PlaybackWorker {
       next_push_ms_ = inferFrameDelayMs(request_json);
       sample_frame_bytes_ = inferSampleFrameBytes(request_json);
       sample_rate_ = inferSampleRate(request_json);
+    }
+    {
+      std::lock_guard<std::mutex> lock(system_info_mutex_);
+      system_buffer_progress_.clear();
     }
 
     setupRpc(request_json);
@@ -1878,6 +1896,8 @@ struct GuiRuntimeEngine::PlaybackWorker {
     size_t queued = 0;
     std::string error;
     std::string blocked_edge;
+    int64_t queue_age = 0;
+    bool rpc_ready = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!edge_key.empty()) blocked_edge_key_ = edge_key;
@@ -1891,11 +1911,13 @@ struct GuiRuntimeEngine::PlaybackWorker {
         accepted = true;
       }
       queued = queued_bytes_;
-      const int64_t age = nowMs() - last_dequeue_ms_;
-      stalled = !rpc_ready_ || queued_bytes_ >= kHighWaterBytes || age >= 100;
+      queue_age = nowMs() - last_dequeue_ms_;
+      rpc_ready = rpc_ready_;
       error = error_;
     }
     cv_.notify_one();
+    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age);
+    stalled = blockage.stalled;
 
     std::ostringstream os;
     os << "{\"ok\":" << (accepted ? "true" : "false")
@@ -1906,7 +1928,10 @@ struct GuiRuntimeEngine::PlaybackWorker {
        << ",\"queued_audio_ms\":" << queuedAudioMs(queued, sample_frame_bytes_, sample_rate_)
        << ",\"next_push_ms\":" << recommendedDelayMs(queued, sample_frame_bytes_, sample_rate_, next_push_ms_)
        << ",\"stalled\":" << (stalled ? "true" : "false")
-       << ",\"blocked_edge_key\":\"" << jsonEscape(blocked_edge) << "\"";
+       << ",\"blocked_edge_key\":\"" << jsonEscape(blockage.gui_edge_key) << "\""
+       << ",\"blocked_system_edge_key\":\"" << jsonEscape(blockage.system_edge_key) << "\""
+       << ",\"blocking_source\":\"" << (blockage.system_info ? "system_info" : (stalled ? "queue" : "none")) << "\""
+       << ",\"blocked_consumed_bytes\":" << blockage.system_consumed_bytes;
     if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
     os << "}";
     return os.str();
@@ -1931,16 +1956,20 @@ struct GuiRuntimeEngine::PlaybackWorker {
     bool stalled = false;
     std::string error;
     std::string blocked_edge;
+    int64_t queue_age = 0;
+    bool rpc_ready = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!edge_key.empty()) blocked_edge_key_ = edge_key;
       blocked_edge = edge_key.empty() ? blocked_edge_key_ : edge_key;
       queued = queued_bytes_;
       active = active_ && !eof_requested_;
-      const int64_t age = nowMs() - last_dequeue_ms_;
-      stalled = !rpc_ready_ || queued_bytes_ >= kHighWaterBytes || age >= 100;
+      queue_age = nowMs() - last_dequeue_ms_;
+      rpc_ready = rpc_ready_;
       error = error_;
     }
+    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age);
+    stalled = blockage.stalled;
 
     const bool accepted = active && stream_ok && bytes_written > 0 && error.empty();
     std::ostringstream os;
@@ -1954,7 +1983,10 @@ struct GuiRuntimeEngine::PlaybackWorker {
        << ",\"queued_audio_ms\":" << queuedAudioMs(queued, sample_frame_bytes_, sample_rate_)
        << ",\"next_push_ms\":" << recommendedDelayMs(queued, sample_frame_bytes_, sample_rate_, next_push_ms_)
        << ",\"stalled\":" << (stalled ? "true" : "false")
-       << ",\"blocked_edge_key\":\"" << jsonEscape(blocked_edge) << "\"";
+       << ",\"blocked_edge_key\":\"" << jsonEscape(blockage.gui_edge_key) << "\""
+       << ",\"blocked_system_edge_key\":\"" << jsonEscape(blockage.system_edge_key) << "\""
+       << ",\"blocking_source\":\"" << (blockage.system_info ? "system_info" : (stalled ? "queue" : "none")) << "\""
+       << ",\"blocked_consumed_bytes\":" << blockage.system_consumed_bytes;
     if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
     os << "}";
     return os.str();
@@ -2080,6 +2112,95 @@ private:
     return clampDelayMs(frame + queued_ms - target_ms);
   }
 
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+  static std::string jsonStringField(const audio_studio::rpc::JsonValue& value,
+                                     const std::string& field,
+                                     const std::string& fallback = {}) {
+    if (!value.isObject() || !value.has(field)) return fallback;
+    const auto& item = value.at(field);
+    if (item.isString()) return item.asString();
+    if (item.isNumber()) return std::to_string(item.asUInt64());
+    return fallback;
+  }
+
+  static uint64_t jsonU64Field(const audio_studio::rpc::JsonValue& value,
+                               const std::string& field,
+                               uint64_t fallback = 0) {
+    if (!value.isObject() || !value.has(field) || !value.at(field).isNumber()) return fallback;
+    return value.at(field).asUInt64();
+  }
+
+  static bool jsonBoolField(const audio_studio::rpc::JsonValue& value,
+                            const std::string& field,
+                            bool fallback = false) {
+    if (!value.isObject() || !value.has(field) || !value.at(field).isBool()) return fallback;
+    return value.at(field).asBool();
+  }
+#endif
+
+  BlockageStatus blockageStatus(const std::string& gui_edge_key,
+                                size_t queued_bytes,
+                                bool rpc_ready,
+                                int64_t queue_age_ms) {
+    BlockageStatus status;
+    status.gui_edge_key = gui_edge_key;
+    status.stalled = !rpc_ready || queued_bytes >= kHighWaterBytes || queue_age_ms >= 100;
+
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+    try {
+      auto& drivers = audio_studio::drivers::DriverManager::instance();
+      audio_studio::rpc::SocketJsonRpcTransport transport(drivers.socket(), system_info_endpoint_);
+      audio_studio::rpc::JsonRpcClient client(transport);
+      const auto result = client.call("systemInfo.buffers");
+      if (!result.isObject() || !result.has("buffers") || !result.at("buffers").isArray()) return status;
+
+      const int64_t now = nowMs();
+      bool saw_buffer = false;
+      bool found_blocked = false;
+      BlockageStatus system_status;
+      system_status.gui_edge_key = gui_edge_key;
+      system_status.system_info = true;
+
+      std::lock_guard<std::mutex> progress_lock(system_info_mutex_);
+      for (const auto& buffer : result.at("buffers").asArray()) {
+        if (!buffer.isObject()) continue;
+        const std::string system_edge = jsonStringField(buffer, "edge_key");
+        if (system_edge.empty()) continue;
+        saw_buffer = true;
+
+        const uint64_t consumed = jsonU64Field(buffer, "consumed_bytes", 0);
+        const bool reported_stalled = jsonBoolField(buffer, "stalled", false);
+        auto& progress = system_buffer_progress_[system_edge];
+        if (!progress.seen || progress.consumed_bytes != consumed) {
+          progress.seen = true;
+          progress.consumed_bytes = consumed;
+          progress.last_change_ms = now;
+          if (!reported_stalled) continue;
+        }
+
+        const bool no_consumption = progress.seen && (now - progress.last_change_ms) >= 100;
+        if (reported_stalled || no_consumption) {
+          system_status.stalled = true;
+          system_status.system_edge_key = system_edge;
+          system_status.system_consumed_bytes = consumed;
+          found_blocked = true;
+          break;
+        }
+      }
+
+      if (saw_buffer) {
+        if (!found_blocked) {
+          system_status.stalled = false;
+          system_status.system_edge_key.clear();
+        }
+        return system_status;
+      }
+    } catch (...) {
+    }
+#endif
+    return status;
+  }
+
   void setupRpc(const std::string& request_json) {
 #if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
     try {
@@ -2103,6 +2224,8 @@ private:
       endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
           request_json, "as_server_port", envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901)));
       endpoint.timeout_ms = 1000;
+      system_info_endpoint_ = endpoint;
+      system_info_endpoint_.timeout_ms = 250;
 
       json_transport_ = std::make_unique<audio_studio::rpc::SocketJsonRpcTransport>(drivers.socket(), endpoint);
       stream_transport_ = std::make_unique<audio_studio::rpc::SocketRpcStreamTransport>(drivers.socket(), endpoint);
@@ -2245,8 +2368,11 @@ private:
   std::string session_id_;
   std::string blocked_edge_key_;
   std::string error_;
+  std::mutex system_info_mutex_;
+  std::map<std::string, BufferProgress> system_buffer_progress_;
 
 #if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+  audio_studio::rpc::SocketRpcEndpoint system_info_endpoint_;
   std::unique_ptr<audio_studio::rpc::SocketJsonRpcTransport> json_transport_;
   std::unique_ptr<audio_studio::rpc::SocketRpcStreamTransport> stream_transport_;
   std::unique_ptr<audio_studio::rpc::JsonRpcClient> json_client_;

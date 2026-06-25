@@ -4660,6 +4660,8 @@ systemInfo.health
 
 GUI/backend 的 PER-ALGORITHM COST、DSP CORE LOADING、SYSTEM HEALTH controller 优先直接调用这些 JSON-RPC API。`SYSTEM HEALTH` 不再只显示单条 Memory Usage，而是按 heap/system/block 子类展开为多行，例如 system runtime heap、system heap、buffer heap、block-size heap，每行保留 free_count/total_count 或 used/free bytes。
 
+rv32qemu/SOF trace backend 对单条 trace event 的动态参数数量和字符串参数有限制，因此 heap telemetry 使用多条同 key 行合并的方式：`category/index/block_size` 标识一条 heap row，`free_count`、`total_count`、`used_bytes`、`free_bytes` 可以分多条 `ASINFO|heap|...` 发送；SystemInfoService 按同一 key 增量合并字段。SOF 侧 category 必须写成 trace format 字面量，例如 `category=system_runtime`，不能依赖运行时 `%s` 参数，否则 sof_logger 可能无法稳定解码。
+
 #### 5.X.5 GUI RUN playback frame pump
 
 Build 成功并返回 `PIPE_LOADED` 后，GUI RUN 不再只切换 mock runtime state。前端 File Input 组件选择 WAV 时缓存浏览器 `File` 对象，并解析 RIFF `fmt ` 与 `data` chunk，只把 PCM data 区间用于运行期推送；工程 JSON 和 workspace snapshot 只保存文件名、path hint 与音频参数，不保存浏览器 File 对象。
@@ -4681,7 +4683,7 @@ Build 成功并返回 `PIPE_LOADED` 后，GUI RUN 不再只切换 mock runtime s
 }
 ```
 
-GUI/backend 的 `GuiRuntimeEngine` 根据该描述创建 as_server playback session，并启动独立 worker thread。frontend 通过 `POST /api/runtime/audio/playback/stream?...` 发送 `application/octet-stream` frame，把 PCM bytes 放入 backend queue；随后通过 `POST /api/runtime/audio/playback/frame` 发送 `frame_index`、`offset`、`bytes_written` 等 JSON 元信息，并从该响应读取 `{accepted, queued_bytes, queued_audio_ms, next_push_ms, stalled, blocked_edge_key}`，不阻塞 UI。`queued_audio_ms` 和 `next_push_ms` 按 queue 内 stream bytes、channel count、sample rate、sample bits 计算；当 queue 内音频时长超过目标水位时，backend 增大 `next_push_ms`，指导 frontend 延后推下一帧。worker thread 负责把 queue 中的数据通过 `AudioRpcClient` 写入 as_server `audio.createPlaybackSession` 对应 stream。
+GUI/backend 的 `GuiRuntimeEngine` 根据该描述创建 as_server playback session，并启动独立 worker thread。frontend 通过 `POST /api/runtime/audio/playback/stream?...` 发送 `application/octet-stream` frame，把 PCM bytes 放入 backend queue；随后通过 `POST /api/runtime/audio/playback/frame` 发送 `frame_index`、`offset`、`bytes_written` 等 JSON 元信息，并从该响应读取 `{accepted, queued_bytes, queued_audio_ms, next_push_ms, stalled, blocked_edge_key, blocked_system_edge_key, blocking_source, blocked_consumed_bytes}`，不阻塞 UI。`queued_audio_ms` 和 `next_push_ms` 按 queue 内 stream bytes、channel count、sample rate、sample bits 计算；当 queue 内音频时长超过目标水位时，backend 增大 `next_push_ms`，指导 frontend 延后推下一帧。worker thread 负责把 queue 中的数据通过 `AudioRpcClient` 写入 as_server `audio.createPlaybackSession` 对应 stream。
 
 File Output/capture 不在 backend 建 queue。frontend 按 `GET /api/runtime/audio/capture/frame?max_bytes=...` 定时读取；backend 每次直接从 as_server capture stream 读取一帧并返回 `{bytes, queued_bytes:0, next_poll_ms, data_base64}`。`next_poll_ms` 由本次读取 bytes 按 channel count、sample rate、sample bits 换算，供 frontend 安排下一次读取。
 
@@ -4689,10 +4691,14 @@ File Output/capture 不在 backend 建 queue。frontend 按 `GET /api/runtime/au
 
 ```text
 1. backend queue 高水位、RPC 未就绪或 100ms 没有 dequeue 时，立即在 frame response 中报告 stalled。
-2. GUI/backend 可结合 systemInfo.buffers 中某个 buffer 连续 100ms consumed_bytes 为 0 的状态，把 blocked_edge_key 映射回前端连接线。
+2. GUI/backend 通过独立短连接 JSON-RPC 调用 as_server `systemInfo.buffers`。同一个 SOF buffer 的 `consumed_bytes` 连续 100ms 不变，或 SOF 明确上报 `stalled:true`，则 frame response 使用 `blocking_source:"system_info"`，保留前端连接 `blocked_edge_key`，并附带 SOF buffer `blocked_system_edge_key`。
 ```
 
 frontend 收到 `stalled` 后，按 `blocked_edge_key` 给对应连接 buffer 添加红色闪烁运行态；仍保持原 UI 结构、布局和面板风格不变。恢复消费后，后端返回 `stalled:false`，前端清除闪烁。
+
+#### 5.X.6 GUI rv32qemu debug launch
+
+VSCode `Audio Studio GUI: Full Stack Debug` compound 覆盖 GUI frontend、GUI backend、as_server 和 rv32qemu simulator。`Audio Studio GUI: Simulator Keep Alive` 不再是普通 `node-terminal` 运行项，而是 `cppdbg` qemu 调试项：它通过 `debugServerPath/debugServerArgs` 调用 `application/rv32qemu/sof-build-test.py`，helper 给 qemu 增加 `-gdb tcp::<port>` 和可选 `-S`，VSCode 使用 RISC-V gdb 连接 `${input:audioStudioQemuGdbPort}`。这样同一 debug group 内既保留 GUI keep-alive test list，又能在 SOF rv32qemu firmware 中打断点。
 
 关键实现边界：
 

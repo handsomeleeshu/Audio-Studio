@@ -223,10 +223,17 @@ bool SystemInfoService::applyRecordLocked(const std::string& record) {
     heap.category = fieldString(fields, "category", "heap");
     heap.index = fieldInt(fields, "index", 0);
     heap.block_size = fieldU32(fields, "block_size", 0);
-    heap.free_count = fieldU32(fields, "free_count", 0);
-    heap.total_count = fieldU32(fields, "total_count", 0);
-    heap.used_bytes = fieldU64(fields, "used_bytes", 0);
-    heap.free_bytes = fieldU64(fields, "free_bytes", 0);
+    auto existing = std::find_if(snapshot_.heap.begin(), snapshot_.heap.end(),
+                                 [&](const SystemHeapInfo& item) {
+                                   return item.category == heap.category &&
+                                          item.index == heap.index &&
+                                          item.block_size == heap.block_size;
+                                 });
+    if (existing != snapshot_.heap.end()) heap = *existing;
+    if (fields.find("free_count") != fields.end()) heap.free_count = fieldU32(fields, "free_count", heap.free_count);
+    if (fields.find("total_count") != fields.end()) heap.total_count = fieldU32(fields, "total_count", heap.total_count);
+    if (fields.find("used_bytes") != fields.end()) heap.used_bytes = fieldU64(fields, "used_bytes", heap.used_bytes);
+    if (fields.find("free_bytes") != fields.end()) heap.free_bytes = fieldU64(fields, "free_bytes", heap.free_bytes);
     upsert(snapshot_.heap, heap, [&](const SystemHeapInfo& item) {
       return item.category == heap.category &&
              item.index == heap.index &&

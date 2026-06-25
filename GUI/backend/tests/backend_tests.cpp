@@ -372,6 +372,8 @@ int main() {
   assert(stream_res.body.find("\"stream\":true") != std::string::npos);
   assert(stream_res.body.find("\"queued_audio_ms\"") != std::string::npos);
   assert(stream_res.body.find("\"next_push_ms\"") != std::string::npos);
+  assert(stream_res.body.find("\"blocked_system_edge_key\"") != std::string::npos);
+  assert(stream_res.body.find("\"blocking_source\"") != std::string::npos);
 
   audiostudio::HttpRequest frame_req;
   frame_req.method = "POST";
@@ -382,6 +384,8 @@ int main() {
   assert(frame_res.body.find("\"frame\":true") != std::string::npos);
   assert(frame_res.body.find("\"queued_audio_ms\"") != std::string::npos);
   assert(frame_res.body.find("\"next_push_ms\"") != std::string::npos);
+  assert(frame_res.body.find("\"blocked_system_edge_key\"") != std::string::npos);
+  assert(frame_res.body.find("\"blocking_source\"") != std::string::npos);
 
   audiostudio::HttpRequest eos_req;
   eos_req.method = "POST";

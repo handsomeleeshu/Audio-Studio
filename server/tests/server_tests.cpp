@@ -690,6 +690,14 @@ int main() {
       "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|from=eq_1.out|to=sink.in|size_bytes=8192|avail_bytes=2048|produced_bytes=4800|consumed_bytes=4700", ""}));
     assert(system_info.consumeLogEntry({5, "info", "SOF",
       "SOF 0 INFO ASINFO|heap|category=system_runtime|index=0|block_size=256|free_count=5|total_count=16|used_bytes=2816|free_bytes=1280", ""}));
+    assert(system_info.consumeLogEntry({6, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=runtime|index=0|block_size=512|free_count=3", ""}));
+    assert(system_info.consumeLogEntry({7, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=runtime|index=0|block_size=512|total_count=8", ""}));
+    assert(system_info.consumeLogEntry({8, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=runtime|index=0|block_size=512|used_bytes=2560", ""}));
+    assert(system_info.consumeLogEntry({9, "info", "SOF",
+      "SOF 0 INFO ASINFO|heap|category=runtime|index=0|block_size=512|free_bytes=1536", ""}));
     auto snapshot = system_info.snapshot();
     assert(snapshot.connected);
     assert(snapshot.cores.size() == 1);
@@ -699,13 +707,22 @@ int main() {
     assert(snapshot.modules.front().state == "ACTIVE");
     assert(snapshot.buffers.size() == 1);
     assert(snapshot.buffers.front().consumed_bytes == 4700);
-    assert(snapshot.heap.size() == 1);
+    assert(snapshot.heap.size() == 2);
     assert(snapshot.heap.front().free_count == 5);
-    assert(system_info.consumeLogEntry({6, "info", "SOF",
+    auto runtime_heap = std::find_if(snapshot.heap.begin(), snapshot.heap.end(),
+                                     [](const auto& heap) {
+                                       return heap.category == "runtime" && heap.block_size == 512;
+                                     });
+    assert(runtime_heap != snapshot.heap.end());
+    assert(runtime_heap->free_count == 3);
+    assert(runtime_heap->total_count == 8);
+    assert(runtime_heap->used_bytes == 2560);
+    assert(runtime_heap->free_bytes == 1536);
+    assert(system_info.consumeLogEntry({10, "info", "SOF",
       "SOF 0 INFO ASINFO|module|id=eq_1|cpu_percent=13.5|memory_bytes=8192|latency_ms=0.8", ""}));
-    assert(system_info.consumeLogEntry({7, "info", "SOF",
+    assert(system_info.consumeLogEntry({11, "info", "SOF",
       "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|stalled=1", ""}));
-    assert(system_info.consumeLogEntry({8, "info", "SOF",
+    assert(system_info.consumeLogEntry({12, "info", "SOF",
       "SOF 0 INFO ASINFO|module|id=eq_1|state=6", ""}));
     snapshot = system_info.snapshot();
     assert(snapshot.modules.size() == 1);

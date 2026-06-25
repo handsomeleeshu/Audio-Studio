@@ -4003,6 +4003,9 @@
     function inspectorPresetValuesForNode(n) {
       return { ...(inspectorPresetEntryForNode(n, false)?.values || {}) };
     }
+    function snapshotParamsForNode(n) {
+      return { ...(n?.paramValues || {}), ...inspectorPresetValuesForNode(n) };
+    }
     function moduleParamDefaultValue(p) {
       if (!p) return '';
       if (p.default !== undefined) return p.default;
@@ -4149,7 +4152,7 @@
         pipelineId: inferNodePipelineId(n),
         pipelineNodeId: originalNodeId(n),
         module_type: n.moduleTypeId,
-        params: inspectorPresetValuesForNode(n),
+        params: snapshotParamsForNode(n),
         debug_file_io: isDebugFileIoNode(n),
         in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
         out_ports: nodePortList(n, 'out').map(p => p.name || 'out'),
@@ -4177,7 +4180,7 @@
         pipelineId: inferNodePipelineId(n),
         pipelineNodeId: originalNodeId(n),
         module_type: n.moduleTypeId,
-        params: inspectorPresetValuesForNode(n),
+        params: snapshotParamsForNode(n),
         in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
         out_ports: nodePortList(n, 'out').map(p => p.name || 'out'),
         port_domains: portDomainsForNode(n),
@@ -4589,6 +4592,7 @@
       const fallback = { type_id: 'graph.unknown', category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
       const c = componentFromModuleType(mt || fallback);
       if (displayName) c.name = displayName;
+      c.paramValues = { ...params };
       const typeId = String(mt?.type_id || '').toLowerCase();
       if (typeId === 'builtin.host' || typeId === 'host') {
         const maxCh = maxChannelsFromParams(params, 2);

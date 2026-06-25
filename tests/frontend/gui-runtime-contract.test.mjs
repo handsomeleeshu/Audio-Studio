@@ -40,6 +40,15 @@ assertNotIncludes("addLog('ok', 'Build successful', 'Smart Speaker v3 / HiFi5')"
 assertIncludes('ensureInspectorPreset', 'Inspector should create or find inspector_preset');
 assertIncludes("preset_id: 'inspector_preset'", 'inspector preset id should be stable');
 assertIncludes('moduleParamDefaultValue', 'Inspector should fall back to module parameter defaults');
+assertIncludes('function snapshotParamsForNode', 'pipeline snapshot must preserve node paramValues loaded from platform JSON');
+assert.ok(
+  /function snapshotParamsForNode[\s\S]*n\?\.paramValues[\s\S]*inspectorPresetValuesForNode/.test(html),
+  'snapshot params should merge platform-loaded node paramValues with Inspector overrides'
+);
+assert.ok(
+  /function componentFromResolvedModule[\s\S]*c\.paramValues\s*=\s*\{\s*\.\.\.params\s*\}/.test(html),
+  'nodes created from platform JSON should keep their original params in paramValues'
+);
 assertIncludes('isParamEnabledForNode', 'Inspector controls should be gated by runtime state');
 assertIncludes('writeInspectorPresetParam', 'Inspector changes should write to inspector_preset');
 assertIncludes('data-param-disabled', 'Inspector disabled state should be reflected in DOM');
