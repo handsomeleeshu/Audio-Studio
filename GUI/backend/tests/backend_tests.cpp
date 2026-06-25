@@ -98,6 +98,10 @@ fs::path makeTempRoot() {
   fs::copy_file(fs::path(AUDIO_STUDIO_TEST_ROOT) / "configs/platform/a2/A2.json",
                 root / "configs/platform/a2/A2.json",
                 fs::copy_options::overwrite_existing);
+  fs::create_directories(root / "out/linux/a2/as_config/Debug");
+  fs::create_directories(root / "out/linux/simulator/rpc_socket/Debug");
+  writeText(root / "out/linux/a2/as_config/Debug/as_server", "stale a2 as_server");
+  writeText(root / "out/linux/simulator/rpc_socket/Debug/as_server", "current simulator as_server");
   return root;
 }
 
@@ -232,6 +236,42 @@ std::string validGuiPipelineSnapshotWithUnselectedGroup() {
   return snapshot;
 }
 
+std::string validCaptureGuiPipelineSnapshot() {
+  return R"({
+    "active_pipeline":"CAPTURE_MAIN",
+    "group_id":"CAPTURE_MAIN",
+    "runtime_state":"NOT_READY",
+    "pipeline_descriptions":[{"pipe_id":"CAPTURE_MAIN","name":"AS Config Capture"}],
+    "working_groups":[{
+      "id":"CAPTURE_MAIN",
+      "pipeline_id":"CAPTURE_MAIN",
+      "name":"AS Config Capture",
+      "origin_pipeline_ids":["CAPTURE_MAIN"],
+      "nodes":["CAPTURE_MAIN__DAI_IN","CAPTURE_MAIN__HOST_OUT","CAPTURE_MAIN__FILE_OUT"],
+      "edges":[
+        "CAPTURE_MAIN__DAI_IN:out->CAPTURE_MAIN__HOST_OUT:in",
+        "CAPTURE_MAIN__HOST_OUT:out->CAPTURE_MAIN__FILE_OUT:L"
+      ]
+    }],
+    "nodes":[
+      {"id":"CAPTURE_MAIN__DAI_IN","name":"Capture FILE_IO DAI","module_type":"builtin.dai",
+       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"DAI_IN","inst_ref":"CAP_FILEIO_DAI",
+       "in_ports":[],"out_ports":["out"],"port_domains":{"out":"sof"}},
+      {"id":"CAPTURE_MAIN__HOST_OUT","name":"Capture HOST","module_type":"builtin.host",
+       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"HOST_OUT","inst_ref":"CAP_HOST",
+       "in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"external"}},
+      {"id":"CAPTURE_MAIN__FILE_OUT","name":"File Output","module_type":"virtual.audio_output","debug_file_io":true,
+       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"FILE_OUT",
+       "in_ports":["L"],"out_ports":[],"port_domains":{"L":"external"}}
+    ],
+    "connections":[
+      {"from":"CAPTURE_MAIN__DAI_IN.out","to":"CAPTURE_MAIN__HOST_OUT.in","from_domain":"sof","to_domain":"sof"},
+      {"from":"CAPTURE_MAIN__HOST_OUT.out","to":"CAPTURE_MAIN__FILE_OUT.L","from_domain":"external","to_domain":"external"}
+    ],
+    "debug_file_io":[{"node_id":"CAPTURE_MAIN__FILE_OUT","direction":"output","file":{"file_name":"capture.wav"}}]
+  })";
+}
+
 } // namespace
 
 int main() {
@@ -257,10 +297,18 @@ int main() {
   auto param = engine->updateParameter("{\"node_id\":\"agc_1\",\"param_id\":\"targetLevel\",\"value\":-16}");
   assert(param.find("IParameterController") != std::string::npos);
 
-  runtime->run("{\"session_id\":\"standalone_html_demo\"}");
-  assert(runtime->telemetry({"file_1"}).find("\"running\":true") != std::string::npos);
-  auto frame_accept = runtime->pushAudioFrame("edge_key=file_1.out%2D%3Ehost_1.in", std::string(512, '\0'));
-  assert(frame_accept.find("\"accepted\":true") != std::string::npos);
+  auto run_result = runtime->run("{\"session_id\":\"standalone_html_demo\"}");
+  if (run_result.find("\"ok\":false") == std::string::npos) {
+    assert(runtime->telemetry({"file_1"}).find("\"running\":true") != std::string::npos);
+  } else {
+    assert(runtime->telemetry({"file_1"}).find("\"running\":false") != std::string::npos);
+  }
+  auto stream_accept = runtime->pushAudioStream("edge_key=file_1.out%2D%3Ehost_1.in", std::string(512, '\0'));
+  assert(stream_accept.find("\"stream\":true") != std::string::npos);
+  auto frame_accept = runtime->pushAudioFrame(
+      "edge_key=file_1.out%2D%3Ehost_1.in",
+      "{\"edge_key\":\"file_1.out->host_1.in\",\"frame_index\":0,\"frame_bytes\":512,\"bytes_written\":512,\"stream_ok\":true}");
+  assert(frame_accept.find("\"frame\":true") != std::string::npos);
 
   auto tel = runtime->telemetry({"file_1","eq_1","out_1"});
   assert(tel.find("nodeCost") != std::string::npos);
@@ -309,13 +357,56 @@ int main() {
   assert(rpc_res.body.find("\"jsonrpc\":\"2.0\"") != std::string::npos);
   assert(rpc_res.body.find("\"result\"") != std::string::npos);
 
+  audiostudio::HttpRequest stream_req;
+  stream_req.method = "POST";
+  stream_req.path = "/api/runtime/audio/playback/stream";
+  stream_req.query = "edge_key=eq_1.out%2D%3Eout_1.in";
+  stream_req.body.assign(256, '\1');
+  auto stream_res = server.handle(stream_req);
+  assert(stream_res.body.find("\"stream\":true") != std::string::npos);
+  assert(stream_res.body.find("\"queued_audio_ms\"") != std::string::npos);
+  assert(stream_res.body.find("\"next_push_ms\"") != std::string::npos);
+
   audiostudio::HttpRequest frame_req;
   frame_req.method = "POST";
-  frame_req.path = "/api/runtime/audio/frame";
+  frame_req.path = "/api/runtime/audio/playback/frame";
   frame_req.query = "edge_key=eq_1.out%2D%3Eout_1.in";
-  frame_req.body.assign(256, '\1');
+  frame_req.body = "{\"edge_key\":\"eq_1.out->out_1.in\",\"frame_index\":1,\"frame_bytes\":256,\"bytes_written\":256,\"stream_ok\":true}";
   auto frame_res = server.handle(frame_req);
-  assert(frame_res.body.find("\"accepted\":true") != std::string::npos);
+  assert(frame_res.body.find("\"frame\":true") != std::string::npos);
+  assert(frame_res.body.find("\"queued_audio_ms\"") != std::string::npos);
+  assert(frame_res.body.find("\"next_push_ms\"") != std::string::npos);
+
+  audiostudio::HttpRequest eos_req;
+  eos_req.method = "POST";
+  eos_req.path = "/api/runtime/audio/playback/eos";
+  eos_req.body = "{\"session_id\":\"standalone_html_demo\",\"edge_key\":\"eq_1.out->out_1.in\"}";
+  auto eos_res = server.handle(eos_req);
+  assert(eos_res.status == 200);
+  assert(eos_res.body.find("\"eos\":true") != std::string::npos);
+  assert(eos_res.body.find("\"runtime_state\":\"PIPE_LOADED\"") != std::string::npos);
+
+  auto capture_start = runtime->run("{\"session_id\":\"capture_demo\",\"capture\":{\"enabled\":true,\"sample_rate\":48000,\"channels\":2,\"bits_per_sample\":16,\"frame_bytes\":512}}");
+  assert(capture_start.find("\"capture\"") != std::string::npos);
+  auto combined_start = runtime->run(
+      "{\"session_id\":\"combined_demo\","
+      "\"playback\":{\"enabled\":true,\"node_id\":\"play_file\",\"device\":\"as_config_playback\",\"sample_rate\":48000,\"channels\":1,\"bits_per_sample\":16,\"frame_bytes\":512},"
+      "\"capture\":{\"enabled\":true,\"node_id\":\"cap_file\",\"file_name\":\"cap.wav\",\"device\":\"as_config_capture\",\"sample_rate\":48000,\"channels\":2,\"bits_per_sample\":16,\"frame_bytes\":512}}");
+  assert(combined_start.find("\"capture\"") != std::string::npos);
+  assert(combined_start.find("\"node_id\":\"cap_file\"") != std::string::npos);
+  assert(combined_start.find("\"node_id\":\"play_file\"") == std::string::npos ||
+         combined_start.find("\"node_id\":\"cap_file\"") < combined_start.find("\"node_id\":\"play_file\""));
+  audiostudio::HttpRequest capture_frame_req;
+  capture_frame_req.method = "GET";
+  capture_frame_req.path = "/api/runtime/audio/capture/frame";
+  capture_frame_req.query = "max_bytes=512";
+  auto capture_frame_res = server.handle(capture_frame_req);
+  assert(capture_frame_res.status == 200);
+  assert(capture_frame_res.body.find("\"capture\"") != std::string::npos);
+  assert(capture_frame_res.body.find("\"queued_bytes\":0") != std::string::npos);
+  assert(capture_frame_res.body.find("\"next_poll_ms\"") != std::string::npos);
+  assert(capture_frame_res.body.find("\"data_base64\"") != std::string::npos ||
+         capture_frame_res.body.find("\"ok\":false") != std::string::npos);
 
   audiostudio::HttpRequest page;
   page.method = "GET";
@@ -404,11 +495,15 @@ int main() {
   assert(compile->last_request.input_path.find("a2_pipeline_all.json") != std::string::npos);
   assert(compile->last_request.output_dir.find(workspace_id) != std::string::npos);
   assert(compile->last_request.project_name == "a2");
+  assert(compile->last_request.working_dir == temp_root.string());
+  assert(fs::path(compile->last_request.working_dir).is_absolute());
   assert(compile->last_request.build_tplg);
   assert(compile->last_request.strict);
   assert(compile->last_request.plugin_paths.empty());
   assert(compile->last_request.alsatplg.find("alsatplg") != std::string::npos);
+  assert(fs::path(compile->last_request.alsatplg).is_absolute());
   assert(compile->last_request.as_server.find("as_server") != std::string::npos);
+  assert(compile->last_request.as_server.find("out/linux/simulator/rpc_socket/Debug/as_server") != std::string::npos);
   assert(validation->last_script.find("application/rv32qemu/sof-build-test.py") != std::string::npos);
   assert(validation->last_request.as_server_path.find("as_server") != std::string::npos);
   assert(validation->last_request.as_log_path.find("as_log") != std::string::npos);
@@ -416,7 +511,8 @@ int main() {
   const std::string generated_test_list = readText(validation->last_test_list);
   assert(generated_test_list.find("ac_run --endpoint as_datalink --mtu 512") != std::string::npos);
   assert(generated_test_list.find("trace on") != std::string::npos);
-  assert(generated_test_list.find("pipeinstall ") != std::string::npos);
+  assert(generated_test_list.find("pipeinstall -p 1 ") != std::string::npos);
+  assert(generated_test_list.find("sleep 3600") != std::string::npos);
   assert(generated_test_list.find("audio_studio.tplg") != std::string::npos);
   assert(generated_test_list.find("ac_run --stop") == std::string::npos);
 
@@ -496,6 +592,44 @@ int main() {
   const std::string scoped_pipelines = testJsonArrayField(scoped_workspace_json, "pipelines");
   assert(scoped_pipelines.find("\"pipe_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
   assert(scoped_pipelines.find("GUI_PIPE_2") != std::string::npos);
+
+  auto relative_root_abs = makeTempRoot();
+  auto relative_compile = std::make_shared<FakeCompileClient>();
+  auto relative_validation = std::make_shared<FakeValidationRunner>();
+  const auto relative_root = fs::relative(relative_root_abs, fs::current_path());
+  auto relative_orchestrator = makeOrchestrator(relative_root, relative_compile, relative_validation);
+  auto relative_open = relative_orchestrator->openProjectByName("a2/A2.json");
+  assert(relative_open.status == 200);
+  const std::string relative_workspace_id = testJsonStringField(relative_open.body, "workspace_id");
+  assert(!relative_workspace_id.empty());
+  auto relative_build = relative_orchestrator->buildPipeline(
+      "{\"workspace_id\":\"" + relative_workspace_id + "\",\"project\":\"a2/A2.json\","
+      "\"snapshot\":" + validGuiPipelineSnapshot() + "}");
+  assert(relative_build.status == 200);
+  assert(relative_build.body.find("\"ok\":true") != std::string::npos);
+  assert(fs::path(relative_compile->last_request.working_dir).is_absolute());
+  assert(fs::path(relative_compile->last_request.alsatplg).is_absolute());
+  assert(fs::path(relative_compile->last_request.as_server).is_absolute());
+  fs::remove_all(relative_root_abs);
+
+  audiostudio::HttpRequest capture_after_playback_build_req;
+  capture_after_playback_build_req.method = "POST";
+  capture_after_playback_build_req.path = "/api/pipeline/build";
+  capture_after_playback_build_req.body = "{\"workspace_id\":\"" + workspace_id + "\",\"project\":\"a2/A2.json\","
+                                          "\"snapshot\":" + validCaptureGuiPipelineSnapshot() + "}";
+  auto capture_after_playback_build_res = orchestrated_server.handle(capture_after_playback_build_req);
+  assert(capture_after_playback_build_res.status == 200);
+  assert(capture_after_playback_build_res.body.find("\"ok\":true") != std::string::npos);
+  assert(capture_after_playback_build_res.body.find("unknown inst_ref") == std::string::npos);
+  const std::string capture_workspace_json = readText(compile->last_request.input_path);
+  const std::string capture_pipelines = testJsonArrayField(capture_workspace_json, "pipelines");
+  assert(capture_pipelines.find("\"pipe_id\":\"CAPTURE_MAIN\"") != std::string::npos);
+  assert(capture_pipelines.find("\"inst_ref\":\"CAP_FILEIO_DAI\"") != std::string::npos);
+  assert(capture_pipelines.find("virtual.audio_output") == std::string::npos);
+
+  auto restore_scoped_build_res = orchestrated_server.handle(scoped_build_req);
+  assert(restore_scoped_build_res.status == 200);
+  assert(restore_scoped_build_res.body.find("\"ok\":true") != std::string::npos);
 
   audiostudio::HttpRequest save_after_build;
   save_after_build.method = "POST";

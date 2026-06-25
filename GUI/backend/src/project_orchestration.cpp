@@ -138,6 +138,11 @@ std::string safeId(const std::string& value) {
   return out.empty() ? "project" : out;
 }
 
+std::string lowerAscii(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return value;
+}
+
 std::string projectNameFromProjectPath(const std::string& project) {
   const auto slash = project.find('/');
   if (slash == std::string::npos) {
@@ -221,6 +226,31 @@ std::string appendObjectFields(const std::string& json, const std::string& field
   out += fields_without_leading_comma;
   out += json.substr(end - 1);
   return out;
+}
+
+std::string directionRuntimeRequest(const std::string& request_json, const std::string& field) {
+  std::string sub_request = jsonMemberValue(request_json, field);
+  if (sub_request.empty() || sub_request.front() != '{') return request_json;
+
+  std::ostringstream inherited;
+  const std::vector<std::string> keys = {
+    "session_id",
+    "as_server_host",
+    "as_server_port",
+    "driver_factory",
+  };
+  bool first = true;
+  for (const auto& key : keys) {
+    if (!jsonMemberValue(sub_request, key).empty()) continue;
+    const auto value = jsonMemberValue(request_json, key);
+    if (value.empty()) continue;
+    if (!first) inherited << ",";
+    inherited << "\"" << key << "\":" << value;
+    first = false;
+  }
+
+  const auto fields = inherited.str();
+  return fields.empty() ? sub_request : appendObjectFields(sub_request, fields);
 }
 
 bool topLevelMemberRange(const std::string& object_json, const std::string& field, size_t& member_begin, size_t& member_end) {
@@ -490,6 +520,48 @@ std::map<std::string, std::string> originalModuleInstanceObjects(const std::stri
   for (const auto& object : jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "module_instances"))) {
     const std::string inst_id = simpleJsonStringField(object, "inst_id");
     if (!inst_id.empty()) out[inst_id] = object;
+  }
+  return out;
+}
+
+std::string mergeTopLevelObjectArrayById(const std::string& current_json,
+                                         const std::string& source_json,
+                                         const std::string& field,
+                                         const std::string& id_field) {
+  std::vector<std::string> objects;
+  std::map<std::string, size_t> index_by_id;
+  auto add_objects = [&](const std::string& owner_json) {
+    for (const auto& object : jsonObjectArrayItems(topLevelJsonMemberValue(owner_json, field))) {
+      const std::string id = simpleJsonStringField(object, id_field);
+      if (id.empty()) {
+        objects.push_back(object);
+        continue;
+      }
+      const auto it = index_by_id.find(id);
+      if (it == index_by_id.end()) {
+        index_by_id[id] = objects.size();
+        objects.push_back(object);
+      } else {
+        objects[it->second] = object;
+      }
+    }
+  };
+  add_objects(source_json);
+  add_objects(current_json);
+  return jsonArrayFromObjects(objects);
+}
+
+std::string workspaceJsonWithSourceBaseline(const std::string& workspace_json,
+                                            const std::string& source_json) {
+  if (source_json.empty()) return workspace_json;
+  std::string out = workspace_json;
+  out = upsertObjectMember(out, "module_instances",
+      mergeTopLevelObjectArrayById(workspace_json, source_json, "module_instances", "inst_id"));
+  out = upsertObjectMember(out, "pipelines",
+      mergeTopLevelObjectArrayById(workspace_json, source_json, "pipelines", "pipe_id"));
+  if (topLevelJsonMemberValue(out, "frontend_connections").empty()) {
+    const std::string frontend_connections = topLevelJsonMemberValue(source_json, "frontend_connections");
+    if (!frontend_connections.empty()) out = upsertObjectMember(out, "frontend_connections", frontend_connections);
   }
   return out;
 }
@@ -813,6 +885,42 @@ std::string buildExtraFields(const RegeneratedProject& regenerated, uint64_t wor
   return os.str();
 }
 
+std::string validationPipelineSelector(const std::string& request_json,
+                                       const std::string& snapshot_json,
+                                       const std::vector<std::string>& pipeline_ids) {
+  if (pipeline_ids.empty()) return {};
+
+  const auto groups = snapshotGroups(snapshot_json);
+  auto pipeline_from_group = [&](const std::string& group_id) {
+    if (group_id.empty() || group_id == "ALL") return std::string();
+    for (const auto& group : groups) {
+      if (group.id != group_id && group.pipeline_id != group_id) continue;
+      if (group.origin_pipeline_ids.size() == 1) return group.origin_pipeline_ids.front();
+      if (!group.pipeline_id.empty() && group.pipeline_id != "ALL") return group.pipeline_id;
+    }
+    return group_id;
+  };
+  auto selector_for_pipeline = [&](const std::string& pipe_id) {
+    if (pipe_id.empty() || pipe_id == "ALL") return std::string();
+    for (size_t i = 0; i < pipeline_ids.size(); ++i) {
+      if (pipeline_ids[i] == pipe_id) return std::to_string(i + 1);
+    }
+    return std::string();
+  };
+
+  const std::string group_id = simpleJsonStringField(
+      request_json, "group_id", simpleJsonStringField(snapshot_json, "group_id"));
+  std::string selector = selector_for_pipeline(pipeline_from_group(group_id));
+  if (!selector.empty()) return selector;
+
+  const std::string active_pipeline = simpleJsonStringField(
+      request_json, "active_pipeline", simpleJsonStringField(snapshot_json, "active_pipeline"));
+  selector = selector_for_pipeline(active_pipeline);
+  if (!selector.empty()) return selector;
+
+  return "1";
+}
+
 std::string jsonStringArray(const std::vector<std::string>& values) {
   std::ostringstream os;
   os << "[";
@@ -822,6 +930,23 @@ std::string jsonStringArray(const std::vector<std::string>& values) {
   }
   os << "]";
   return os.str();
+}
+
+std::string base64Encode(const std::vector<uint8_t>& data) {
+  static constexpr char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((data.size() + 2) / 3) * 4);
+  for (size_t i = 0; i < data.size(); i += 3) {
+    const uint32_t b0 = data[i];
+    const uint32_t b1 = (i + 1 < data.size()) ? data[i + 1] : 0;
+    const uint32_t b2 = (i + 2 < data.size()) ? data[i + 2] : 0;
+    const uint32_t n = (b0 << 16) | (b1 << 8) | b2;
+    out.push_back(table[(n >> 18) & 0x3f]);
+    out.push_back(table[(n >> 12) & 0x3f]);
+    out.push_back(i + 1 < data.size() ? table[(n >> 6) & 0x3f] : '=');
+    out.push_back(i + 2 < data.size() ? table[n & 0x3f] : '=');
+  }
+  return out;
 }
 
 std::string shellQuote(const std::string& value) {
@@ -880,9 +1005,9 @@ std::string resolveCompileServerPath(const std::string& root_dir) {
   const auto cwd_roots = pathAndParents(fs::current_path());
   roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
   const std::string resolved = firstExistingRelativeToRoots(roots, {
-      "out/linux/a2/as_config/Debug/as_server",
-      "out/linux/a2/rpc_socket/Debug/as_server",
       "out/linux/simulator/rpc_socket/Debug/as_server",
+      "out/linux/a2/rpc_socket/Debug/as_server",
+      "out/linux/a2/as_config/Debug/as_server",
       "as_config/Debug/as_server",
       "rpc_socket/Debug/as_server"});
   if (!resolved.empty()) return resolved;
@@ -925,6 +1050,12 @@ uint16_t envPort(const char* name, uint16_t fallback) {
   const long parsed = std::strtol(value, &end, 10);
   if (!end || *end != '\0' || parsed <= 0 || parsed > 65535) return fallback;
   return static_cast<uint16_t>(parsed);
+}
+
+std::string runtimeAudioDriverFactory(const std::string& request_json) {
+  const std::string explicit_driver = simpleJsonStringField(request_json, "driver_factory", "");
+  if (!explicit_driver.empty()) return explicit_driver;
+  return envString("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "simulator");
 }
 
 long envPositiveLong(const char* name, long fallback) {
@@ -1181,6 +1312,7 @@ GuiConfigCompileResult parseConfigCompileResponse(const std::string& response) {
 
 #if !defined(_WIN32)
 bool runConfigCompileRpcOnce(const std::string& as_server,
+                             const std::string& working_dir,
                              const std::string& rpc_request,
                              std::string& response,
                              std::string& error) {
@@ -1189,7 +1321,8 @@ bool runConfigCompileRpcOnce(const std::string& as_server,
                               : "as_server --rpc-once executable not found: " + as_server;
     return false;
   }
-  const std::string cmd = shellQuote(as_server) + " --rpc-once " + shellQuote(rpc_request) + " 2>&1";
+  const std::string cmd = (working_dir.empty() ? std::string() : ("cd " + shellQuote(working_dir) + " && ")) +
+                          shellQuote(as_server) + " --rpc-once " + shellQuote(rpc_request) + " 2>&1";
   FILE* pipe = ::popen(cmd.c_str(), "r");
   if (!pipe) {
     error = std::string("failed to start as_server --rpc-once: ") + std::strerror(errno);
@@ -1233,13 +1366,22 @@ GuiConfigCompileResult SocketConfigCompileClient::compile(const GuiConfigCompile
   const std::string frame = "Content-Length: " + std::to_string(rpc_request.size()) +
                             "\r\n\r\n" + rpc_request;
 
+  const bool prefer_socket = lowerAscii(envString("AUDIO_STUDIO_AS_SERVER_RPC_MODE", "once")) == "socket";
+  std::string rpc_once_response;
+  std::string rpc_once_error;
+  if (!prefer_socket &&
+      runConfigCompileRpcOnce(request.as_server, request.working_dir, rpc_request,
+                              rpc_once_response, rpc_once_error)) {
+    return parseConfigCompileResponse(rpc_once_response);
+  }
+
   std::string error;
   const int fd = connectTcp(host_, port_, timeout_ms_, error);
   if (fd < 0) {
     const std::string socket_error = error.empty() ? "failed to connect as_server config.compile RPC" : error;
-    std::string rpc_once_response;
-    std::string rpc_once_error;
-    if (runConfigCompileRpcOnce(request.as_server, rpc_request, rpc_once_response, rpc_once_error)) {
+    if (prefer_socket &&
+        runConfigCompileRpcOnce(request.as_server, request.working_dir, rpc_request,
+                                rpc_once_response, rpc_once_error)) {
       result = parseConfigCompileResponse(rpc_once_response);
       if (!result.ok) result.diagnostics.push_back("socket_rpc_error=" + socket_error);
       return result;
@@ -1305,6 +1447,15 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
   const std::string ready_path = (fs::path(request.workspace_dir) / "audio_studio_validation.ready").string();
   std::error_code ec;
   fs::remove(ready_path, ec);
+  const fs::path test_dir = fs::path(request.test_list_path).parent_path();
+  const fs::path default_capture_input =
+      fs::path(request.script_path).parent_path().parent_path().parent_path() /
+      "Misc/sof_test/streams/wav/thetest48.wav";
+  if (fs::exists(default_capture_input)) {
+    fs::create_directories(test_dir, ec);
+    fs::copy_file(default_capture_input, test_dir / "sof_fileio_in.wav",
+                  fs::copy_options::overwrite_existing, ec);
+  }
   const std::string cmd =
       "python3 " + shellQuote(request.script_path) +
       " -t " + shellQuote(request.test_list_path) +
@@ -1314,6 +1465,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
       (request.as_log_path.empty() ? "" : " --as-log " + shellQuote(request.as_log_path)) +
       (request.trace_ldc_path.empty() ? "" : " --trace-ldc " + shellQuote(request.trace_ldc_path)) +
       " --gui-keep-alive --gui-ready-marker " + shellQuote(ready_path) +
+      " --gui-ready-after-pipeinstall" +
       " > " + shellQuote(log_path) + " 2>&1";
 
   const pid_t pid = ::fork();
@@ -1391,9 +1543,12 @@ ValidationResult ProcessValidationRunner::stop(const std::string& workspace_id) 
 BuildOrchestrator::BuildOrchestrator(std::string root_dir,
                                      std::shared_ptr<IConfigCompileClient> compile_client,
                                      std::shared_ptr<IValidationRunner> validation_runner)
-  : root_dir_(std::move(root_dir)),
-    compile_client_(std::move(compile_client)),
+  : compile_client_(std::move(compile_client)),
     validation_runner_(std::move(validation_runner)) {
+  std::error_code ec;
+  const fs::path requested_root = root_dir.empty() ? fs::path(".") : fs::path(std::move(root_dir));
+  const fs::path absolute_root = fs::absolute(requested_root, ec);
+  root_dir_ = (ec ? requested_root : absolute_root).lexically_normal().string();
   if (!compile_client_) compile_client_ = std::make_shared<SocketConfigCompileClient>();
   if (!validation_runner_) validation_runner_ = std::make_shared<ProcessValidationRunner>();
 }
@@ -1469,6 +1624,8 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
     return {404, "application/json; charset=utf-8",
             failureResponse("open", "workspace project JSON is missing", request_json)};
   }
+  const std::string source_json = readTextFile(record.source_path);
+  const std::string regeneration_base_json = workspaceJsonWithSourceBaseline(all_json, source_json);
   validation_runner_->stop(record.workspace_id);
   {
     std::lock_guard<std::mutex> lk(mutex_);
@@ -1484,7 +1641,7 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   const std::string snapshot_json = snapshot.empty() ? request_json : snapshot;
   RegeneratedProject regenerated;
   std::vector<std::string> workspace_diagnostics;
-  if (!regenerateProjectFromSnapshot(all_json, snapshot_json, regenerated, workspace_diagnostics)) {
+  if (!regenerateProjectFromSnapshot(regeneration_base_json, snapshot_json, regenerated, workspace_diagnostics)) {
     return {200, "application/json; charset=utf-8",
             failureResponse("workspace",
                             workspace_diagnostics.empty() ? "failed to regenerate workspace pipelines" : workspace_diagnostics.front(),
@@ -1517,6 +1674,7 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   compile_request.input_path = record.input_path;
   compile_request.output_dir = record.output_dir;
   compile_request.project_name = record.project_name;
+  compile_request.working_dir = root_dir_;
   compile_request.alsatplg = (fs::path(root_dir_) / "third_party/alsatplg/bin/alsatplg").string();
   compile_request.as_server = resolveCompileServerPath(root_dir_);
   compile_request.build_tplg = true;
@@ -1532,10 +1690,13 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
 
   fs::create_directories(record.output_dir);
   const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
+  const std::string validation_pipeline = validationPipelineSelector(request_json, snapshot_json, regenerated.pipeline_ids);
   const std::string test_list =
       "ac_run --endpoint as_datalink --mtu 512\n"
       "trace on\n"
-      "pipeinstall " + compile_result.tplg_path + "\n";
+      "pipeinstall " + (validation_pipeline.empty() ? std::string() : ("-p " + validation_pipeline + " ")) +
+      compile_result.tplg_path + "\n"
+      "sleep 3600\n";
   if (!writeTextFile(test_list_path, test_list)) {
     return {500, "application/json; charset=utf-8",
             failureResponse("validation", "failed to write audio_studio_test_list", request_json)};
@@ -1667,14 +1828,29 @@ struct GuiRuntimeEngine::PlaybackWorker {
       std::lock_guard<std::mutex> lock(mutex_);
       active_ = true;
       stopping_ = false;
+      eof_requested_ = false;
+      in_flight_ = false;
       error_.clear();
       queued_bytes_ = 0;
+      played_bytes_ = 0;
       last_dequeue_ms_ = nowMs();
       session_id_ = simpleJsonStringField(request_json, "session_id", "gui_playback");
       blocked_edge_key_ = simpleJsonStringField(request_json, "edge_key");
+      next_push_ms_ = inferFrameDelayMs(request_json);
+      sample_frame_bytes_ = inferSampleFrameBytes(request_json);
+      sample_rate_ = inferSampleRate(request_json);
     }
 
     setupRpc(request_json);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!rpc_ready_) {
+        active_ = false;
+        stopping_ = true;
+        eof_requested_ = true;
+        return statusJsonLocked(false);
+      }
+    }
     worker_ = std::thread([this] { run(); });
     return statusJson(true);
   }
@@ -1689,6 +1865,7 @@ struct GuiRuntimeEngine::PlaybackWorker {
       std::lock_guard<std::mutex> lock(mutex_);
       stopping_ = true;
       active_ = false;
+      eof_requested_ = true;
     }
     cv_.notify_all();
     if (worker_.joinable()) worker_.join();
@@ -1698,10 +1875,11 @@ struct GuiRuntimeEngine::PlaybackWorker {
       queue_.clear();
       queued_bytes_ = 0;
       rpc_ready_ = false;
+      in_flight_ = false;
     }
   }
 
-  std::string enqueue(const std::string& query, const std::string& frame) {
+  std::string enqueueStream(const std::string& query, const std::string& frame) {
     const auto q = parseQuery(query);
     std::string edge_key;
     auto edge_it = q.find("edge_key");
@@ -1711,12 +1889,15 @@ struct GuiRuntimeEngine::PlaybackWorker {
     bool stalled = false;
     size_t queued = 0;
     std::string error;
+    std::string blocked_edge;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!edge_key.empty()) blocked_edge_key_ = edge_key;
-      if (active_ && !frame.empty() && queued_bytes_ + frame.size() <= kMaxQueueBytes) {
+      blocked_edge = edge_key.empty() ? blocked_edge_key_ : edge_key;
+      const size_t aligned_bytes = alignedAudioBytes(frame.size(), sample_frame_bytes_);
+      if (active_ && !eof_requested_ && aligned_bytes > 0 && queued_bytes_ + aligned_bytes <= kMaxQueueBytes) {
         Frame next;
-        next.bytes.assign(frame.begin(), frame.end());
+        next.bytes.assign(frame.begin(), frame.begin() + static_cast<long>(aligned_bytes));
         queued_bytes_ += next.bytes.size();
         queue_.push_back(std::move(next));
         accepted = true;
@@ -1730,12 +1911,107 @@ struct GuiRuntimeEngine::PlaybackWorker {
 
     std::ostringstream os;
     os << "{\"ok\":" << (accepted ? "true" : "false")
+       << ",\"stream\":true"
        << ",\"accepted\":" << (accepted ? "true" : "false")
-       << ",\"accepted_bytes\":" << (accepted ? frame.size() : 0)
+       << ",\"accepted_bytes\":" << (accepted ? alignedAudioBytes(frame.size(), sample_frame_bytes_) : 0)
        << ",\"queued_bytes\":" << queued
-       << ",\"next_push_ms\":" << recommendedDelayMs(queued)
+       << ",\"queued_audio_ms\":" << queuedAudioMs(queued, sample_frame_bytes_, sample_rate_)
+       << ",\"next_push_ms\":" << recommendedDelayMs(queued, sample_frame_bytes_, sample_rate_, next_push_ms_)
        << ",\"stalled\":" << (stalled ? "true" : "false")
-       << ",\"blocked_edge_key\":\"" << jsonEscape(edge_key.empty() ? blocked_edge_key_ : edge_key) << "\"";
+       << ",\"blocked_edge_key\":\"" << jsonEscape(blocked_edge) << "\"";
+    if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
+    os << "}";
+    return os.str();
+  }
+
+  std::string frameStatus(const std::string& query, const std::string& request_json) {
+    const auto q = parseQuery(query);
+    std::string edge_key = simpleJsonStringField(request_json, "edge_key");
+    if (edge_key.empty()) {
+      const auto edge_it = q.find("edge_key");
+      if (edge_it != q.end()) edge_key = edge_it->second;
+    }
+    const int bytes_written = std::max(0, simpleJsonIntField(request_json, "bytes_written",
+                                            simpleJsonIntField(request_json, "accepted_bytes", 0)));
+    const int frame_bytes = std::max(bytes_written,
+                                     simpleJsonIntField(request_json, "frame_bytes", bytes_written));
+    const int frame_index = simpleJsonIntField(request_json, "frame_index", 0);
+    const bool stream_ok = simpleJsonBoolField(request_json, "stream_ok", true);
+
+    size_t queued = 0;
+    bool active = false;
+    bool stalled = false;
+    std::string error;
+    std::string blocked_edge;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!edge_key.empty()) blocked_edge_key_ = edge_key;
+      blocked_edge = edge_key.empty() ? blocked_edge_key_ : edge_key;
+      queued = queued_bytes_;
+      active = active_ && !eof_requested_;
+      const int64_t age = nowMs() - last_dequeue_ms_;
+      stalled = !rpc_ready_ || queued_bytes_ >= kHighWaterBytes || age >= 100;
+      error = error_;
+    }
+
+    const bool accepted = active && stream_ok && bytes_written > 0 && error.empty();
+    std::ostringstream os;
+    os << "{\"ok\":" << (accepted ? "true" : "false")
+       << ",\"frame\":true"
+       << ",\"accepted\":" << (accepted ? "true" : "false")
+       << ",\"frame_index\":" << frame_index
+       << ",\"frame_bytes\":" << frame_bytes
+       << ",\"accepted_bytes\":" << (accepted ? bytes_written : 0)
+       << ",\"queued_bytes\":" << queued
+       << ",\"queued_audio_ms\":" << queuedAudioMs(queued, sample_frame_bytes_, sample_rate_)
+       << ",\"next_push_ms\":" << recommendedDelayMs(queued, sample_frame_bytes_, sample_rate_, next_push_ms_)
+       << ",\"stalled\":" << (stalled ? "true" : "false")
+       << ",\"blocked_edge_key\":\"" << jsonEscape(blocked_edge) << "\"";
+    if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
+    os << "}";
+    return os.str();
+  }
+
+  std::string finish(const std::string& request_json) {
+    const int timeout_ms = std::max(0, simpleJsonIntField(request_json, "timeout_ms", 5000));
+    bool timeout = false;
+    size_t queued = 0;
+    uint64_t played = 0;
+    std::string error;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      eof_requested_ = true;
+      active_ = false;
+      const auto ready = [&] { return !rpc_ready_ || (queue_.empty() && !in_flight_); };
+      if (timeout_ms == 0) {
+        timeout = !ready();
+      } else if (!cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), ready)) {
+        timeout = true;
+      }
+      queued = queued_bytes_;
+      played = played_bytes_;
+      if (timeout && error_.empty()) error_ = "playback EOS timed out waiting for queued frames to drain";
+      error = error_;
+    }
+
+    if (!timeout) finishRpc();
+    else cleanupRpc();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      queue_.clear();
+      queued_bytes_ = 0;
+      rpc_ready_ = false;
+      in_flight_ = false;
+      played = played_bytes_;
+      error = error_;
+    }
+
+    const bool ok = error.empty() && !timeout;
+    std::ostringstream os;
+    os << "{\"ok\":" << (ok ? "true" : "false")
+       << ",\"eos\":true,\"running\":false,\"runtime_state\":\"PIPE_LOADED\""
+       << ",\"playback\":{\"active\":false,\"queued_bytes\":" << queued
+       << ",\"played_bytes\":" << played << "}";
     if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
     os << "}";
     return os.str();
@@ -1751,10 +2027,69 @@ private:
         std::chrono::system_clock::now().time_since_epoch()).count());
   }
 
-  static int recommendedDelayMs(size_t queued_bytes) {
-    if (queued_bytes >= kHighWaterBytes) return 40;
-    if (queued_bytes >= kHighWaterBytes / 2) return 20;
-    return 5;
+  static int clampDelayMs(int value) {
+    return std::max(1, std::min(200, value));
+  }
+
+  static int inferFrameDelayMs(const std::string& request_json) {
+    const int explicit_ms = simpleJsonIntField(request_json, "frame_ms", 0);
+    if (explicit_ms > 0) return clampDelayMs(explicit_ms);
+
+    const int sample_rate = simpleJsonIntField(request_json, "sample_rate",
+                            simpleJsonIntField(request_json, "sampleRate", 48000));
+    const int frame_samples = simpleJsonIntField(request_json, "frame_samples",
+                              simpleJsonIntField(request_json, "frameSamples", 0));
+    if (sample_rate > 0 && frame_samples > 0) {
+      return clampDelayMs(static_cast<int>(std::lround(
+          1000.0 * static_cast<double>(frame_samples) / static_cast<double>(sample_rate))));
+    }
+
+    const int channels = std::max(1, simpleJsonIntField(request_json, "channels", 2));
+    const int bits = simpleJsonIntField(request_json, "bits_per_sample",
+                     simpleJsonIntField(request_json, "bits", 16));
+    const int bytes_per_frame = std::max(1, channels * std::max(1, bits / 8));
+    const int frame_bytes = simpleJsonIntField(request_json, "frame_bytes",
+                            simpleJsonIntField(request_json, "frameBytes", 0));
+    if (sample_rate > 0 && frame_bytes > 0) {
+      const double samples = static_cast<double>(frame_bytes) / static_cast<double>(bytes_per_frame);
+      return clampDelayMs(static_cast<int>(std::lround(1000.0 * samples / static_cast<double>(sample_rate))));
+    }
+
+    return 20;
+  }
+
+  static int inferSampleFrameBytes(const std::string& request_json) {
+    const int channels = std::max(1, simpleJsonIntField(request_json, "channels", 2));
+    const int bits = simpleJsonIntField(request_json, "bits_per_sample",
+                     simpleJsonIntField(request_json, "bits", 16));
+    return std::max(1, channels * std::max(1, bits / 8));
+  }
+
+  static int inferSampleRate(const std::string& request_json) {
+    return std::max(1, simpleJsonIntField(request_json, "sample_rate",
+                       simpleJsonIntField(request_json, "sampleRate", 48000)));
+  }
+
+  static size_t alignedAudioBytes(size_t bytes, int sample_frame_bytes) {
+    const size_t frame = static_cast<size_t>(std::max(1, sample_frame_bytes));
+    return bytes - (bytes % frame);
+  }
+
+  static int queuedAudioMs(size_t queued_bytes, int sample_frame_bytes, int sample_rate) {
+    const double bytes_per_ms =
+        std::max(1, sample_frame_bytes) * static_cast<double>(std::max(1, sample_rate)) / 1000.0;
+    return static_cast<int>(std::lround(static_cast<double>(queued_bytes) / bytes_per_ms));
+  }
+
+  static int recommendedDelayMs(size_t queued_bytes,
+                                int sample_frame_bytes,
+                                int sample_rate,
+                                int frame_delay_ms) {
+    const int frame = clampDelayMs(frame_delay_ms);
+    const int queued_ms = queuedAudioMs(queued_bytes, sample_frame_bytes, sample_rate);
+    const int target_ms = std::max(40, frame * 2);
+    if (queued_ms <= target_ms) return frame;
+    return clampDelayMs(frame + queued_ms - target_ms);
   }
 
   void setupRpc(const std::string& request_json) {
@@ -1777,7 +2112,8 @@ private:
 
       audio_studio::rpc::SocketRpcEndpoint endpoint;
       endpoint.host = simpleJsonStringField(request_json, "as_server_host", "127.0.0.1");
-      endpoint.port = static_cast<uint16_t>(simpleJsonIntField(request_json, "as_server_port", 9900));
+      endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
+          request_json, "as_server_port", envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901)));
       endpoint.timeout_ms = 1000;
 
       json_transport_ = std::make_unique<audio_studio::rpc::SocketJsonRpcTransport>(drivers.socket(), endpoint);
@@ -1793,9 +2129,9 @@ private:
       const int bits = simpleJsonIntField(request_json, "bits_per_sample",
                        simpleJsonIntField(request_json, "bits", 16));
       config.bytes_per_sample = static_cast<uint16_t>(std::max(1, bits / 8));
-      config.device_name = simpleJsonStringField(request_json, "device", "pcm_playback");
-      config.driver_factory = simpleJsonStringField(request_json, "driver_factory", "");
-      config.blocking_write = false;
+      config.device_name = simpleJsonStringField(request_json, "device", "as_config_playback");
+      config.driver_factory = runtimeAudioDriverFactory(request_json);
+      config.blocking_write = true;
       playback_ = std::make_unique<audio_studio::rpc::AudioPlayback>(audio_client_->createPlaybackSession(config));
       playback_->start();
       std::lock_guard<std::mutex> lock(mutex_);
@@ -1830,6 +2166,24 @@ private:
 #endif
   }
 
+  void finishRpc() {
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+    try {
+      if (playback_) {
+        playback_->drain();
+        playback_->stop();
+        playback_->close();
+      }
+    } catch (...) {
+    }
+    playback_.reset();
+    audio_client_.reset();
+    json_client_.reset();
+    stream_transport_.reset();
+    json_transport_.reset();
+#endif
+  }
+
   void run() {
     while (true) {
       Frame frame;
@@ -1840,28 +2194,38 @@ private:
         frame = std::move(queue_.front());
         queue_.pop_front();
         queued_bytes_ -= frame.bytes.size();
+        in_flight_ = true;
         last_dequeue_ms_ = nowMs();
       }
 
 #if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
       try {
-        if (playback_) playback_->writeFrames(frame.bytes, {1000});
+        if (playback_) {
+          auto written = playback_->writeFrames(frame.bytes);
+          std::lock_guard<std::mutex> lock(mutex_);
+          played_bytes_ += written.bytes;
+        }
       } catch (const std::exception& error) {
         std::lock_guard<std::mutex> lock(mutex_);
         rpc_ready_ = false;
         error_ = error.what();
       }
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        in_flight_ = false;
+      }
+      cv_.notify_all();
 #else
       (void)frame;
 #endif
     }
   }
 
-  std::string statusJson(bool ok) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+  std::string statusJsonLocked(bool ok) const {
     std::ostringstream os;
     os << "{\"ok\":" << (ok ? "true" : "false")
-       << ",\"running\":true,\"runtime_state\":\"RUNNING\""
+       << ",\"running\":" << (ok && active_ ? "true" : "false")
+       << ",\"runtime_state\":\"" << (ok && active_ ? "RUNNING" : "PIPE_LOADED") << "\""
        << ",\"playback\":{\"active\":" << (active_ ? "true" : "false")
        << ",\"rpc_ready\":" << (rpc_ready_ ? "true" : "false")
        << ",\"queued_bytes\":" << queued_bytes_;
@@ -1870,15 +2234,26 @@ private:
     return os.str();
   }
 
+  std::string statusJson(bool ok) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return statusJsonLocked(ok);
+  }
+
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<Frame> queue_;
   std::thread worker_;
   bool active_ = false;
   bool stopping_ = true;
+  bool eof_requested_ = false;
+  bool in_flight_ = false;
   bool rpc_ready_ = false;
   size_t queued_bytes_ = 0;
+  uint64_t played_bytes_ = 0;
   int64_t last_dequeue_ms_ = 0;
+  int next_push_ms_ = 20;
+  int sample_frame_bytes_ = 4;
+  int sample_rate_ = 48000;
   std::string session_id_;
   std::string blocked_edge_key_;
   std::string error_;
@@ -1892,10 +2267,248 @@ private:
 #endif
 };
 
+struct GuiRuntimeEngine::CaptureWorker {
+  ~CaptureWorker() {
+    stop();
+  }
+
+  std::string start(const std::string& request_json) {
+    stop();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active_ = true;
+      error_.clear();
+      captured_bytes_ = 0;
+      session_id_ = simpleJsonStringField(request_json, "session_id", "gui_capture");
+      node_id_ = simpleJsonStringField(request_json, "node_id");
+      file_name_ = simpleJsonStringField(request_json, "file_name", "capture.wav");
+      frame_bytes_ = static_cast<size_t>(std::max(256, simpleJsonIntField(request_json, "frame_bytes", 3840)));
+      sample_frame_bytes_ = inferSampleFrameBytes(request_json);
+      sample_rate_ = inferSampleRate(request_json);
+    }
+
+    setupRpc(request_json);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!rpc_ready_) {
+        active_ = false;
+      }
+    }
+    return statusJson();
+  }
+
+  void stop() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active_ = false;
+    }
+    cleanupRpc();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      rpc_ready_ = false;
+    }
+  }
+
+  std::string pull(const std::string& query) {
+    const auto q = parseQuery(query);
+    const size_t max_bytes = static_cast<size_t>(std::max(1, simpleJsonIntField(
+        "{\"max_bytes\":" + (q.count("max_bytes") ? q.at("max_bytes") : std::string("0")) + "}", "max_bytes",
+        static_cast<int>(frame_bytes_))));
+
+    std::vector<uint8_t> frame;
+    bool active = false;
+    bool rpc_ready = false;
+    std::string error;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active = active_;
+      rpc_ready = rpc_ready_;
+      error = error_;
+    }
+
+    if (active && rpc_ready && error.empty()) {
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+      try {
+        auto result = capture_ ? capture_->readFrames(max_bytes, {1000}) : audio_studio::rpc::AudioReadResult{};
+        if (result.ok && !result.data.empty()) {
+          frame = std::move(result.data);
+          std::lock_guard<std::mutex> lock(mutex_);
+          captured_bytes_ += frame.size();
+        } else if (!result.ok) {
+          std::lock_guard<std::mutex> lock(mutex_);
+          error_ = "capture stream read failed";
+          rpc_ready_ = false;
+          error = error_;
+          rpc_ready = false;
+        }
+      } catch (const std::exception& read_error) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        error_ = read_error.what();
+        rpc_ready_ = false;
+        error = error_;
+        rpc_ready = false;
+      }
+#endif
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active = active_;
+      rpc_ready = rpc_ready_;
+      error = error_;
+    }
+    const bool ok = error.empty() || !frame.empty();
+    const int next_poll_ms = frame.empty() ? 20 : frameDurationMs(frame.size(), sample_frame_bytes_, sample_rate_);
+    std::ostringstream os;
+    os << "{\"ok\":" << (ok ? "true" : "false")
+       << ",\"capture\":{\"active\":" << (active ? "true" : "false")
+       << ",\"rpc_ready\":" << (rpc_ready ? "true" : "false")
+       << ",\"bytes\":" << frame.size()
+       << ",\"queued_bytes\":0"
+       << ",\"next_poll_ms\":" << next_poll_ms
+       << ",\"data_base64\":\"" << base64Encode(frame) << "\"";
+    if (!error.empty()) os << ",\"error\":\"" << jsonEscape(error) << "\"";
+    os << "}}";
+    return os.str();
+  }
+
+private:
+  static int inferSampleFrameBytes(const std::string& request_json) {
+    const int channels = std::max(1, simpleJsonIntField(request_json, "channels", 2));
+    const int bits = simpleJsonIntField(request_json, "bits_per_sample",
+                     simpleJsonIntField(request_json, "bits", 16));
+    return std::max(1, channels * std::max(1, bits / 8));
+  }
+
+  static int inferSampleRate(const std::string& request_json) {
+    return std::max(1, simpleJsonIntField(request_json, "sample_rate",
+                       simpleJsonIntField(request_json, "sampleRate", 48000)));
+  }
+
+  static int frameDurationMs(size_t bytes, int sample_frame_bytes, int sample_rate) {
+    const double bytes_per_ms =
+        std::max(1, sample_frame_bytes) * static_cast<double>(std::max(1, sample_rate)) / 1000.0;
+    return std::max(1, std::min(250,
+        static_cast<int>(std::lround(static_cast<double>(bytes) / bytes_per_ms))));
+  }
+
+  void setupRpc(const std::string& request_json) {
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+    try {
+      auto& drivers = audio_studio::drivers::DriverManager::instance();
+      audio_studio::drivers::DriverManagerConfig driver_config;
+      driver_config.enable_os = false;
+      driver_config.enable_socket = true;
+      driver_config.enable_filesystem = false;
+      driver_config.enable_pipe = false;
+      driver_config.enable_dynlib = false;
+      driver_config.enable_datalink = false;
+      driver_config.enable_audio = false;
+      driver_config.enable_control = false;
+      driver_config.enable_log = false;
+      driver_config.enable_dump = false;
+      auto status = drivers.initialize(driver_config);
+      if (!status.ok()) throw std::runtime_error(status.message());
+
+      audio_studio::rpc::SocketRpcEndpoint endpoint;
+      endpoint.host = simpleJsonStringField(request_json, "as_server_host", "127.0.0.1");
+      endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
+          request_json, "as_server_port", envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901)));
+      endpoint.timeout_ms = 1000;
+
+      json_transport_ = std::make_unique<audio_studio::rpc::SocketJsonRpcTransport>(drivers.socket(), endpoint);
+      stream_transport_ = std::make_unique<audio_studio::rpc::SocketRpcStreamTransport>(drivers.socket(), endpoint);
+      json_client_ = std::make_unique<audio_studio::rpc::JsonRpcClient>(*json_transport_);
+      audio_client_ = std::make_unique<audio_studio::rpc::AudioRpcClient>(*json_client_, stream_transport_.get());
+
+      audio_studio::rpc::AudioSessionConfig config;
+      config.session_id = simpleJsonStringField(request_json, "session_id", "gui_capture");
+      config.sample_rate = static_cast<uint32_t>(simpleJsonIntField(request_json, "sample_rate",
+                            simpleJsonIntField(request_json, "sampleRate", 48000)));
+      config.channels = static_cast<uint16_t>(simpleJsonIntField(request_json, "channels", 2));
+      const int bits = simpleJsonIntField(request_json, "bits_per_sample",
+                       simpleJsonIntField(request_json, "bits", 16));
+      config.bytes_per_sample = static_cast<uint16_t>(std::max(1, bits / 8));
+      config.device_name = simpleJsonStringField(request_json, "device", "as_config_capture");
+      config.driver_factory = runtimeAudioDriverFactory(request_json);
+      capture_ = std::make_unique<audio_studio::rpc::AudioCapture>(audio_client_->createCaptureSession(config));
+      capture_->start();
+      std::lock_guard<std::mutex> lock(mutex_);
+      rpc_ready_ = true;
+    } catch (const std::exception& error) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      rpc_ready_ = false;
+      error_ = error.what();
+    }
+#else
+    (void)request_json;
+    std::lock_guard<std::mutex> lock(mutex_);
+    rpc_ready_ = false;
+    error_ = "GUI backend was built without RPC capture client support";
+#endif
+  }
+
+  void cleanupRpc() {
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+    try {
+      if (capture_) {
+        capture_->stop();
+        capture_->close();
+      }
+    } catch (...) {
+    }
+    capture_.reset();
+    audio_client_.reset();
+    json_client_.reset();
+    stream_transport_.reset();
+    json_transport_.reset();
+#endif
+  }
+
+  std::string statusJson() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const bool ok = error_.empty();
+    std::ostringstream os;
+    os << "{\"ok\":" << (ok ? "true" : "false")
+       << ",\"running\":" << (ok ? "true" : "false")
+       << ",\"runtime_state\":\"" << (ok ? "RUNNING" : "PIPE_LOADED") << "\""
+       << ",\"capture\":{\"active\":" << (active_ ? "true" : "false")
+       << ",\"rpc_ready\":" << (rpc_ready_ ? "true" : "false")
+       << ",\"queued_bytes\":0"
+       << ",\"captured_bytes\":" << captured_bytes_
+       << ",\"node_id\":\"" << jsonEscape(node_id_) << "\""
+       << ",\"file_name\":\"" << jsonEscape(file_name_) << "\"";
+    if (!error_.empty()) os << ",\"error\":\"" << jsonEscape(error_) << "\"";
+    os << "}}";
+    return os.str();
+  }
+
+  mutable std::mutex mutex_;
+  bool active_ = false;
+  bool rpc_ready_ = false;
+  size_t frame_bytes_ = 3840;
+  int sample_frame_bytes_ = 4;
+  int sample_rate_ = 48000;
+  uint64_t captured_bytes_ = 0;
+  std::string session_id_;
+  std::string node_id_;
+  std::string file_name_;
+  std::string error_;
+
+#if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
+  std::unique_ptr<audio_studio::rpc::SocketJsonRpcTransport> json_transport_;
+  std::unique_ptr<audio_studio::rpc::SocketRpcStreamTransport> stream_transport_;
+  std::unique_ptr<audio_studio::rpc::JsonRpcClient> json_client_;
+  std::unique_ptr<audio_studio::rpc::AudioRpcClient> audio_client_;
+  std::unique_ptr<audio_studio::rpc::AudioCapture> capture_;
+#endif
+};
+
 GuiRuntimeEngine::GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator)
   : build_orchestrator_(std::move(build_orchestrator)) {
   if (!build_orchestrator_) build_orchestrator_ = std::make_shared<BuildOrchestrator>(".");
   playback_ = std::make_unique<PlaybackWorker>();
+  capture_ = std::make_unique<CaptureWorker>();
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
 }
 
@@ -1934,18 +2547,58 @@ std::string GuiRuntimeEngine::unloadPipeline(const std::string& pipeline_json) {
 
 std::string GuiRuntimeEngine::run(const std::string& session_id) {
   running_.store(true);
-  return playback_->start(session_id);
+  const bool wants_capture = !jsonMemberValue(session_id, "capture").empty();
+  const bool wants_playback = !jsonMemberValue(session_id, "playback").empty() || !wants_capture;
+  std::string playback_status;
+  std::string capture_status;
+  if (wants_playback) playback_status = playback_->start(directionRuntimeRequest(session_id, "playback"));
+  if (wants_capture) capture_status = capture_->start(directionRuntimeRequest(session_id, "capture"));
+  if (wants_playback && !wants_capture) {
+    if (playback_status.find("\"ok\":false") != std::string::npos) running_.store(false);
+    return playback_status;
+  }
+  if (wants_capture && !wants_playback) {
+    if (capture_status.find("\"ok\":false") != std::string::npos) running_.store(false);
+    return capture_status;
+  }
+  const bool ok = playback_status.find("\"ok\":false") == std::string::npos &&
+                  capture_status.find("\"ok\":false") == std::string::npos;
+  if (!ok) running_.store(false);
+  std::ostringstream os;
+  os << "{\"ok\":" << (ok ? "true" : "false")
+     << ",\"running\":" << (ok ? "true" : "false")
+     << ",\"runtime_state\":\"" << (ok ? "RUNNING" : "PIPE_LOADED") << "\"";
+  const std::string playback_json = jsonMemberValue(playback_status, "playback");
+  const std::string capture_json = jsonMemberValue(capture_status, "capture");
+  if (!playback_json.empty()) os << ",\"playback\":" << playback_json;
+  if (!capture_json.empty()) os << ",\"capture\":" << capture_json;
+  os << "}";
+  return os.str();
 }
 
 std::string GuiRuntimeEngine::stop(const std::string& session_id) {
   (void)session_id;
   running_.store(false);
   playback_->stop();
-  return "{\"ok\":true,\"running\":false,\"runtime_state\":\"NOT_READY\"}";
+  capture_->stop();
+  return "{\"ok\":true,\"running\":false,\"runtime_state\":\"PIPE_LOADED\"}";
+}
+
+std::string GuiRuntimeEngine::pushAudioStream(const std::string& query, const std::string& frame) {
+  return playback_->enqueueStream(query, frame);
 }
 
 std::string GuiRuntimeEngine::pushAudioFrame(const std::string& query, const std::string& frame) {
-  return playback_->enqueue(query, frame);
+  return playback_->frameStatus(query, frame);
+}
+
+std::string GuiRuntimeEngine::finishAudioInput(const std::string& request_json) {
+  running_.store(false);
+  return playback_->finish(request_json);
+}
+
+std::string GuiRuntimeEngine::captureAudioFrame(const std::string& query) {
+  return capture_->pull(query);
 }
 
 std::string GuiRuntimeEngine::pipelineEditEvent(const std::string& request_json) {

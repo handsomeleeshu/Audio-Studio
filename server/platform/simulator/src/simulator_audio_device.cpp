@@ -87,24 +87,24 @@ drivers::audio::AudioResult validateStreamParams(
   if (params.channels == 0) return drivers::audio::AudioResult::invalidArgument("audio channel count is zero");
   if (params.bytes_per_sample != 2 && params.bytes_per_sample != 4) {
     return drivers::audio::AudioResult::invalidArgument(
-        "rv32qemu simulator audio supports 16-bit and 32-bit PCM streams");
+        "simulator audio supports 16-bit and 32-bit PCM streams");
   }
   return drivers::audio::AudioResult::success();
 }
 
-class Rv32QemuAudioSession {
+class SimulatorAudioSession {
 public:
-  explicit Rv32QemuAudioSession(uint32_t direction) : direction_(direction) {}
+  explicit SimulatorAudioSession(uint32_t direction) : direction_(direction) {}
 
   drivers::audio::AudioResult open(const drivers::audio::AudioOpenParams& params) {
-    if (params.device_name.empty()) return drivers::audio::AudioResult::invalidArgument("rv32qemu audio stream name is empty");
+    if (params.device_name.empty()) return drivers::audio::AudioResult::invalidArgument("simulator audio stream name is empty");
     close();
     stream_name_ = params.device_name;
 
     manager_ = &framework::transport::TransportManager::instance();
     if (!manager_->isDataLinkConfigured()) {
       manager_ = nullptr;
-      return drivers::audio::AudioResult::unavailable("rv32qemu transport data-link is not configured");
+      return drivers::audio::AudioResult::unavailable("simulator transport data-link is not configured");
     }
     auto status = acquireAudioControlChannel(*manager_);
     if (!status.ok()) {
@@ -145,7 +145,7 @@ public:
   }
 
   drivers::audio::AudioResult prepare(const drivers::audio::AudioStreamParams& params) {
-    if (!open_ || !manager_) return drivers::audio::AudioResult::unavailable("rv32qemu audio device is not open");
+    if (!open_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator audio device is not open");
     auto status = validateStreamParams(params);
     if (!status.ok()) return status;
     params_ = params;
@@ -167,7 +167,7 @@ public:
   }
 
   drivers::audio::AudioResult start() {
-    if (!prepared_ || !manager_) return drivers::audio::AudioResult::unavailable("rv32qemu audio device is not prepared");
+    if (!prepared_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator audio device is not prepared");
     if (running_) return drivers::audio::AudioResult::success();
     std::vector<uint8_t> payload;
     writeLe32(payload, stream_id_);
@@ -197,8 +197,8 @@ public:
 
   drivers::audio::AudioResult writeFrame(const drivers::audio::AudioFrame& frame,
                                          uint32_t timeout_ms) {
-    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("rv32qemu playback stream is not running");
-    if (direction_ != AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK) return drivers::audio::AudioResult::invalidArgument("rv32qemu stream is not playback");
+    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator playback stream is not running");
+    if (direction_ != AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK) return drivers::audio::AudioResult::invalidArgument("simulator stream is not playback");
     if (frame.empty()) return drivers::audio::AudioResult::invalidArgument("audio frame is empty");
     if (frame_bytes_ == 0 || frame.size() % frame_bytes_ != 0) {
       return drivers::audio::AudioResult::invalidArgument("audio frame size is not aligned to sample frame");
@@ -225,9 +225,9 @@ public:
 
   drivers::audio::AudioResult readFrame(drivers::audio::AudioFrame& frame,
                                         uint32_t timeout_ms) {
-    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("rv32qemu capture stream is not running");
-    if (direction_ != AC_TRANSPORT_AUDIO_DIRECTION_CAPTURE) return drivers::audio::AudioResult::invalidArgument("rv32qemu stream is not capture");
-    if (frame_bytes_ == 0) return drivers::audio::AudioResult::unavailable("rv32qemu capture stream is not configured");
+    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator capture stream is not running");
+    if (direction_ != AC_TRANSPORT_AUDIO_DIRECTION_CAPTURE) return drivers::audio::AudioResult::invalidArgument("simulator stream is not capture");
+    if (frame_bytes_ == 0) return drivers::audio::AudioResult::unavailable("simulator capture stream is not configured");
     size_t max_bytes = frame.empty() ? AC_TRANSPORT_MAX_PAYLOAD : frame.size();
     max_bytes = std::max(frame_bytes_, (max_bytes / frame_bytes_) * frame_bytes_);
     max_bytes = std::min(max_bytes, (AC_TRANSPORT_MAX_PAYLOAD / frame_bytes_) * frame_bytes_);
@@ -245,7 +245,7 @@ public:
   }
 
   drivers::audio::AudioResult drain() {
-    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("rv32qemu playback stream is not running");
+    if (!running_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator playback stream is not running");
     framework::transport::TransportFrame response;
     auto status = manager_->sendSync(data_channel_id_, AC_TRANSPORT_AUDIO_DRAIN, {}, response, kAudioDataTimeoutMs);
     if (!status.ok()) return status;
@@ -318,7 +318,7 @@ private:
   framework::transport::TransportManager* manager_ = nullptr;
 };
 
-class Rv32QemuPlaybackDevice final : public drivers::audio::IAudioPlaybackDevice {
+class SimulatorPlaybackDevice final : public drivers::audio::IAudioPlaybackDevice {
 public:
   drivers::audio::AudioResult open(const drivers::audio::AudioOpenParams& params) override {
     return session_.open(params);
@@ -337,10 +337,10 @@ public:
   drivers::audio::AudioDeviceCaps getCaps() const override { return {}; }
 
 private:
-  Rv32QemuAudioSession session_{AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK};
+  SimulatorAudioSession session_{AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK};
 };
 
-class Rv32QemuCaptureDevice final : public drivers::audio::IAudioCaptureDevice {
+class SimulatorCaptureDevice final : public drivers::audio::IAudioCaptureDevice {
 public:
   drivers::audio::AudioResult open(const drivers::audio::AudioOpenParams& params) override {
     return session_.open(params);
@@ -358,16 +358,16 @@ public:
   drivers::audio::AudioDeviceCaps getCaps() const override { return {}; }
 
 private:
-  Rv32QemuAudioSession session_{AC_TRANSPORT_AUDIO_DIRECTION_CAPTURE};
+  SimulatorAudioSession session_{AC_TRANSPORT_AUDIO_DIRECTION_CAPTURE};
 };
 
-class Rv32QemuPlaybackFactory final : public drivers::audio::IAudioPlaybackDeviceFactory {
+class SimulatorPlaybackFactory final : public drivers::audio::IAudioPlaybackDeviceFactory {
 public:
-  explicit Rv32QemuPlaybackFactory(std::string name) : name_(std::move(name)) {}
+  explicit SimulatorPlaybackFactory(std::string name) : name_(std::move(name)) {}
   std::string name() const override { return name_; }
   drivers::audio::AudioResult create(const drivers::audio::AudioOpenParams& params,
                                      std::unique_ptr<drivers::audio::IAudioPlaybackDevice>& out) const override {
-    auto device = std::make_unique<Rv32QemuPlaybackDevice>();
+    auto device = std::make_unique<SimulatorPlaybackDevice>();
     auto status = device->open(params);
     if (!status.ok()) return status;
     out = std::move(device);
@@ -378,13 +378,13 @@ private:
   std::string name_;
 };
 
-class Rv32QemuCaptureFactory final : public drivers::audio::IAudioCaptureDeviceFactory {
+class SimulatorCaptureFactory final : public drivers::audio::IAudioCaptureDeviceFactory {
 public:
-  explicit Rv32QemuCaptureFactory(std::string name) : name_(std::move(name)) {}
+  explicit SimulatorCaptureFactory(std::string name) : name_(std::move(name)) {}
   std::string name() const override { return name_; }
   drivers::audio::AudioResult create(const drivers::audio::AudioOpenParams& params,
                                      std::unique_ptr<drivers::audio::IAudioCaptureDevice>& out) const override {
-    auto device = std::make_unique<Rv32QemuCaptureDevice>();
+    auto device = std::make_unique<SimulatorCaptureDevice>();
     auto status = device->open(params);
     if (!status.ok()) return status;
     out = std::move(device);
@@ -395,19 +395,15 @@ private:
   std::string name_;
 };
 
-const bool kRv32QemuAudioDeviceRegistered = [] {
-  auto status = drivers::audio::AudioDeviceRegistry::instance().registerPlaybackFactory(
-    std::make_unique<Rv32QemuPlaybackFactory>("rv32qemu"));
-  (void)status;
-  status = drivers::audio::AudioDeviceRegistry::instance().registerCaptureFactory(
-    std::make_unique<Rv32QemuCaptureFactory>("rv32qemu"));
-  (void)status;
-  status = drivers::audio::AudioDeviceRegistry::instance().registerPlaybackFactory(
-    std::make_unique<Rv32QemuPlaybackFactory>("rv32qemu-simulator"));
-  (void)status;
-  status = drivers::audio::AudioDeviceRegistry::instance().registerCaptureFactory(
-    std::make_unique<Rv32QemuCaptureFactory>("rv32qemu-simulator"));
-  (void)status;
+const bool kSimulatorAudioDeviceRegistered = [] {
+  for (const char* name : {"simulator", "simulator-audio-controller"}) {
+    auto status = drivers::audio::AudioDeviceRegistry::instance().registerPlaybackFactory(
+      std::make_unique<SimulatorPlaybackFactory>(name));
+    (void)status;
+    status = drivers::audio::AudioDeviceRegistry::instance().registerCaptureFactory(
+      std::make_unique<SimulatorCaptureFactory>(name));
+    (void)status;
+  }
   return true;
 }();
 

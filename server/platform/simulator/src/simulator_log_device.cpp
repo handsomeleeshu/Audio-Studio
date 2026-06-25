@@ -41,31 +41,31 @@ std::vector<uint8_t> sampleLogBytes(const std::string& source) {
     }
   }
   if (text.empty()) {
-    text = "info|FW|rv32qemu audio controller log channel open\n"
+    text = "info|FW|simulator audio controller log channel open\n"
            "debug|TRP|transport manager log read request\n"
-           "warning|DL|rv32qemu simulator pipe waiting for firmware peer\n";
+           "warning|DL|simulator pipe waiting for firmware peer\n";
   }
   return {text.begin(), text.end()};
 }
 
-class Rv32QemuLogDevice final : public drivers::log::ILogDevice {
+class SimulatorLogDevice final : public drivers::log::ILogDevice {
 public:
   drivers::log::LogResult open(const drivers::log::LogDeviceConfig& config) override {
-    if (config.source.empty()) return drivers::log::LogResult::invalidArgument("rv32qemu log source is empty");
+    if (config.source.empty()) return drivers::log::LogResult::invalidArgument("simulator log source is empty");
     config_ = config;
     open_ = true;
     return drivers::log::LogResult::success();
   }
 
   drivers::log::LogResult configure(const drivers::log::LogDeviceConfig& config) override {
-    if (!open_) return drivers::log::LogResult::unavailable("rv32qemu log device is not open");
-    if (config.source.empty()) return drivers::log::LogResult::invalidArgument("rv32qemu log source is empty");
+    if (!open_) return drivers::log::LogResult::unavailable("simulator log device is not open");
+    if (config.source.empty()) return drivers::log::LogResult::invalidArgument("simulator log source is empty");
     config_ = config;
     return drivers::log::LogResult::success();
   }
 
   drivers::log::LogResult start() override {
-    if (!open_) return drivers::log::LogResult::unavailable("rv32qemu log device is not open");
+    if (!open_) return drivers::log::LogResult::unavailable("simulator log device is not open");
     chunks_.clear();
     manager_ = &framework::transport::TransportManager::instance();
     if (!manager_->isDataLinkConfigured()) {
@@ -106,7 +106,7 @@ public:
   }
 
   drivers::log::LogResult stop() override {
-    if (!open_) return drivers::log::LogResult::unavailable("rv32qemu log device is not open");
+    if (!open_) return drivers::log::LogResult::unavailable("simulator log device is not open");
     if (manager_) {
       if (transport_ready_) {
         framework::transport::TransportFrame response;
@@ -121,14 +121,14 @@ public:
   }
 
   drivers::log::LogResult readChunk(drivers::log::LogRawChunk& chunk, uint32_t timeout_ms) override {
-    if (!running_) return drivers::log::LogResult::unavailable("rv32qemu log device is not running");
+    if (!running_) return drivers::log::LogResult::unavailable("simulator log device is not running");
     if (!chunks_.empty()) {
       chunk = std::move(chunks_.front());
       chunks_.erase(chunks_.begin());
       ++chunks_read_;
       return drivers::log::LogResult::success();
     }
-    if (!transport_ready_ || !manager_) return drivers::log::LogResult::unavailable("no rv32qemu log chunk available");
+    if (!transport_ready_ || !manager_) return drivers::log::LogResult::unavailable("no simulator log chunk available");
 
     framework::transport::TransportFrame response;
     const auto status = manager_->sendSync(AC_TRANSPORT_CHANNEL_LOG, AC_TRANSPORT_LOG_READ, {}, response,
@@ -177,12 +177,12 @@ private:
   framework::transport::TransportManager* manager_ = nullptr;
 };
 
-class Rv32QemuLogDeviceFactory final : public drivers::log::ILogDeviceFactory {
+class SimulatorLogDeviceFactory final : public drivers::log::ILogDeviceFactory {
 public:
-  explicit Rv32QemuLogDeviceFactory(std::string factory_name) : factory_name_(std::move(factory_name)) {}
+  explicit SimulatorLogDeviceFactory(std::string factory_name) : factory_name_(std::move(factory_name)) {}
   std::string name() const override { return factory_name_; }
   std::unique_ptr<drivers::log::ILogDevice> create(const drivers::log::LogDeviceConfig& config) const override {
-    auto device = std::make_unique<Rv32QemuLogDevice>();
+    auto device = std::make_unique<SimulatorLogDevice>();
     if (!device->open(config).ok()) return nullptr;
     return device;
   }
@@ -191,13 +191,12 @@ private:
   std::string factory_name_;
 };
 
-const bool kRv32QemuLogDeviceRegistered = [] {
-  auto status = drivers::log::LogDeviceRegistry::instance().registerFactory(
-    std::make_unique<Rv32QemuLogDeviceFactory>("rv32qemu"));
-  (void)status;
-  status = drivers::log::LogDeviceRegistry::instance().registerFactory(
-    std::make_unique<Rv32QemuLogDeviceFactory>("rv32qemu-simulator"));
-  (void)status;
+const bool kSimulatorLogDeviceRegistered = [] {
+  for (const char* name : {"simulator", "simulator-audio-controller"}) {
+    auto status = drivers::log::LogDeviceRegistry::instance().registerFactory(
+      std::make_unique<SimulatorLogDeviceFactory>(name));
+    (void)status;
+  }
   return true;
 }();
 

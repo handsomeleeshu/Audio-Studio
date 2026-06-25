@@ -110,6 +110,17 @@ framework::Status LogService::createSession(LogSessionConfig config, LogSessionI
     return framework::Status::invalidArgument("log session already exists: " + config.session_id);
   }
 
+  if (shouldMirrorEntriesLocked(config)) {
+    Session session;
+    session.config = std::move(config);
+    session.config.min_level = normalizeLevel(session.config.min_level);
+    session.mirror_entries = true;
+    session.mirror_entry_cursor = 0;
+    auto inserted = sessions_.emplace(session.config.session_id, std::move(session));
+    out = infoFor(inserted.first->second);
+    return framework::Status::success();
+  }
+
   std::unique_ptr<drivers::log::ILogDevice> device;
   if (registry_ != nullptr) {
     drivers::log::LogDeviceConfig device_config;
@@ -138,6 +149,7 @@ framework::Status LogService::configureSession(const std::string& id, const LogS
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (session->running) return framework::Status::unavailable("cannot configure running log session: " + id);
+  if (session->mirror_entries) return framework::Status::unavailable("cannot configure mirrored log session: " + id);
   session->config.min_level = normalizeLevel(config.min_level.empty() ? session->config.min_level : config.min_level);
   session->config.raw = config.raw;
   const bool options_changed = !config.options.empty();
@@ -172,6 +184,10 @@ framework::Status LogService::start(const std::string& id) {
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) {
+    session->running = true;
+    return framework::Status::success();
+  }
   if (sofLoggerEnabled(*session)) {
     status = ensureSofDecoder(*session);
     if (!status.ok()) return status;
@@ -189,6 +205,10 @@ framework::Status LogService::stop(const std::string& id) {
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) {
+    session->running = false;
+    return framework::Status::success();
+  }
   if (session->device) {
     status = session->device->stop();
     if (!status.ok()) return status;
@@ -247,6 +267,7 @@ framework::Status LogService::readRawLocked(const std::string& id,
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
   if (!session->running) return framework::Status::unavailable("log session is not running: " + id);
+  if (session->mirror_entries) return framework::Status::unavailable("mirrored log session does not expose raw chunks: " + id);
   if (max_chunks == 0) return framework::Status::invalidArgument("log read max_chunks is zero");
 
   if (!session->device) return framework::Status::unavailable("log session has no device: " + id);
@@ -271,6 +292,7 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
   Session* session = nullptr;
   auto status = requireSession(id, session);
   if (!status.ok()) return status;
+  if (session->mirror_entries) return readMirrorEntriesLocked(*session, max_entries, entries);
 
   while (entries.size() < max_entries) {
     std::vector<drivers::log::LogRawChunk> chunks;
@@ -381,6 +403,11 @@ std::string LogService::optionString(const LogSessionConfig& config, const std::
   return it == config.options.end() ? std::string() : it->second;
 }
 
+bool LogService::optionBool(const LogSessionConfig& config, const std::string& key) {
+  const auto value = optionString(config, key);
+  return value == "true" || value == "1" || value == "yes";
+}
+
 std::string LogService::safePathToken(const std::string& value) {
   std::string out;
   out.reserve(value.size());
@@ -410,6 +437,33 @@ void LogService::destroySofDecoder(Session& session) {
     audio_studio_sof_logger_decoder_destroy(session.sof_decoder);
     session.sof_decoder = nullptr;
   }
+}
+
+bool LogService::shouldMirrorEntriesLocked(const LogSessionConfig& config) const {
+  if (config.raw || optionBool(config, "system_info_pump")) return false;
+  for (const auto& item : sessions_) {
+    const auto& session = item.second;
+    if (!session.running || session.mirror_entries) continue;
+    if (!optionBool(session.config, "system_info_pump")) continue;
+    if (session.config.driver_factory != config.driver_factory) continue;
+    if (session.config.source != config.source) continue;
+    if (optionString(session.config, "trace_ldc") != optionString(config, "trace_ldc")) continue;
+    return true;
+  }
+  return false;
+}
+
+framework::Status LogService::readMirrorEntriesLocked(Session& session,
+                                                      size_t max_entries,
+                                                      std::vector<LogEntry>& entries) {
+  if (!session.running) return framework::Status::unavailable("log session is not running: " + session.config.session_id);
+  while (session.mirror_entry_cursor < entries_.size() && entries.size() < max_entries) {
+    const auto& entry = entries_[session.mirror_entry_cursor++];
+    if (!passesLevel(entry.level, session.config.min_level)) continue;
+    entries.push_back(entry);
+    ++session.entries_read;
+  }
+  return framework::Status::success();
 }
 
 framework::Status LogService::prepareTraceFiles(Session& session, bool truncate) {

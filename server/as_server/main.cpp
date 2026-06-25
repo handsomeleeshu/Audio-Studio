@@ -156,6 +156,23 @@ void configureSystemInfoLogInterceptor() {
   });
 #endif
 }
+
+audio_studio::framework::Status startSystemInfoLogPumpFromOptions(const ServerOptions& options) {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  auto config = defaultLogConfigFromOptions(options);
+  config.session_id = "system_info";
+  return systemInfoService().startLogPump(logService(), std::move(config));
+#else
+  (void)options;
+  return audio_studio::framework::Status::success();
+#endif
+}
+
+void stopSystemInfoLogPump() {
+#if defined(CONFIG_FRAMEWORK_LOG)
+  (void)systemInfoService().stopLogPump();
+#endif
+}
 #endif
 
 audio_studio::framework::audio::AudioServiceConfig defaultAudioConfigFromOptions(const ServerOptions& options) {
@@ -166,9 +183,9 @@ audio_studio::framework::audio::AudioServiceConfig defaultAudioConfigFromOptions
 }
 
 #if defined(CONFIG_FRAMEWORK_TRANSPORT)
-audio_studio::drivers::datalink::DataLinkDeviceConfig dataLinkConfigFromEndpoint(const std::string& endpoint) {
+  audio_studio::drivers::datalink::DataLinkDeviceConfig dataLinkConfigFromEndpoint(const std::string& endpoint) {
   audio_studio::drivers::datalink::DataLinkDeviceConfig config;
-  config.name = "rv32qemu-datalink";
+  config.name = "simulator-datalink";
   config.endpoint = endpoint;
   if (!endpoint.empty()) config.options["endpoint"] = endpoint;
   return config;
@@ -425,6 +442,12 @@ int main(int argc, char** argv) {
 #endif
 #if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
       configureSystemInfoLogInterceptor();
+      status = startSystemInfoLogPumpFromOptions(options);
+      if (!status.ok()) {
+        std::cerr << status.toJson() << "\n";
+        drivers.shutdown();
+        return 1;
+      }
 #endif
 #if defined(CONFIG_RPC_TRANSPORT_SOCKET)
       if (transport == "socket") {
@@ -440,6 +463,9 @@ int main(int argc, char** argv) {
           return audioStreamResponse(*context, request);
         });
         server.serve(host, port, {options.max_requests, 5000});
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+        stopSystemInfoLogPump();
+#endif
         drivers.shutdown();
         return 0;
       }
@@ -459,15 +485,24 @@ int main(int argc, char** argv) {
           return audioStreamResponse(*context, request);
         });
         server.serve(request_pipe, response_pipe, {options.max_requests, 5000});
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+        stopSystemInfoLogPump();
+#endif
         drivers.shutdown();
         return 0;
       }
 #endif
       std::cerr << "unsupported RPC transport: " << transport << "\n";
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      stopSystemInfoLogPump();
+#endif
       drivers.shutdown();
       return 2;
     } catch (const std::exception& error) {
       std::cerr << "{\"ok\":false,\"error\":\"" << error.what() << "\"}\n";
+#if defined(CONFIG_FRAMEWORK_SYSTEM_INFO)
+      stopSystemInfoLogPump();
+#endif
       drivers.shutdown();
       return 1;
     }

@@ -53,7 +53,10 @@ public:
   virtual std::string unloadPipeline(const std::string& pipeline_json) = 0;
   virtual std::string run(const std::string& session_id) = 0;
   virtual std::string stop(const std::string& session_id) = 0;
+  virtual std::string pushAudioStream(const std::string& query, const std::string& frame) = 0;
   virtual std::string pushAudioFrame(const std::string& query, const std::string& frame) = 0;
+  virtual std::string finishAudioInput(const std::string& request_json) = 0;
+  virtual std::string captureAudioFrame(const std::string& query) = 0;
   virtual std::string telemetry(const std::vector<std::string>& node_ids) = 0;
   virtual std::string pipelineEditEvent(const std::string& request_json) = 0;
   virtual std::string pipelineToolAction(const std::string& request_json) = 0;
@@ -75,6 +78,7 @@ struct GuiConfigCompileRequest {
   std::string input_path;
   std::string output_dir;
   std::string project_name;
+  std::string working_dir;
   std::string alsatplg;
   std::string as_server;
   bool build_tplg = true;
@@ -165,15 +169,20 @@ public:
   std::string unloadPipeline(const std::string& pipeline_json) override;
   std::string run(const std::string& session_id) override;
   std::string stop(const std::string& session_id) override;
+  std::string pushAudioStream(const std::string& query, const std::string& frame) override;
   std::string pushAudioFrame(const std::string& query, const std::string& frame) override;
+  std::string finishAudioInput(const std::string& request_json) override;
+  std::string captureAudioFrame(const std::string& query) override;
   std::string telemetry(const std::vector<std::string>& node_ids) override;
   std::string pipelineEditEvent(const std::string& request_json) override;
   std::string pipelineToolAction(const std::string& request_json) override;
 
 private:
   struct PlaybackWorker;
+  struct CaptureWorker;
   std::shared_ptr<BuildOrchestrator> build_orchestrator_;
   std::unique_ptr<PlaybackWorker> playback_;
+  std::unique_ptr<CaptureWorker> capture_;
   std::atomic<bool> running_{false};
   std::mutex rng_mutex_;
   std::mt19937 rng_;

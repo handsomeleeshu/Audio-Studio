@@ -22,32 +22,37 @@ assert.ok(
   'RUNNING target groups should disable the button and show Running'
 );
 assert.ok(
-  /#buildBtn'\)\.addEventListener\('click'[\s\S]*runtimeStatusForGroupId\(['"]ALL['"]\)[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*unloadRuntimeGroup\(['"]ALL['"]\)[\s\S]*buildRuntimeGroup\(['"]ALL['"]\)/.test(html),
-  'Build button click should use the global ALL runtime target for build/unload'
+  /#buildBtn'\)\.addEventListener\('click'[\s\S]*const groupId = targetRuntimeGroupId\(\)[\s\S]*runtimeStatusForGroupId\(groupId\)[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*unloadRuntimeGroup\(groupId\)[\s\S]*buildRuntimeGroup\(groupId\)/.test(html),
+  'Build button click should use the selected runtime target for build/unload'
 );
 
 assert.ok(
-  /const buildPayload = \{[\s\S]*\.\.\.pipelineSnapshot\(\)[\s\S]*build_scope:\s*['"]all_pipelines['"][\s\S]*group_id:\s*['"]ALL['"][\s\S]*\}/.test(html),
-  'build payload should force all-pipelines scope and group_id ALL regardless of selected pipeline'
+  /const buildPayload = \{[\s\S]*\.\.\.pipelineSnapshot\(\)[\s\S]*build_scope:\s*groupId === ['"]ALL['"] \? ['"]all_pipelines['"] : ['"]selected_pipeline['"][\s\S]*group_id:\s*groupId[\s\S]*target_group/.test(html),
+  'build payload should target the selected pipeline group instead of forcing ALL'
 );
 assert.ok(
   /apiPost\(['"]\/api\/pipeline\/build['"],\s*buildPayload\)/.test(html),
   'build action should POST the explicit global build payload'
 );
 
+assert.ok(
+  /function defaultWorkingGroupIdV51[\s\S]*groups\[0\]\?\.id \|\| ['"]ALL['"]/.test(html),
+  'the working-group pipeline selector should default to the first runnable group'
+);
+
 assertIncludes('async function unloadRuntimeGroup', 'frontend should own an unload action');
 assertIncludes("apiPost('/api/pipeline/unload'", 'unload action should POST /api/pipeline/unload');
 assert.ok(
-  /unloadRuntimeGroup[\s\S]*pipelineSnapshot\(\)[\s\S]*unload_scope:\s*['"]all_pipelines['"][\s\S]*group_id:\s*['"]ALL['"][\s\S]*target_group/.test(html),
-  'unload payload should reuse pipelineSnapshot shape and force global all-pipelines target information'
+  /unloadRuntimeGroup[\s\S]*pipelineSnapshot\(\)[\s\S]*unload_scope:\s*groupId === ['"]ALL['"] \? ['"]all_pipelines['"] : ['"]selected_pipeline['"][\s\S]*group_id:\s*groupId[\s\S]*target_group/.test(html),
+  'unload payload should reuse pipelineSnapshot shape and target selected group information'
 );
 assert.ok(
   /res && res\.ok === true[\s\S]*normalizeRuntimeStatus\(res\?\.runtime_state\) === RUNTIME_STATES\.NOT_READY/.test(html),
   'unload success should require ok:true and runtime_state NOT_READY'
 );
 assert.ok(
-  /setRuntimeStatusForGroup\(['"]ALL['"],\s*RUNTIME_STATES\.NOT_READY,\s*['"]unload_success['"]\)/.test(html),
-  'successful unload should set every working group to NOT_READY'
+  /setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.NOT_READY,\s*['"]unload_success['"]\)/.test(html),
+  'successful unload should set the selected runtime target to NOT_READY'
 );
 
 assertIncludes('function upsertUpdatedPipelineFromBuildResponse', 'build responses should upsert backend-generated pipeline data');

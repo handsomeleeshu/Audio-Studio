@@ -143,7 +143,7 @@ audio_controller_create(const audio_controller_create_params_t* params)
         driver->free(driver->user, controller);
         return 0;
     }
-    if (ac_audio_init(&controller->audio) != 0 ||
+    if (ac_audio_init(&controller->audio, &controller->driver) != 0 ||
         ac_log_init(&controller->log, controller->driver.log_source) != 0 ||
         ac_log_listen(&controller->log, &controller->transport) != 0 ||
         ac_audio_listen(&controller->audio, &controller->transport) != 0 ||

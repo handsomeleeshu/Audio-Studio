@@ -1938,7 +1938,7 @@ header_crc32   32
 
 同步发送 `sendSync()` 会阻塞到收到同 `channel_id + seq_id` 的 transport ACK/RESPONSE。异步发送 `sendAsync()` 把请求放入 channel worker 队列后立即返回；收到 ACK/RESPONSE 时由 channel worker 调用注册回调。一个 channel 对应一个 worker thread，channel 内按 sequence 有序，channel 间互不阻塞；所有 channel 最终通过同一个 DataLinkManager 和同一把 data-link IO mutex 排队进入物理链路。
 
-TransportManager 的 channel 管理只做一件事：保证同一时刻同一个 `channel_id` 只能 open 一次。它不关心该 channel 属于 log、audio control、audio data 还是其他业务，也不提供 shared channel 语义。需要复用固定 control channel 的业务，例如 rv32qemu audio driver 复用 audio control channel 3，必须在该 driver 内部维护引用计数和生命周期，确保只向 TransportManager open 一次，最后一个使用者退出时再 close。不同 driver 或不同 stream 必须使用不同 transport channel，重复 open 应返回明确错误。
+TransportManager 的 channel 管理只做一件事：保证同一时刻同一个 `channel_id` 只能 open 一次。它不关心该 channel 属于 log、audio control、audio data 还是其他业务，也不提供 shared channel 语义。需要复用固定 control channel 的业务，例如 simulator audio driver 复用 audio control channel 3，必须在该 driver 内部维护引用计数和生命周期，确保只向 TransportManager open 一次，最后一个使用者退出时再 close。不同 driver 或不同 stream 必须使用不同 transport channel，重复 open 应返回明确错误。
 
 Audio Controller 侧遵循同一分层：`ac_transport` 只负责 channel 注册、监听、排队、线程和 transport response，不包含 log/dump/audio/control 业务逻辑；业务 handler 放在对应模块，例如 log 使用 `ac_log_transport_handler()`，audio 使用 `ac_audio_control_transport_handler()` 和 `ac_audio_data_transport_handler()`。`ac_transport_init()` 启动的 worker 只服务唯一 data-link 上下行轮询，业务 channel 线程发送 response 时必须能及时获得 data-link IO 权限，data-link worker 不得长时间持有 IO mutex 或连续抢占，避免业务 channel ACK 被饿住并导致 host 侧 read timeout。
 
@@ -1946,7 +1946,7 @@ TransportManager 本身只被 controller 类 driver implementation 使用；`fra
 
 #### 4.11.4 Simulator audio controller channel
 
-Simulator audio controller 使用一个固定 control channel 和最多 16 个独立 data channel，保证多路 stream 的音频数据互不串流。host 侧 rv32qemu audio driver 内部负责 audio control channel 的引用计数：第一个 audio session 打开 channel 3，后续 session 复用该已打开 channel，最后一个 session 关闭时才关闭 channel 3；TransportManager 仍然只看到 channel 3 被 open 一次。
+Simulator audio controller 使用一个固定 control channel 和最多 16 个独立 data channel，保证多路 stream 的音频数据互不串流。host 侧 simulator audio driver 内部负责 audio control channel 的引用计数：第一个 audio session 打开 channel 3，后续 session 复用该已打开 channel，最后一个 session 关闭时才关闭 channel 3；TransportManager 仍然只看到 channel 3 被 open 一次。
 
 ```text
 AC_TRANSPORT_CHANNEL_AUDIO_CONTROL = 3
@@ -1986,8 +1986,8 @@ server/framework/transport/include/datalink_manager.hpp
 server/framework/transport/include/transport_checksum.hpp
 server/platform/simulator/include/simulator_pipe_datalink_device.hpp
 server/platform/simulator/src/simulator_pipe_datalink_device.cpp
-server/platform/simulator/src/rv32qemu_log_device.cpp
-server/platform/simulator/src/rv32qemu_audio_device.cpp
+server/platform/simulator/src/simulator_log_device.cpp
+server/platform/simulator/src/simulator_audio_device.cpp
 audio_controller/src/ac_transport_channel.h
 audio_controller/src/ac_datalink.c
 audio_controller/src/ac_transport.c
@@ -2547,7 +2547,7 @@ as_play/as_record
 
 A2/controller profile 后续沿用同一 `IAudioPlaybackDevice` / `IAudioCaptureDevice` interface，只替换 registry 中的 factory implementation。
 
-Simulator profile 当前注册 `rv32qemu` 与 `rv32qemu-simulator` playback/capture factory。`as_server --audio-driver-factory rv32qemu --datalink <endpoint>` 提供默认 driver 与唯一平台 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。rv32qemu log/audio driver 都使用同一个 `TransportManager::instance()` 和同一个由 as_server 预先绑定的 `simulator-pipe` data-link。driver session 内不得再解析或覆盖 endpoint。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
+Simulator profile 当前注册通用 `simulator` 与 `simulator-audio-controller` playback/capture factory。`as_server --audio-driver-factory simulator --datalink <endpoint>` 提供默认 driver 与唯一平台 data-link 配置；CLI 不再强制写死 ALSA/WASAPI/Pulse。simulator log/audio driver 都使用同一个 `TransportManager::instance()` 和同一个由 as_server 预先绑定的 `simulator-pipe` data-link。driver session 内不得再解析或覆盖 endpoint。`as_play <file.wav>` 会自动解析 PCM WAV header，并用文件中的 sample rate、channel count、bytes per sample 覆盖 CLI 默认值；`--device` 仍作为 SOF stream name，例如 playback 常用 `pcm_playback`。`as_record <out.wav>` 使用命令行显式参数生成 WAV，例如 `--sample-rate 48000 --channels 2 --bytes-per-sample 2 --duration-ms 1000 --device stream_0`。
 
 ### 7.2 as_control：A2 直连 Controller 模式
 
@@ -4852,14 +4852,14 @@ apps/as_config
 
 #### 5.X.1 GUI backend build workspace 与 config.compile RPC
 
-Audio Studio GUI backend 不直接修改源平台 JSON。页面初始化加载平台配置时，backend 为当前 project 创建临时 workspace，将原始 JSON 拷贝为 `${platform}_pipeline_all.json`，并把该 all copy 返回前端。前端编辑阶段不写 workspace；Build 时前端提交完整 layout snapshot，backend 按 snapshot 中全部 working groups 重建 `${platform}_pipeline_all.json` 的根 `module_instances[]` 与 `pipelines[]`，并把完整 GUI snapshot 写入 `audio_studio_gui` 字段，用于 UI 恢复、debug file metadata 和审计。`POST /api/pipeline/build` 接受前端直接提交的裸 snapshot，也兼容 `{ "snapshot": ... }` 包装格式；无论 UI 当前显示 All 还是单条 pipeline，build 都是全局 build。
+Audio Studio GUI backend 不直接修改源平台 JSON。页面初始化加载平台配置时，backend 为当前 project 创建临时 workspace，将原始 JSON 拷贝为 `${platform}_pipeline_all.json`，并把该 all copy 返回前端。前端编辑阶段不写 workspace；Build 时前端提交当前 layout snapshot，backend 按 snapshot 中的 working groups 重建 `${platform}_pipeline_all.json` 的根 `module_instances[]` 与 `pipelines[]`，并把 GUI snapshot 写入 `audio_studio_gui` 字段，用于 UI 恢复、debug file metadata 和审计。`POST /api/pipeline/build` 接受前端直接提交的裸 snapshot，也兼容 `{ "snapshot": ... }` 包装格式；单 pipeline 视图提交单个 working group 时就是 scoped build。
 
 重生成规则：
 
 ```text
-1. backend 忽略 snapshot 的当前选中 `group_id`，总是遍历全部 `working_groups` 重建全局配置。
+1. backend 遍历 snapshot 中携带的 `working_groups` 重建当前 build 配置；单 pipeline snapshot 只生成该 pipeline。
 2. 能唯一对应原始 pipeline 的 group 沿用原 `pipe_id`、`domain`、`frame`、`runtime`；新增/拆分/合并 group 使用稳定 `GUI_PIPE_<index>` 或前端提供的 `pipeline_id`。
-3. HOST/DAI 节点必须引用已有 module instance；缺少 `inst_ref` 时 build 在 workspace stage 失败并返回 diagnostics。
+3. HOST/DAI 节点必须引用已有 module instance；重生成前会用源项目 JSON 作为 baseline 合并根 `module_instances[]` 和 `pipelines[]`，保证 scoped build 之间切换时仍能找到未显示 pipeline 的原始实例；缺少 `inst_ref` 时 build 在 workspace stage 失败并返回 diagnostics。
 4. 普通节点有 `inst_ref` 时保留原 instance；新增普通算法节点生成稳定 `module_instances[]` entry，并在 pipeline node 中使用 `{ node_id, kind: "module", inst_ref }`。
 5. `builtin.file_input` / `builtin.file_output` debug 节点和 external/debug 连接全部剔除，不进入根 `module_instances[]` 或 `pipelines[]`。
 6. `as_config` 只读取 `${platform}_pipeline_all.json` 的根 `module_instances[]` 与 `pipelines[]`，不读取 `audio_studio_gui.as_config_payload`。
@@ -4889,9 +4889,9 @@ pipeinstall <compiled.tplg>
 
 然后调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log --gui-keep-alive --gui-ready-marker <ready>`，由该脚本负责重启 simulator 和验证用 as_server。`sof-test-run.py` 在 test list 成功完成 `ac_run`、`trace on`、`pipeinstall <tplg>` 后写 ready marker，并保持 qemu/as_server 运行。backend 看到 ready marker 后返回 `runtime_state:"PIPE_LOADED"`；build 失败或 `/api/pipeline/unload` 会向 session 进程组发送 Ctrl+C 等价清理。backend 会从启动目录和父目录向上查找 `application/rv32qemu/sof-build-test.py`、验证用 `out/linux/simulator/rpc_socket/Debug/as_server`、`as_log` 与 `application/rv32qemu/build/sof.ldc`；必要时可通过 `AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH`、`AUDIO_STUDIO_VALIDATION_AS_LOG_PATH`、`AUDIO_STUDIO_VALIDATION_TRACE_LDC` 显式指定。
 
-当前 simulator profile 中 `PLAYBACK_MAIN` 可以完整通过 `config.compile`、tplg build、rv32qemu `trace on` 和 `pipeinstall`。GUI Build 现在面向全部 working groups；backend 成功后返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines`、`updated_module_instances` 与 `workspace_revision`，frontend 将其同步到内存中的 all config，确保 All/单 pipeline 视图一致。
+当前 simulator profile 中 `PLAYBACK_MAIN` 可以完整通过 `config.compile`、tplg build、rv32qemu `trace on` 和 `pipeinstall`。GUI Build 现在面向 snapshot working groups；backend 成功后返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines`、`updated_module_instances` 与 `workspace_revision`，frontend 将其同步到内存中的当前 workspace config，确保单 pipeline scoped build 后仍可继续切换和重建其他 pipeline。
 
-每次 build 开始前都会停止已有 validation session，因此 build 总是重新启动 simulator 和验证用 as_server。`POST /api/pipeline/unload` 是全局 unload，会停止当前 session 并把 frontend/backend runtime state 退回 `NOT_READY`。GUI `Save` 只有最近一次全局 build 成功后才允许把 `${platform}_pipeline_all.json` 写回原始平台 JSON。Build 成功后 frontend 只锁定结构编辑：新增/删除组件和连接、端口方向、pipeline rename、build-affecting 参数修改会提示先 Unload；拖动节点位置、Auto Arrange、选择、缩放和 Inspector 查看仍然允许。
+每次 build 开始前都会停止已有 validation session，因此 build 总是重新启动 simulator 和验证用 as_server。`POST /api/pipeline/unload` 是全局 unload，会停止当前 session 并把 frontend/backend runtime state 退回 `NOT_READY`。GUI `Save` 只有最近一次 build 成功后才允许把 `${platform}_pipeline_all.json` 写回原始平台 JSON。Build 成功后 frontend 只锁定结构编辑：新增/删除组件和连接、端口方向、pipeline rename、build-affecting 参数修改会提示先 Unload；拖动节点位置、Auto Arrange、选择、缩放和 Inspector 查看仍然允许。
 
 #### 5.X.2 GUI/runtime state 与 Inspector preset
 
@@ -4931,7 +4931,44 @@ ERROR
 
 `stream_name` 是 HOST 的 UI/config 参数；`stream_id` 可保留为 as_config 兼容字段。FILE_IO DAI 不是独立 module type，而是 `builtin.dai` 加 `dai_type=file_io_dai` 与 `dai_index`。as_config 根据这两个参数生成对应 SOF DAI/BE widget。FILE_IO DAI 的 `file_path` 使用 `value_type: "file_io"`，Inspector 根据当前 `direction` 显示为选择 WAV 或保存路径。
 
-`builtin.file_input` 与 `builtin.file_output` 是 debug-only 前端虚拟组件，不进入 `pipelines[]` 或 as_config payload；它们只能连接 HOST component，用于前端/后端调试音频文件选择、保存和音频格式传递。
+`builtin.file_input`、`builtin.file_output`、`virtual.file_input` 与 `virtual.audio_output` 是 debug-only 前端虚拟组件，不进入 `pipelines[]` 或 as_config payload；它们只能连接 HOST component，用于前端/后端调试音频文件选择、保存和音频格式传递。
+
+平台 JSON 使用与 `pipelines[]` 并列的顶层 `frontend_connections[]` 持久化这类前端节点和 SOF HOST stream 的关系。这样 `pipelines[]` 保持纯 SOF pipeline，`as_config` 与 `ConfigService` 编译逻辑完全不变；GUI/frontend 初始化 pipeline layout 时用 `frontend_connections[] + pipelines[]` 恢复 File Input/File Output 节点及其连接。示例：
+
+```json
+{
+  "frontend_connections": [
+    {
+      "connection_id": "PLAYBACK_MAIN_FILE_INPUT",
+      "pipeline_id": "PLAYBACK_MAIN",
+      "host_node_id": "HOST_IN",
+      "host_stream": "as_config_playback",
+      "frontend_node": {
+        "node_id": "FILE_IN",
+        "name": "Playback File Input",
+        "module_type": "virtual.file_input",
+        "direction": "input"
+      },
+      "from": "FILE_IN:L",
+      "to": "HOST_IN:in"
+    },
+    {
+      "connection_id": "CAPTURE_MAIN_FILE_OUTPUT",
+      "pipeline_id": "CAPTURE_MAIN",
+      "host_node_id": "HOST_OUT",
+      "host_stream": "as_config_capture",
+      "frontend_node": {
+        "node_id": "FILE_OUT",
+        "name": "Capture File Output",
+        "module_type": "virtual.audio_output",
+        "direction": "output"
+      },
+      "from": "HOST_OUT:out",
+      "to": "FILE_OUT:L"
+    }
+  ]
+}
+```
 
 #### 5.X.4 SOF Audio Studio telemetry 与 SystemInfo RPC
 
@@ -4984,7 +5021,9 @@ Build 成功并返回 `PIPE_LOADED` 后，GUI RUN 不再只切换 mock runtime s
 }
 ```
 
-GUI/backend 的 `GuiRuntimeEngine` 根据该描述创建 as_server playback session，并启动独立 worker thread。frontend 随后通过 `POST /api/runtime/audio/frame?...` 发送 `application/octet-stream` frame；backend 只把 frame 放入内存 queue 后立即返回 `{accepted, queued_bytes, next_push_ms, stalled, blocked_edge_key}`，不阻塞 UI。worker thread 负责把 queue 中的数据通过 `AudioRpcClient` 写入 as_server `audio.createPlaybackSession` 对应 stream。
+GUI/backend 的 `GuiRuntimeEngine` 根据该描述创建 as_server playback session，并启动独立 worker thread。frontend 通过 `POST /api/runtime/audio/playback/stream?...` 发送 `application/octet-stream` frame，把 PCM bytes 放入 backend queue；随后通过 `POST /api/runtime/audio/playback/frame` 发送 `frame_index`、`offset`、`bytes_written` 等 JSON 元信息，并从该响应读取 `{accepted, queued_bytes, queued_audio_ms, next_push_ms, stalled, blocked_edge_key}`，不阻塞 UI。`queued_audio_ms` 和 `next_push_ms` 按 queue 内 stream bytes、channel count、sample rate、sample bits 计算；当 queue 内音频时长超过目标水位时，backend 增大 `next_push_ms`，指导 frontend 延后推下一帧。worker thread 负责把 queue 中的数据通过 `AudioRpcClient` 写入 as_server `audio.createPlaybackSession` 对应 stream。
+
+File Output/capture 不在 backend 建 queue。frontend 按 `GET /api/runtime/audio/capture/frame?max_bytes=...` 定时读取；backend 每次直接从 as_server capture stream 读取一帧并返回 `{bytes, queued_bytes:0, next_poll_ms, data_base64}`。`next_poll_ms` 由本次读取 bytes 按 channel count、sample rate、sample bits 换算，供 frontend 安排下一次读取。
 
 堵塞判定分两层：
 
@@ -6305,7 +6344,7 @@ drivers/log/controller/ControllerLogDevice
 
 这样 A2 direct、DSP simulator、其他 Audio Controller 平台不需要各自实现 log driver。
 
-rv32qemu/simulator 当前实现提供 `rv32qemu` 与 `rv32qemu-simulator` log factory。`--datalink <endpoint>` 是 `as_server` 与 audio controller 之间唯一的运行期链路配置。as_server 在启动阶段配置 `TransportManager::instance()` 的 `simulator-pipe` data-link；该 log device 只打开 Log channel 并通过 transport command 读取 raw log chunk。未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
+`platform/simulator` 当前实现提供通用 `simulator` 与 `simulator-audio-controller` log factory。`--datalink <endpoint>` 是 `as_server` 与 audio controller 之间唯一的运行期链路配置。as_server 在启动阶段配置 `TransportManager::instance()` 的 `simulator-pipe` data-link；该 log device 只打开 Log channel 并通过 transport command 读取 raw log chunk。未配置 endpoint 时仅用于 host smoke，返回 sample firmware log，避免 framework/log 直接依赖 TransportManager。
 
 `as_log` 的 SOF log 解码器内置在 `framework/log` 中：Audio Studio build 直接编译复用 `sof/tools/logger` 的 `convert.c`、`filter.c`、`misc.c`，由 `LogService` wrapper 对 `ILogDevice::readChunk()` 得到的 raw trace bytes 做增量解码。`.ldc` 仍是 raw SOF trace 解码必需字典，但它属于 `as_server` 的 log session 默认配置，应由 `as_server --log-trace-ldc` 或 server 配置提供；`as_log` CLI 不暴露外部 SOF logger executable，也不携带 log driver factory、data-link endpoint 或 `.ldc`。`as_log` 负责连接 `as_server`、请求 log session、标准输出和 ANSI 颜色，不直接解析 raw SOF trace。
 
@@ -6331,7 +6370,7 @@ Misc/sof_test/platform/rv32qemu:
 
 Audio-Studio host:
   as_server --rpc
-            --log-driver-factory rv32qemu
+            --log-driver-factory simulator
             --datalink <sof_test cwd>/as_datalink
             --log-trace-ldc application/rv32qemu/build/sof.ldc
 

@@ -45,6 +45,8 @@ assertIncludes('writeInspectorPresetParam', 'Inspector changes should write to i
 assertIncludes('data-param-disabled', 'Inspector disabled state should be reflected in DOM');
 
 assertIncludes('debug_file_io', 'snapshot should carry debug file I/O outside as_config payload');
+assertIncludes('frontend_connections', 'pipeline layout should restore frontend File I/O nodes from platform JSON');
+assertIncludes('addFrontendConnectionsToPipelineGraph', 'pipeline layout load should merge frontend connections with SOF pipeline nodes');
 assertIncludes('working_groups', 'snapshot should send working groups for backend pipeline regeneration');
 assertIncludes('pipelineNodeId', 'snapshot should send original/local pipeline node ids');
 assertIncludes('inst_ref', 'snapshot should send module instance references for HOST/DAI');
@@ -52,7 +54,21 @@ assertIncludes('port_domains', 'snapshot should send per-port SOF/external domai
 assertIncludes('data-file-param-action', 'file_open/file_save controls should be rendered');
 assertIncludes("t === 'file_io'", 'Inspector should map file_io value_type to file open/save controls');
 assertIncludes('readAudioFileInfo', 'WAV selection should parse basic audio info');
+assertIncludes('/api/runtime/audio/playback/stream', 'file input playback must send PCM bytes through the playback stream URL');
+assertIncludes("apiPostBinary('/api/runtime/audio/playback/stream?'", 'binary playback payload must use the playback stream URL');
+assertIncludes("apiPost('/api/runtime/audio/playback/frame?'", 'playback frame API should send metadata as JSON');
+assertNotIncludes("apiPostBinary('/api/runtime/audio/playback/frame?'", 'playback frame API must not carry binary PCM payload');
+assertNotIncludes('/api/runtime/audio/stream', 'frontend must not use unscoped audio stream routes');
+assertNotIncludes('/api/runtime/audio/frame', 'frontend must not use unscoped audio frame routes');
+assertIncludes('/api/runtime/audio/playback/eos', 'file input playback must send explicit EOS after the last WAV frame');
+assertIncludes('finishPlaybackFramePump', 'playback pump should wait for backend EOS result before restoring RUN state');
+assertIncludes('startCaptureFramePump', 'file output capture should start a backend-driven frame pump');
+assertIncludes('/api/runtime/audio/capture/frame', 'file output capture should pull frames from GUI backend');
+assertIncludes('capture_request', 'runtime run response should carry capture request metadata');
+assertIncludes('runtimeDeviceNameForEdge', 'file I/O runtime requests should pass the connected HOST stream name to GUI backend');
+assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*['"]run_complete['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
 assertIncludes('isDebugFileIoNode', 'debug file I/O nodes should be identifiable');
+assert.ok(/function isDebugFileIoNode[\s\S]*id === 'virtual\.audio_output'/.test(html), 'virtual audio output must be treated as a debug file I/O node');
 assertIncludes('as_config_nodes', 'snapshot should separate final as_config payload nodes');
 assertIncludes("id === 'builtin.host'", 'debug file I/O connection policy should recognize host modules');
 assertIncludes('isExternalPort', 'frontend should distinguish external/debug ports');

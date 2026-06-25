@@ -12,7 +12,6 @@ struct ac_transport_frame;
 struct sof_stream;
 
 #define AC_AUDIO_STREAM_NAME_SIZE 32u
-#define AC_AUDIO_DMA_BUFFER_SIZE 16384u
 #define AC_AUDIO_DMA_ALIGNMENT 4096u
 
 typedef struct ac_audio_stream_config {
@@ -29,20 +28,25 @@ typedef struct ac_audio_stream_slot {
     ac_audio_stream_config_t config;
     uint16_t data_channel_id;
     uint16_t frame_bytes;
+    const audio_controller_driver_ops_t* driver;
     int allocated;
     int configured;
     int running;
     int channel_registered;
-    unsigned char dma_storage[AC_AUDIO_DMA_BUFFER_SIZE + AC_AUDIO_DMA_ALIGNMENT];
+    void* dma_raw;
+    void* dma_aligned;
+    size_t dma_buffer_size;
     size_t frames_written;
     size_t frames_read;
 } ac_audio_stream_slot_t;
 
 typedef struct ac_audio_controller {
     ac_audio_stream_slot_t streams[AC_TRANSPORT_AUDIO_MAX_STREAMS];
+    const audio_controller_driver_ops_t* driver;
 } ac_audio_controller_t;
 
-int ac_audio_init(ac_audio_controller_t* audio);
+int ac_audio_init(ac_audio_controller_t* audio,
+                  const audio_controller_driver_ops_t* driver);
 void ac_audio_deinit(ac_audio_controller_t* audio);
 int ac_audio_listen(ac_audio_controller_t* audio,
                     struct ac_transport_controller* transport);

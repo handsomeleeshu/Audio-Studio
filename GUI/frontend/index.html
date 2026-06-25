@@ -4047,13 +4047,14 @@
     }
     function debugFileIoDirection(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
+      if (id === 'virtual.audio_output') return 'output';
       if (id.includes('file_output')) return 'output';
       if (id.includes('file_input')) return 'input';
       return n?.type === 'output' ? 'output' : 'input';
     }
     function isDebugFileIoNode(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
-      return id === 'builtin.file_input' || id === 'builtin.file_output' || id === 'virtual.file_input';
+      return id === 'builtin.file_input' || id === 'builtin.file_output' || id === 'virtual.file_input' || id === 'virtual.audio_output';
     }
     function isHostComponentNode(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
@@ -4287,6 +4288,7 @@
     let bufferDumpState = { active: false, edgeKey: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], fallback: false, format: null, lastTimestamp: 0, timer: null, writeChain: Promise.resolve(), pumpBusy: false };
     const debugFileIoFiles = new Map();
     const playbackFramePump = { active: false, busy: false, timer: 0, generation: 0, file: null, audio: null, nodeId: '', fileName: '', edgeKey: '', blockedEdgeKey: '', offset: 0, end: 0, frameIndex: 0, frameBytes: 3840, nextPushMs: 20, groupId: '' };
+    const captureFramePump = { active: false, busy: false, timer: 0, generation: 0, nodeId: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], format: null, frameBytes: 3840, nextPollMs: 20, groupId: '', writeChain: Promise.resolve() };
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -4849,6 +4851,21 @@
       restoreViewLayout(pipelineId);
       return ok;
     }
+    function mergeCachedEdgesWithGenerated(cachedEdges, generatedEdges) {
+      const out = (Array.isArray(cachedEdges) ? cachedEdges : []).map(cloneEdge);
+      const seen = new Set(out.map(e => {
+        const p = edgeParts(e);
+        return edgeKeyFromParts(p.from, p.fromPort, p.to, p.toPort);
+      }));
+      (generatedEdges || []).forEach(e => {
+        const p = edgeParts(e);
+        const key = edgeKeyFromParts(p.from, p.fromPort, p.to, p.toPort);
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(cloneEdge(e));
+      });
+      return out;
+    }
     function applyPipelineLayoutsForView(finalPipes, pipelineId = 'ALL') {
       const ids = finalPipes.map(p => p.pipe_id);
       const generatedEdges = state.edges.map(cloneEdge);
@@ -4870,7 +4887,7 @@
 
         if (snap && applyPipelineSnapshot(pid, ns, snap, anchor)) {
           restored++;
-          const cachedEdges = Array.isArray(snap.edges) ? snap.edges.map(cloneEdge) : generatedForPipe;
+          const cachedEdges = Array.isArray(snap.edges) ? mergeCachedEdgesWithGenerated(snap.edges, generatedForPipe) : generatedForPipe;
           nextEdges.push(...cachedEdges);
         } else {
           arrangePipelineBand(ns, generatedForPipe, pipelineId === 'ALL' ? yCursor : 80, inferNodePipelineName(pid));
@@ -5087,6 +5104,111 @@
       const startY = selectedPipesCount > 1 ? 70 + pipeIndex * 230 : 95;
       return (pipe.nodes || []).map((pn, i) => ({ pn, x: pn.ui?.x ?? (startX + i * xStep), y: pn.ui?.y ?? startY }));
     }
+    function frontendConnectionsForPipeline(cfg, pipeId) {
+      const connections = Array.isArray(cfg?.frontend_connections) ? cfg.frontend_connections : [];
+      return connections.filter(conn => conn && conn.pipeline_id === pipeId);
+    }
+    function frontendNodeSpec(conn) {
+      return conn?.frontend_node || conn?.node || {};
+    }
+    function frontendConnectionDirection(conn, moduleTypeId = '') {
+      const spec = frontendNodeSpec(conn);
+      const explicit = String(spec.direction || conn?.direction || '').toLowerCase();
+      if (explicit === 'input' || explicit === 'output') return explicit;
+      const typeId = String(moduleTypeId || spec.module_type || conn?.module_type || '').toLowerCase();
+      return typeId.includes('output') ? 'output' : 'input';
+    }
+    function frontendVirtualModuleType(moduleTypeId, direction) {
+      const output = direction === 'output';
+      return {
+        type_id: moduleTypeId || (output ? 'virtual.audio_output' : 'virtual.file_input'),
+        category: 'builtin/input_output',
+        ui: {
+          display_name: output ? 'File Output' : 'File Input',
+          library_category: 'INPUT / OUTPUT',
+          library_type: output ? 'output' : 'input',
+          icon: 'file',
+          channels: '2ch',
+          source: 'platform'
+        },
+        io: output
+          ? { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }], out_ports: [] }
+          : { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }] },
+        performance: { cpu_percent: 0.2, mem_kb: 96, latency_ms: 0.1 },
+        static_schema: {
+          fields: [
+            {
+              key: 'file_path',
+              param_name: output ? 'Save Path' : 'WAV File',
+              value_type: output ? 'file_save' : 'file_io',
+              default: '',
+              apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' }
+            }
+          ]
+        },
+        runtime_params: []
+      };
+    }
+    function frontendComponentFromConnection(conn) {
+      const spec = frontendNodeSpec(conn);
+      const moduleTypeId = spec.module_type || spec.moduleType || conn?.module_type || conn?.moduleType ||
+        (String(spec.direction || conn?.direction || '').toLowerCase() === 'output' ? 'virtual.audio_output' : 'virtual.file_input');
+      const direction = frontendConnectionDirection(conn, moduleTypeId);
+      const mt = moduleTypeMap(currentProjectConfig).get(moduleTypeId) || frontendVirtualModuleType(moduleTypeId, direction);
+      const c = componentFromResolvedModule(mt, spec.name || spec.title || mt.name || friendlyName(moduleTypeId));
+      c.type = direction === 'output' ? 'output' : 'input';
+      c.paramValues = {
+        ...(c.paramValues || {}),
+        direction,
+        host_stream: conn?.host_stream || conn?.hostStream || '',
+        host_node_id: conn?.host_node_id || conn?.hostNodeId || '',
+        connection_id: conn?.connection_id || conn?.id || ''
+      };
+      return c;
+    }
+    function graphEndpointForPipeline(pipeId, endpoint, fallbackNode, fallbackPort) {
+      const ep = splitEndpoint(endpoint || '');
+      const node = ep.node || fallbackNode;
+      return { node: graphNodeId(pipeId, node), port: ep.port || fallbackPort };
+    }
+    function addFrontendConnectionsToPipelineGraph(pipe, nodes, edges, idSet) {
+      const conns = frontendConnectionsForPipeline(currentProjectConfig, pipe.pipe_id);
+      conns.forEach((conn, idx) => {
+        const spec = frontendNodeSpec(conn);
+        const localNodeId = spec.node_id || spec.id || conn.frontend_node_id || conn.node_id || `FRONTEND_${idx + 1}`;
+        const graphId = graphNodeId(pipe.pipe_id, localNodeId);
+        const c = frontendComponentFromConnection(conn);
+        const hostLocalId = conn.host_node_id || conn.hostNodeId || splitEndpoint(conn.from || '').node || splitEndpoint(conn.to || '').node || '';
+        const hostNode = hostLocalId ? nodes.find(n => n.id === graphNodeId(pipe.pipe_id, hostLocalId)) : null;
+        const ui = spec.ui || {};
+        const direction = frontendConnectionDirection(conn, c.moduleTypeId);
+        const x = Number.isFinite(Number(ui.x)) ? Number(ui.x) :
+          Math.max(20, (hostNode?.x ?? 120) + Number(ui.dx ?? (direction === 'output' ? 185 : -185)));
+        const y = Number.isFinite(Number(ui.y)) ? Number(ui.y) :
+          Math.max(40, (hostNode?.y ?? 95) + Number(ui.dy ?? 0));
+        if (!nodes.some(n => n.id === graphId)) {
+          const gn = mkNodeFromComponent(graphId, c, x, y);
+          gn.pipelineId = pipe.pipe_id;
+          gn.pipelineName = pipe.name || pipe.pipe_id;
+          gn.pipelineNodeId = localNodeId;
+          gn.instId = null;
+          gn.nodeKind = 'frontend';
+          gn.frontendConnectionId = conn.connection_id || conn.id || '';
+          gn.debugFileIo = {
+            direction,
+            host_stream: conn.host_stream || conn.hostStream || '',
+            host_node_id: conn.host_node_id || conn.hostNodeId || '',
+            connection_id: conn.connection_id || conn.id || ''
+          };
+          nodes.push(gn);
+        }
+        idSet.add(localNodeId);
+        const from = graphEndpointForPipeline(pipe.pipe_id, conn.from, localNodeId, direction === 'output' ? 'out' : 'L');
+        const to = graphEndpointForPipeline(pipe.pipe_id, conn.to, localNodeId, direction === 'output' ? 'L' : 'in');
+        if (!nodes.some(n => n.id === from.node) || !nodes.some(n => n.id === to.node)) return;
+        edges.push(makeEdge(from.node, from.port, to.node, to.port));
+      });
+    }
     function loadPipelineGraphFromConfig(pipelineId = 'ALL') {
       if (!currentProjectConfig) return;
       const allPipes = currentProjectConfig.pipelines || [];
@@ -5114,6 +5236,7 @@
           if (!idSet.has(from.node) || !idSet.has(to.node)) return;
           edges.push(makeEdge(graphNodeId(pipe.pipe_id, from.node), from.port || 'out', graphNodeId(pipe.pipe_id, to.node), to.port || 'in'));
         });
+        addFrontendConnectionsToPipelineGraph(pipe, nodes, edges, idSet);
       });
       loadingPipelineGraph = true;
       state.nodes = nodes;
@@ -6043,13 +6166,14 @@
                 const handle = await window.showSaveFilePicker({ suggestedName: `${originalNodeId(n) || 'capture'}.wav`, types: [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }] });
                 pathHint = handle?.name || '';
                 n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint, path_hint: pathHint, save_handle: !!handle };
+                debugFileIoFiles.set(n.id, { handle, file_name: pathHint, path_hint: pathHint, selected_at: Date.now() });
               } catch (e) { return; }
             } else {
               pathHint = prompt('Save WAV path', nodeParamValue(n, p) || `${originalNodeId(n) || 'capture'}.wav`) || '';
               if (!pathHint) return;
               n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint };
+              debugFileIoFiles.set(n.id, { file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint, selected_at: Date.now() });
             }
-            debugFileIoFiles.delete(n.id);
             writeInspectorPresetParam(n, p, pathHint);
             renderInspectorParameters(n);
             backendEdit('debug_file_io_save_path', { node_id: n.id, path_hint: pathHint });
@@ -6110,6 +6234,18 @@
       const edge = outgoing || incoming || null;
       return edge ? edgeParts(edge) : null;
     }
+    function runtimeDeviceNameForNode(n) {
+      if (!n) return '';
+      const streamParam = nodeDisplayParams(n).find(p => String(paramId(p)).toLowerCase() === 'stream_name');
+      return String(n.paramValues?.stream_name || (streamParam ? nodeParamValue(n, streamParam) : '') || n.rawEndpoint?.stream_name || n.rawEndpoint?.stream_id || '');
+    }
+    function runtimeDeviceNameForEdge(ep, groups) {
+      if (!ep) return '';
+      const nodes = groups.flatMap(g => g?.nodes || []);
+      const candidates = [ep.to, ep.from].map(id => nodes.find(n => n.id === id)).filter(Boolean);
+      const host = candidates.find(isHostComponentNode) || candidates[0] || null;
+      return runtimeDeviceNameForNode(host);
+    }
     function buildPlaybackRequestForGroup(groupId = targetRuntimeGroupId()) {
       const groups = groupsForRuntimeId(groupId);
       const seen = new Set();
@@ -6139,12 +6275,14 @@
       const dataOffset = Math.max(0, Number(info.data_offset || 0));
       const parsedDataBytes = Number(info.data_bytes || 0);
       const dataBytes = parsedDataBytes > 0 ? Math.min(parsedDataBytes, Math.max(0, record.file.size - dataOffset)) : 0;
-      if (!record.file || dataBytes <= 0) return null;
+      const alignedDataBytes = Math.floor(dataBytes / blockAlign) * blockAlign;
+      if (!record.file || alignedDataBytes <= 0) return null;
       return {
         enabled: true,
         node_id: source.id,
         node_name: source.name,
         file_name: record.file.name,
+        device: runtimeDeviceNameForEdge(ep, groups),
         file_size: record.file.size,
         edge_key: edgeKey,
         from: ep ? `${ep.from}.${ep.fromPort}` : '',
@@ -6156,8 +6294,8 @@
         frame_bytes: frameBytes,
         frame_ms: frameSamples * 1000 / sampleRate,
         data_offset: dataOffset,
-        data_bytes: dataBytes,
-        audio: { ...info, sample_rate: sampleRate, channels, bits_per_sample: bits, data_offset: dataOffset, data_bytes: dataBytes }
+        data_bytes: alignedDataBytes,
+        audio: { ...info, sample_rate: sampleRate, channels, bits_per_sample: bits, data_offset: dataOffset, data_bytes: alignedDataBytes }
       };
     }
     function clearPlaybackBackpressure(redraw = true) {
@@ -6192,6 +6330,38 @@
       if (reason && reason !== 'replace') addLog(reason === 'eof' ? 'ok' : 'info', reason === 'eof' ? 'Playback file finished' : 'Playback frame pump stopped', reason);
       drawEdges();
     }
+    async function finishPlaybackFramePump(reason = 'eof') {
+      if (!playbackFramePump.active && reason !== 'error') return;
+      const groupId = playbackFramePump.groupId || targetRuntimeGroupId();
+      const payload = {
+        session_id: API_SESSION_ID,
+        group_id: groupId,
+        node_id: playbackFramePump.nodeId || '',
+        file_name: playbackFramePump.fileName || '',
+        edge_key: playbackFramePump.edgeKey || '',
+        frame_index: playbackFramePump.frameIndex || 0,
+        timeout_ms: 5000,
+        reason
+      };
+      playbackFramePump.active = false;
+      if (playbackFramePump.timer) clearTimeout(playbackFramePump.timer);
+      playbackFramePump.timer = 0;
+      let res = null;
+      try {
+        res = await apiPost('/api/runtime/audio/playback/eos', payload);
+      } catch (e) {
+        res = { ok: false, error: e?.message || 'playback EOS failed' };
+      }
+      const ok = !!res && res.ok === true;
+      stopPlaybackFramePump(ok ? 'eof' : 'error');
+      running = false;
+      if (ok) setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, 'run_complete');
+      else setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'run_error');
+      $('#playBtn').textContent = '▶';
+      renderAll(true);
+      addLog(ok ? 'ok' : 'warn', ok ? 'Playback EOS complete' : 'Playback EOS failed', res?.error || res?.playback?.error || reason);
+      toast(ok ? 'Playback complete' : 'Playback failed', ok ? 'ok' : 'error');
+    }
     function schedulePlaybackFramePump(delayMs = 0) {
       if (!playbackFramePump.active) return;
       if (playbackFramePump.timer) clearTimeout(playbackFramePump.timer);
@@ -6200,7 +6370,7 @@
     async function pumpPlaybackFrame(generation) {
       if (!playbackFramePump.active || playbackFramePump.busy || generation !== playbackFramePump.generation) return;
       if (!playbackFramePump.file || playbackFramePump.offset >= playbackFramePump.end) {
-        stopPlaybackFramePump('eof');
+        await finishPlaybackFramePump('eof');
         return;
       }
       playbackFramePump.busy = true;
@@ -6219,9 +6389,22 @@
           channels: String(playbackFramePump.audio?.channels || 2),
           bits: String(playbackFramePump.audio?.bits_per_sample || 16)
         });
-        const res = await apiPostBinary('/api/runtime/audio/frame?' + qp.toString(), frame);
+        const streamRes = await apiPostBinary('/api/runtime/audio/playback/stream?' + qp.toString(), frame);
+        const res = await apiPost('/api/runtime/audio/playback/frame?' + qp.toString(), {
+          edge_key: playbackFramePump.edgeKey || '',
+          node_id: playbackFramePump.nodeId || '',
+          file_name: playbackFramePump.fileName || '',
+          offset: start,
+          frame_index: playbackFramePump.frameIndex,
+          frame_bytes: frame.byteLength || (end - start),
+          bytes_written: Number(streamRes?.accepted_bytes || streamRes?.acceptedBytes || 0),
+          stream_ok: !!streamRes && streamRes.ok !== false && streamRes.accepted !== false,
+          sample_rate: Number(playbackFramePump.audio?.sample_rate || 48000),
+          channels: Number(playbackFramePump.audio?.channels || 2),
+          bits: Number(playbackFramePump.audio?.bits_per_sample || 16)
+        });
         if (!playbackFramePump.active || generation !== playbackFramePump.generation) return;
-        const accepted = !!res && res.ok !== false && res.accepted !== false;
+        const accepted = !!res && res.ok !== false && res.accepted !== false && !!streamRes && streamRes.ok !== false && streamRes.accepted !== false;
         applyPlaybackBackpressure(res || { stalled: true, blocked_edge_key: playbackFramePump.edgeKey });
         playbackFramePump.nextPushMs = Math.max(1, Math.min(250, Number(res?.next_push_ms || res?.nextPushMs || playbackFramePump.nextPushMs || 20)));
         if (accepted) {
@@ -6232,7 +6415,7 @@
         playbackFramePump.busy = false;
       }
       if (!playbackFramePump.active || generation !== playbackFramePump.generation) return;
-      if (playbackFramePump.offset >= playbackFramePump.end) stopPlaybackFramePump('eof');
+      if (playbackFramePump.offset >= playbackFramePump.end) await finishPlaybackFramePump('eof');
       else schedulePlaybackFramePump(playbackFramePump.nextPushMs);
     }
     function startPlaybackFramePump(playbackRequest, groupId = targetRuntimeGroupId()) {
@@ -6257,6 +6440,160 @@
       playbackFramePump.groupId = groupId;
       addLog('info', 'Playback frame pump started', `${playbackFramePump.fileName} -> ${playbackFramePump.edgeKey || 'as_server'}`);
       schedulePlaybackFramePump(0);
+      return true;
+    }
+    function captureFileRecordForNode(n) {
+      if (!n) return null;
+      return debugFileIoFiles.get(n.id) || null;
+    }
+    function buildCaptureRequestForGroup(groupId = targetRuntimeGroupId()) {
+      const groups = groupsForRuntimeId(groupId);
+      const seen = new Set();
+      const nodes = groups.flatMap(g => g?.nodes || []).filter(n => n && !seen.has(n.id) && seen.add(n.id));
+      const sink = nodes.find(n => {
+        const d = String(n?.debugFileIo?.direction || debugFileIoDirection(n)).toLowerCase();
+        return d === 'output' && (isDebugFileIoNode(n) || isDaiFileIoNode(n)) && captureFileRecordForNode(n);
+      });
+      if (!sink) return null;
+      const record = captureFileRecordForNode(sink) || {};
+      const ep = playbackEdgeForNode(sink, groups);
+      const edgeKey = ep ? edgeKeyFromParts(ep.from, ep.fromPort, ep.to, ep.toPort) : '';
+      const edgeFmt = ep ? inferredEdgeFormat(ep) : null;
+      const fmt = normalizeRuntimeFormat({
+        channels: record.audio?.channels || sink.debugFileIo?.audio?.channels || 1,
+        sampleRate: edgeFmt?.sampleRate || target.sampleRate || 48000,
+        bits: edgeFmt?.bits || 16,
+        frameSamples: edgeFmt?.frameSamples || 480
+      }, edgeFmt);
+      const channels = Math.max(1, Number(fmt.channels || 2));
+      const sampleRate = Math.max(1, Number(fmt.sampleRate || 48000));
+      const bits = Math.max(8, Number(fmt.bits || 16));
+      const frameSamples = Math.max(64, Math.min(4096, Number(fmt.frameSamples || Math.round(sampleRate * 0.02)) || 480));
+      const frameBytes = Math.max(channels * Math.max(1, bits / 8), frameSamples * channels * Math.max(1, bits / 8));
+      return {
+        enabled: true,
+        node_id: sink.id,
+        node_name: sink.name,
+        file_name: record.file_name || sink.debugFileIo?.file_name || `${originalNodeId(sink) || 'capture'}.wav`,
+        device: runtimeDeviceNameForEdge(ep, groups),
+        edge_key: edgeKey,
+        sample_rate: sampleRate,
+        channels,
+        bits_per_sample: bits,
+        frame_samples: frameSamples,
+        frame_bytes: frameBytes,
+        audio: { sample_rate: sampleRate, channels, bits_per_sample: bits, data_offset: 44 }
+      };
+    }
+    function bytesFromBase64(b64 = '') {
+      if (!b64) return new Uint8Array();
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    async function writeCaptureChunk(bytes) {
+      if (!bytes?.length) return;
+      captureFramePump.writeChain = captureFramePump.writeChain.then(async () => {
+        if (captureFramePump.writable) await captureFramePump.writable.write(bytes);
+        else captureFramePump.chunks.push(bytes.slice ? bytes.slice() : new Uint8Array(bytes));
+        captureFramePump.bytes += bytes.length || bytes.byteLength || 0;
+      });
+      await captureFramePump.writeChain;
+    }
+    async function finalizeCaptureFramePump(reason = 'stop') {
+      if (!captureFramePump.active && !captureFramePump.writable && !captureFramePump.chunks.length) return;
+      captureFramePump.generation++;
+      captureFramePump.active = false;
+      if (captureFramePump.timer) clearTimeout(captureFramePump.timer);
+      captureFramePump.timer = 0;
+      await captureFramePump.writeChain;
+      const fmt = captureFramePump.format || { channels: 2, sampleRate: 48000, bits: 16 };
+      const header = wavHeader(captureFramePump.bytes, fmt);
+      if (captureFramePump.writable) {
+        try {
+          await captureFramePump.writable.write({ type: 'seek', position: 0 });
+          await captureFramePump.writable.write(header);
+          await captureFramePump.writable.close();
+        } catch (e) {
+          addLog('warn', 'Capture file close failed', e?.message || reason);
+        }
+      } else if (captureFramePump.chunks.length) {
+        captureFramePump.chunks[0] = header;
+        const blob = new Blob(captureFramePump.chunks, { type: 'audio/wav' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = captureFramePump.fileName || 'capture.wav';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      }
+      addLog('ok', 'Capture file finalized', `${captureFramePump.fileName || 'capture.wav'} · ${captureFramePump.bytes} bytes`);
+      captureFramePump.writable = null;
+      captureFramePump.handle = null;
+      captureFramePump.chunks = [];
+      captureFramePump.bytes = 0;
+      captureFramePump.busy = false;
+    }
+    function scheduleCaptureFramePump(delayMs = 0) {
+      if (!captureFramePump.active) return;
+      if (captureFramePump.timer) clearTimeout(captureFramePump.timer);
+      captureFramePump.timer = setTimeout(() => pumpCaptureFrame(captureFramePump.generation), Math.max(0, Number(delayMs) || 0));
+    }
+    async function pumpCaptureFrame(generation) {
+      if (!captureFramePump.active || captureFramePump.busy || generation !== captureFramePump.generation) return;
+      captureFramePump.busy = true;
+      try {
+        const qp = new URLSearchParams({
+          node_id: captureFramePump.nodeId || '',
+          file_name: captureFramePump.fileName || '',
+          max_bytes: String(captureFramePump.frameBytes || 3840)
+        });
+        const res = await apiGet('/api/runtime/audio/capture/frame?' + qp.toString());
+        if (!captureFramePump.active || generation !== captureFramePump.generation) return;
+        if (res?.ok === false) {
+          throw new Error(res?.capture?.error || res?.error || 'capture frame failed');
+        }
+        const bytes = bytesFromBase64(res?.capture?.data_base64 || '');
+        await writeCaptureChunk(bytes);
+        captureFramePump.nextPollMs = Math.max(1, Math.min(250, Number(res?.capture?.next_poll_ms || 20)));
+      } catch (e) {
+        addLog('warn', 'Capture frame pump failed', e?.message || 'capture error');
+        await finalizeCaptureFramePump('error');
+        const groupId = captureFramePump.groupId || targetRuntimeGroupId();
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'run_error');
+        $('#playBtn').textContent = '▶';
+        renderAll(true);
+      } finally {
+        captureFramePump.busy = false;
+      }
+      if (captureFramePump.active && generation === captureFramePump.generation) scheduleCaptureFramePump(captureFramePump.nextPollMs);
+    }
+    async function startCaptureFramePump(captureRequest, groupId = targetRuntimeGroupId()) {
+      if (!captureRequest?.enabled) return false;
+      await finalizeCaptureFramePump('replace');
+      const record = captureFileRecordForNode(state.nodes.find(n => n.id === captureRequest.node_id)) || {};
+      captureFramePump.generation++;
+      captureFramePump.active = true;
+      captureFramePump.busy = false;
+      captureFramePump.nodeId = captureRequest.node_id || '';
+      captureFramePump.fileName = captureRequest.file_name || record.file_name || 'capture.wav';
+      captureFramePump.handle = record.handle || null;
+      captureFramePump.writable = null;
+      captureFramePump.bytes = 0;
+      captureFramePump.chunks = [];
+      captureFramePump.format = { channels: captureRequest.channels || 2, sampleRate: captureRequest.sample_rate || 48000, bits: captureRequest.bits_per_sample || 16 };
+      captureFramePump.frameBytes = Math.max(256, Number(captureRequest.frame_bytes || 3840));
+      captureFramePump.nextPollMs = 1;
+      captureFramePump.groupId = groupId;
+      captureFramePump.writeChain = Promise.resolve();
+      if (captureFramePump.handle?.createWritable) {
+        captureFramePump.writable = await captureFramePump.handle.createWritable();
+        await captureFramePump.writable.write(wavHeader(0, captureFramePump.format));
+      } else {
+        captureFramePump.chunks.push(wavHeader(0, captureFramePump.format));
+      }
+      addLog('info', 'Capture frame pump started', `${captureFramePump.fileName} <- backend`);
+      scheduleCaptureFramePump(0);
       return true;
     }
     function portSignalLabel(n, dir, p, idx) {
@@ -10130,6 +10467,7 @@
     //    group is rendered; All restores the full layout.
     {
       let activeWorkingGroupIdV51 = 'ALL';
+      let userSelectedWorkingGroupV51 = false;
       let filterNodeIdsOverrideV51 = null;
       let renderingFilteredGraphV51 = false;
       let lastWorkingGroupSignatureV51 = '';
@@ -10189,6 +10527,9 @@
       }
       function validWorkingGroupIdsV51(groups = workingGroupsV51()) {
         return new Set(['ALL', ...groups.map(g => g.id)]);
+      }
+      function defaultWorkingGroupIdV51(groups = workingGroupsV51()) {
+        return groups[0]?.id || 'ALL';
       }
       function selectedWorkingGroupV51() {
         if (activeWorkingGroupIdV51 === 'ALL') return null;
@@ -10283,7 +10624,12 @@
         const groups = workingGroupsV51();
         if (pipelineSelectIsBeingEdited(select) && select.dataset.mode === 'working_groups_filter_v51') return groups;
         const valid = validWorkingGroupIdsV51(groups);
-        if (!valid.has(activeWorkingGroupIdV51)) activeWorkingGroupIdV51 = 'ALL';
+        if (!valid.has(activeWorkingGroupIdV51)) {
+          activeWorkingGroupIdV51 = defaultWorkingGroupIdV51(groups);
+          userSelectedWorkingGroupV51 = false;
+        } else if (!userSelectedWorkingGroupV51 && activeWorkingGroupIdV51 === 'ALL') {
+          activeWorkingGroupIdV51 = defaultWorkingGroupIdV51(groups);
+        }
         const sig = JSON.stringify(groups.map(g => ({ id: g.id, name: g.displayName || g.name, status: g.status, n: g.nodes.length, e: g.edges.length })));
         if (sig !== lastWorkingGroupSignatureV51 || select.dataset.mode !== 'working_groups_filter_v51') {
           select.innerHTML = '';
@@ -10308,6 +10654,7 @@
           // View selection is independent from runtime state; only graph edits remain locked while running.
           markPipelineSelectInteraction('change', 260);
           activeWorkingGroupIdV51 = e.target.value || 'ALL';
+          userSelectedWorkingGroupV51 = true;
           const group = selectedWorkingGroupV51();
           clearSelection();
           if (group) {
@@ -12253,9 +12600,10 @@
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));
       $('#validateBtn').addEventListener('click', async () => { const res = await apiPost('/api/pipeline/validate', pipelineSnapshot()); const warnings = res?.warnings || []; const errors = res?.errors || []; $('#warnCount').textContent = String(warnings.length); $('#errCount').textContent = String(errors.length); addLog(errors.length ? 'warn' : 'ok', 'Pipeline validated', 'Backend callback: /api/pipeline/validate'); toast(errors.length ? 'Validate failed' : 'Validate success'); });
       $('#buildBtn').addEventListener('click', async () => {
-        const status = runtimeStatusForGroupId('ALL');
-        if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup('ALL');
-        else await buildRuntimeGroup('ALL');
+        const groupId = targetRuntimeGroupId();
+        const status = runtimeStatusForGroupId(groupId);
+        if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup(groupId);
+        else await buildRuntimeGroup(groupId);
       });
       $('#runBtn').addEventListener('click', async () => { await startRuntimeGroup(); });
       $('#stopBtn').addEventListener('click', async () => { await stopRuntimeGroup(); });
@@ -12568,7 +12916,7 @@
       drawEdges();
       updateHistoryButtons();
     }
-    function updateBuildRuntimeButtonState(groupId = 'ALL') {
+    function updateBuildRuntimeButtonState(groupId = targetRuntimeGroupId()) {
       const buildBtn = $('#buildBtn');
       if (!buildBtn) return;
       buildBtn.classList.remove('btnRuntimeUnload');
@@ -12577,7 +12925,7 @@
         buildBtn.textContent = '▣ Building';
         return;
       }
-      const status = runtimeStatusForGroupId('ALL');
+      const status = runtimeStatusForGroupId(groupId);
       if (status === RUNTIME_STATES.PIPE_LOADED) {
         buildBtn.disabled = false;
         buildBtn.textContent = '▣ Unload';
@@ -12605,11 +12953,14 @@
         edges: selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge))
       };
       const playbackRequest = action === 'run' ? buildPlaybackRequestForGroup(groupId) : null;
+      const captureRequest = action === 'run' ? buildCaptureRequestForGroup(groupId) : null;
       if (playbackRequest) payload.playback = playbackRequest;
+      if (captureRequest) payload.capture = captureRequest;
       const path = action === 'stop' ? '/api/runtime/stop' : '/api/runtime/run';
       try {
         const res = await apiPost(path, payload);
         if (res && playbackRequest) res.playback_request = playbackRequest;
+        if (res && captureRequest) res.capture_request = captureRequest;
         return res;
       } catch (e) { return null; }
     }
@@ -12635,7 +12986,6 @@
       return true;
     }
     async function buildRuntimeGroup(groupId = 'ALL') {
-      groupId = 'ALL';
       if (runtimeStatusForGroupId('ALL') === RUNTIME_STATES.RUNNING) {
         toast('Pipeline is Running; Stop before Build', 'warn');
         addLog('warn', 'Build blocked', 'Pipeline is Running; Stop before Build');
@@ -12650,16 +13000,20 @@
       $('.badge.ok').textContent = '◌ BUILDING';
       toast('Building...', 'info');
       addLog('info', 'Build started', 'Calling /api/pipeline/build');
+      const groups = groupsForRuntimeId(groupId);
+      const targetNodes = groups.flatMap(g => g.nodes.map(n => n.id));
+      const targetEdges = groups.flatMap(g => g.edges.map(edgeKeyForEdge));
       const buildPayload = {
         ...pipelineSnapshot(),
-        build_scope: 'all_pipelines',
-        group_id: 'ALL',
-        scope: 'all_pipelines',
+        build_scope: groupId === 'ALL' ? 'all_pipelines' : 'selected_pipeline',
+        group_id: groupId,
+        scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
         target_group: {
-          id: 'ALL',
-          name: 'All working pipeline groups',
-          nodes: state.nodes.map(n => n.id),
-          edges: state.edges.map(edgeKeyForEdge)
+          id: groupId,
+          name: groupId === 'ALL' ? 'All working pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId),
+          groups: groups.map(g => g.id),
+          nodes: targetNodes,
+          edges: targetEdges
         }
       };
       const res = await apiPost('/api/pipeline/build', buildPayload);
@@ -12669,41 +13023,44 @@
       const pipeLoaded = normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
       const ok = backendOk && pipeLoaded && !((res?.errors || []).length);
       buildState = ok ? 'success' : 'failed';
-      setRuntimeStatusForGroup('ALL', ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
+      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
       $('.badge.ok').textContent = ok ? '● BUILD SUCCESS' : '● BUILD FAILED';
       if (res?.core_map) {
         state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
       }
       buildingRuntimeGroupId = '';
-      if (buildBtn) updateBuildRuntimeButtonState('ALL');
+      if (buildBtn) updateBuildRuntimeButtonState(groupId);
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Build successful' : 'Build failed', 'Backend callback: /api/pipeline/build');
       toast(ok ? 'Build success' : 'Build failed', ok ? 'ok' : 'error');
       return ok;
     }
     async function unloadRuntimeGroup(groupId = 'ALL') {
-      groupId = 'ALL';
       const groups = runtimeGroups();
+      const selectedGroups = groupsForRuntimeId(groupId);
+      const targetNodes = selectedGroups.flatMap(g => g.nodes.map(n => n.id));
+      const targetEdges = selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge));
       const payload = {
         ...pipelineSnapshot(),
-        unload_scope: 'all_pipelines',
-        group_id: 'ALL',
-        scope: 'all_pipelines',
+        unload_scope: groupId === 'ALL' ? 'all_pipelines' : 'selected_pipeline',
+        group_id: groupId,
+        scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
         target_group: {
-          id: 'ALL',
-          name: 'All working pipeline groups',
-          groups: groups.map(g => g.id),
-          nodes: state.nodes.map(n => n.id),
-          edges: state.edges.map(edgeKeyForEdge)
+          id: groupId,
+          name: groupId === 'ALL' ? 'All working pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId),
+          groups: selectedGroups.map(g => g.id),
+          available_groups: groups.map(g => g.id),
+          nodes: targetNodes,
+          edges: targetEdges
         }
       };
       addLog('info', 'Unload started', 'Calling /api/pipeline/unload');
       const res = await apiPost('/api/pipeline/unload', payload);
       const ok = res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.NOT_READY;
       if (ok) {
-        setRuntimeStatusForGroup('ALL', RUNTIME_STATES.NOT_READY, 'unload_success');
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.NOT_READY, 'unload_success');
       } else {
-        setRuntimeStatusForGroup('ALL', RUNTIME_STATES.ERROR, 'unload_failed');
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'unload_failed');
       }
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Unload successful' : 'Unload failed', 'Backend callback: /api/pipeline/unload');
@@ -12720,7 +13077,9 @@
       const ok = res?.ok !== false;
       setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
       if (ok && res?.playback_request) startPlaybackFramePump(res.playback_request, groupId);
+      if (ok && res?.capture_request) await startCaptureFramePump(res.capture_request, groupId);
       if (!ok) stopPlaybackFramePump('run_rejected');
+      if (!ok) await finalizeCaptureFramePump('run_rejected');
       if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();
       if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
       if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
@@ -12739,7 +13098,8 @@
       const stopId = groupId === 'ALL' ? 'ALL' : groupId;
       await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.NOT_READY);
       stopPlaybackFramePump('pipeline_stopped');
-      setRuntimeStatusForGroup(stopId, RUNTIME_STATES.NOT_READY, 'stop_button');
+      await finalizeCaptureFramePump('pipeline_stopped');
+      setRuntimeStatusForGroup(stopId, RUNTIME_STATES.PIPE_LOADED, 'stop_button');
       if (typeof wakeTelemetryPoll === 'function') wakeTelemetryPoll();
       if (typeof wakeInspectorPoll === 'function') wakeInspectorPoll();
       inspectorBackendContextKey = '';

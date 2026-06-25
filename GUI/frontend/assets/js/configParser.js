@@ -224,6 +224,73 @@ export function resolveModuleForNode(productConfig, registry, node) {
   return { inst: null, moduleType: null, displayName: node.node_id, presetValues: {} };
 }
 
+function inferFrontendDirection(spec, moduleTypeId) {
+  const explicit = String(spec && spec.direction || '').toLowerCase();
+  if (explicit === 'input' || explicit === 'output') return explicit;
+  const typeText = String(moduleTypeId || '').toLowerCase();
+  if (typeText.includes('output')) return 'output';
+  return 'input';
+}
+
+function frontendModuleTypeFallback(moduleTypeId, direction) {
+  const isOutput = direction === 'output';
+  return {
+    type_id: moduleTypeId || (isOutput ? 'virtual.audio_output' : 'virtual.file_input'),
+    name: isOutput ? 'Audio Output' : 'File Input',
+    category: 'INPUT / OUTPUT',
+    io: isOutput
+      ? { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }], out_ports: [] }
+      : { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }] },
+    static_schema: { fields: [] },
+    runtime_params: []
+  };
+}
+
+function convertFrontendConnection(productConfig, registry, conn, index) {
+  const spec = conn.frontend_node || conn.node || {};
+  const nodeId = spec.node_id || spec.id || conn.frontend_node_id || conn.node_id || `FRONTEND_${index + 1}`;
+  const moduleTypeId = spec.module_type || spec.moduleType || conn.module_type || conn.moduleType ||
+    (String(spec.direction || conn.direction || '').toLowerCase() === 'output' ? 'virtual.audio_output' : 'virtual.file_input');
+  const direction = inferFrontendDirection({ ...conn, ...spec }, moduleTypeId);
+  const moduleType = registry.moduleTypes.get(moduleTypeId) || frontendModuleTypeFallback(moduleTypeId, direction);
+  const defaults = buildParamDefaults(moduleType, spec.static_params || {});
+  const staticParams = {
+    ...defaults.staticParams,
+    ...(spec.params || {}),
+    direction,
+    host_stream: conn.host_stream || conn.hostStream || '',
+    host_node_id: conn.host_node_id || conn.hostNodeId || '',
+    connection_id: conn.connection_id || conn.id || ''
+  };
+  const inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
+  const outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
+  return {
+    id: nodeId,
+    kind: 'frontend',
+    title: spec.name || spec.title || moduleType.name || nodeId,
+    instId: null,
+    moduleTypeId,
+    category: moduleType.category || 'INPUT / OUTPUT',
+    subtitle: `${direction} · ${staticParams.host_stream || 'host stream'}`,
+    raw: deepClone(conn),
+    moduleType: deepClone(moduleType),
+    inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
+    outputs: outputs.map((p, i) => convertPort(p, 'out', i)),
+    staticParams,
+    runtimeParams: defaults.runtimeParams,
+    core: 0,
+    x: Number(spec.ui && spec.ui.x || 0),
+    y: Number(spec.ui && spec.ui.y || 0),
+    cost: { cpu: 0, memKb: 0, latencyMs: 0, rms: -60, peak: -60 },
+    frontendConnection: deepClone(conn)
+  };
+}
+
+function frontendConnectionsForPipeline(productConfig, pipeId) {
+  const connections = Array.isArray(productConfig.frontend_connections) ? productConfig.frontend_connections : [];
+  return connections.filter(conn => conn && conn.pipeline_id === pipeId);
+}
+
 export function convertPipeline(productConfig, pipeId, options = {}) {
   const registry = buildRegistry(productConfig, options);
   const pipelines = productConfig.pipelines || [];
@@ -288,7 +355,19 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
     const to = parseEndpoint(e.to);
     return { id: `edge_${idx}_${from.nodeId}_${to.nodeId}`, from, to };
   });
-  return { pipe: deepClone(pipe), nodes, edges, registry };
+  const frontendConnections = frontendConnectionsForPipeline(productConfig, pipe.pipe_id);
+  const frontendNodes = frontendConnections.map((conn, idx) => convertFrontendConnection(productConfig, registry, conn, idx));
+  const frontendEdges = frontendConnections.map((conn, idx) => {
+    const from = parseEndpoint(conn.from);
+    const to = parseEndpoint(conn.to);
+    return {
+      id: `frontend_edge_${idx}_${from.nodeId}_${to.nodeId}`,
+      from,
+      to,
+      frontendConnectionId: conn.connection_id || conn.id || ''
+    };
+  });
+  return { pipe: deepClone(pipe), nodes, edges, frontendNodes, frontendEdges, registry };
 }
 
 export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {

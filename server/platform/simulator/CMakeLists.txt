@@ -1,6 +1,6 @@
 add_library(audio_studio_platform_simulator OBJECT
-  src/rv32qemu_audio_device.cpp
-  src/rv32qemu_log_device.cpp
+  src/simulator_audio_device.cpp
+  src/simulator_log_device.cpp
   src/simulator_pipe_datalink_device.cpp
   src/simulator_platform.cpp
 )

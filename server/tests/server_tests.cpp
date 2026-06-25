@@ -204,14 +204,17 @@ public:
     auto device = std::make_unique<ScriptedLogDevice>(chunks_);
     if (!device->open(config).ok()) return nullptr;
     last_device_ = device.get();
+    ++created_count_;
     return device;
   }
 
   ScriptedLogDevice* lastDevice() const { return last_device_; }
+  size_t createdCount() const { return created_count_; }
 
 private:
   std::vector<std::vector<uint8_t>> chunks_;
   mutable ScriptedLogDevice* last_device_ = nullptr;
+  mutable size_t created_count_ = 0;
 };
 
 std::string tempPath(const std::string& name) {
@@ -695,6 +698,8 @@ int main() {
       "SOF 0 INFO ASINFO|module|id=eq_1|cpu_percent=13.5|memory_bytes=8192|latency_ms=0.8", ""}));
     assert(system_info.consumeLogEntry({7, "info", "SOF",
       "SOF 0 INFO ASINFO|buffer|id=eq_1.out->sink.in|stalled=1", ""}));
+    assert(system_info.consumeLogEntry({8, "info", "SOF",
+      "SOF 0 INFO ASINFO|module|id=eq_1|state=6", ""}));
     snapshot = system_info.snapshot();
     assert(snapshot.modules.size() == 1);
     assert(snapshot.modules.front().pipeline_id == 10);
@@ -723,6 +728,57 @@ int main() {
     assert(tail.size() == 1);
     assert(tail.front().message == "ordinary firmware line");
     assert(system_info.snapshot().modules.front().node_id == "vol_1");
+
+    audio_studio::framework::log::LogService pump_log_service;
+    audio_studio::drivers::log::LogDeviceRegistry pump_registry;
+    auto pump_factory = std::make_unique<ScriptedLogDeviceFactory>(
+      std::vector<std::vector<uint8_t>>{
+        std::vector<uint8_t>{
+          'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','h','e','a','r','t','b','e','a','t','|','s','e','q','=','2','1','|','t','i','m','e','s','t','a','m','p','_','m','s','=','1','0','0','\n',
+          'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','m','o','d','u','l','e','|','i','d','=','p','u','m','p','_','v','o','l','|','p','i','p','e','l','i','n','e','=','2','|','s','t','a','t','e','=','A','C','T','I','V','E','|','c','o','r','e','=','0','|','c','p','u','_','p','e','r','c','e','n','t','=','4','.','0','|','m','e','m','o','r','y','_','b','y','t','e','s','=','1','0','2','4','|','l','a','t','e','n','c','y','_','m','s','=','0','.','2','\n',
+          'i','n','f','o','|','F','W','|','o','r','d','i','n','a','r','y',' ','p','u','m','p',' ','l','o','g','\n'
+        }
+      });
+    auto* pump_factory_ptr = pump_factory.get();
+    assert(pump_registry.registerFactory(std::move(pump_factory)).ok());
+    pump_log_service.configureDeviceRegistry(&pump_registry);
+    framework::system_info::SystemInfoService pump_system_info;
+    pump_log_service.setEntryInterceptor([&](const framework::log::LogEntry& entry) {
+      return pump_system_info.consumeLogEntry(entry);
+    });
+    framework::log::LogSessionConfig pump_config;
+    pump_config.session_id = "system-info-pump-test";
+    pump_config.driver_factory = "scripted-log";
+    pump_config.source = "firmware";
+    assert(pump_system_info.startLogPump(pump_log_service, pump_config).ok());
+    bool pump_updated = false;
+    for (int i = 0; i < 20; ++i) {
+      if (!pump_system_info.snapshot().modules.empty()) {
+        pump_updated = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    assert(pump_updated);
+    assert(pump_system_info.snapshot().modules.front().node_id == "pump_vol");
+    assert(pump_log_service.tail(8).size() == 1);
+    assert(pump_log_service.tail(8).front().message == "ordinary pump log");
+    assert(pump_factory_ptr->createdCount() == 1);
+    framework::log::LogSessionConfig mirror_config;
+    mirror_config.session_id = "as_log";
+    mirror_config.driver_factory = "scripted-log";
+    mirror_config.source = "firmware";
+    framework::log::LogSessionInfo mirror_session;
+    assert(pump_log_service.createSession(mirror_config, mirror_session).ok());
+    assert(pump_log_service.start(mirror_session.session_id).ok());
+    std::vector<framework::log::LogEntry> mirrored_entries;
+    assert(pump_log_service.readEntries(mirror_session.session_id, 8, mirrored_entries).ok());
+    assert(mirrored_entries.size() == 1);
+    assert(mirrored_entries.front().message == "ordinary pump log");
+    assert(pump_factory_ptr->createdCount() == 1);
+    assert(pump_log_service.closeSession(mirror_session.session_id).ok());
+    assert(pump_system_info.stopLogPump().ok());
+    assert(!pump_system_info.logPumpRunning());
 
     audio_context->setSystemInfoService(&system_info);
     auto sys_snapshot = audio_client.call("systemInfo.snapshot");
@@ -913,6 +969,19 @@ int main() {
 
     audio_studio::drivers::filesystem::FileInfo info;
     assert(drivers.filesystem().stat(output.conf_path, info).ok() && info.size > 0);
+    const auto a2_conf = readFileText(output.conf_path);
+    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Remap\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Delay Line\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN FADER Fader Balance\"") != std::string::npos);
+    assert(a2_conf.find("\"DSP_FILTER_COVERAGE DSP_FILTER DSP Filter\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Layout\"") == std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Max Delay\"") == std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN FADER Balance\"") == std::string::npos);
+    const auto playback_chremap = a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN CHREMAP Channel Remap\"");
+    assert(playback_chremap != std::string::npos);
+    const auto playback_chremap_end = a2_conf.find("}\n\n", playback_chremap);
+    assert(playback_chremap_end != std::string::npos);
+    assert(a2_conf.substr(playback_chremap, playback_chremap_end - playback_chremap).find("max \"224\"") != std::string::npos);
     assert(drivers.filesystem().stat(output.private_bin_path, info).ok() && info.size > 0);
     assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {

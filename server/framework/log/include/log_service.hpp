@@ -87,19 +87,24 @@ private:
     std::string sof_decoded_pending;
     std::vector<uint8_t> sof_raw_pending;
     audio_studio_sof_logger_decoder* sof_decoder = nullptr;
+    bool mirror_entries = false;
+    size_t mirror_entry_cursor = 0;
   };
 
   static bool sofLoggerEnabled(const Session& session);
   LogSessionConfig mergeDefaultConfig(LogSessionConfig config) const;
   static std::string optionString(const LogSessionConfig& config, const std::string& key);
+  static bool optionBool(const LogSessionConfig& config, const std::string& key);
   static std::string safePathToken(const std::string& value);
   static LogEntry decodeLine(int sequence, const std::string& line);
   static LogEntry decodeSofLoggerLine(int sequence, const std::string& line);
   static bool passesLevel(const std::string& level, const std::string& min_level);
   static void destroySofDecoder(Session& session);
+  bool shouldMirrorEntriesLocked(const LogSessionConfig& config) const;
   framework::Status prepareTraceFiles(Session& session, bool truncate);
   framework::Status ensureSofDecoder(Session& session);
   framework::Status readRawLocked(const std::string& id, size_t max_chunks, std::vector<drivers::log::LogRawChunk>& chunks);
+  framework::Status readMirrorEntriesLocked(Session& session, size_t max_entries, std::vector<LogEntry>& entries);
   framework::Status appendRawTrace(Session& session, const std::vector<drivers::log::LogRawChunk>& chunks);
   framework::Status decodeSofTrace(Session& session, size_t max_entries, std::vector<LogEntry>& entries);
   void parseTextLines(Session& session, const std::string& text, size_t max_entries, std::vector<LogEntry>& entries);

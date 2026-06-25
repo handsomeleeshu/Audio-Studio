@@ -117,22 +117,39 @@ public:
       auto status = validatePreset(request);
       if (!status.ok()) return status;
       const auto values = audio_studio::rpc::parseJson(request.values_json);
-      if (!values.isObject() || !values.has(request.parameter_id)) {
+      if (!values.isObject()) {
+        return module_config::Status::invalidArgument("parameter values must be an object");
+      }
+      if (request.parameter_id != "config" && !values.has(request.parameter_id)) {
         return module_config::Status::invalidArgument("parameter value missing: " + request.parameter_id);
       }
 
-      const auto& value = values.at(request.parameter_id);
       std::vector<uint8_t> payload;
-      if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
-        payload = packChannelRemap(request.parameter_id == "config" ? value : channelRemapPreset(value));
-      } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
-        payload = packDelayLine(request.parameter_id == "config" ? value : delayLineParam(request.parameter_id, value));
-      } else if (module_type_ == "mix.fader_balance") {
-        payload = packFaderBalance(request.parameter_id == "config" ? value : faderBalanceParam(request.parameter_id, value));
-      } else if (module_type_ == "filter.dsp_filter") {
-        payload = packDspFilter(request.parameter_id == "config" ? value : dspFilterPreset(value));
+      if (request.parameter_id == "config") {
+        if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
+          payload = packChannelRemap(channelRemapConfig(values));
+        } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
+          payload = packDelayLine(delayLineConfig(values));
+        } else if (module_type_ == "mix.fader_balance") {
+          payload = packFaderBalance(faderBalanceConfig(values));
+        } else if (module_type_ == "filter.dsp_filter") {
+          payload = packDspFilter(dspFilterConfig(values));
+        } else {
+          return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
+        }
       } else {
-        return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
+        const auto& value = values.at(request.parameter_id);
+        if (module_type_ == "filter.channel_remap" || module_type_ == "filter.chremap") {
+          payload = packChannelRemap(channelRemapPreset(value));
+        } else if (module_type_ == "delay.line" || module_type_ == "delay.delay_line") {
+          payload = packDelayLine(delayLineParam(request.parameter_id, value));
+        } else if (module_type_ == "mix.fader_balance") {
+          payload = packFaderBalance(faderBalanceParam(request.parameter_id, value));
+        } else if (module_type_ == "filter.dsp_filter") {
+          payload = packDspFilter(dspFilterPreset(value));
+        } else {
+          return module_config::Status::unavailable("unsupported SOF basic module_type: " + module_type_);
+        }
       }
 
       out.format = "sof-ipc3-bytes-v1";
@@ -234,6 +251,57 @@ private:
       }
     }
     return fallback;
+  }
+
+  static const JsonValue* objectValue(const JsonValue& object, const std::string& key) {
+    if (!object.isObject() || !object.has(key) || object.at(key).isNull()) return nullptr;
+    return &object.at(key);
+  }
+
+  static double objectDouble(const JsonValue& object, const std::string& key, double fallback) {
+    const auto* value = objectValue(object, key);
+    return value == nullptr ? fallback : scalarDouble(*value, fallback);
+  }
+
+  static JsonValue channelRemapConfig(const JsonValue& values) {
+    const auto* config = objectValue(values, "config");
+    if (config != nullptr) return *config;
+    return audio_studio::rpc::parseJson(R"({
+      "mappings":[
+        {"name":"mono_to_stereo","config_idx":0,"input":["MONO"],"output":["FL","FR"],"matrix":[[1],[1]]},
+        {"name":"stereo_passthrough","config_idx":1,"input":["FL","FR"],"output":["FL","FR"],"matrix":[[1,0],[0,1]]},
+        {"name":"stereo_to_mono","config_idx":2,"input":["FL","FR"],"output":["MONO"],"matrix":[[0.5,0.5]]},
+        {"name":"mono_passthrough","config_idx":3,"input":["MONO"],"output":["MONO"],"matrix":[[1]]}
+      ]
+    })");
+  }
+
+  static JsonValue delayLineConfig(const JsonValue& values) {
+    const double delay_ms = objectDouble(values, "delay_ms", 0.0);
+    const double max_delay_ms = objectDouble(values, "max_delay_ms", 250.0);
+    const double ramp_ms = objectDouble(values, "ramp_ms", 50.0);
+    const auto json = std::string("{\"max_delay_ms\":") + jsonNumber(max_delay_ms) +
+        ",\"ramp_ms\":" + jsonNumber(ramp_ms) +
+        ",\"channels\":2,\"per_channel_ms\":[" + jsonNumber(delay_ms) + "," + jsonNumber(delay_ms) + "]}";
+    return audio_studio::rpc::parseJson(json);
+  }
+
+  static JsonValue faderBalanceConfig(const JsonValue& values) {
+    const double fader = objectDouble(values, "fader", 0.0);
+    const double balance = objectDouble(values, "balance", 0.0);
+    const double ramp_ms = objectDouble(values, "ramp_ms", 50.0);
+    const auto json = std::string("{\"front_back_weight\":") + jsonNumber(fader) +
+        ",\"left_right_weight\":" + jsonNumber(balance) +
+        ",\"ramp\":\"linear\",\"ramp_ms\":" + jsonNumber(ramp_ms) + "}";
+    return audio_studio::rpc::parseJson(json);
+  }
+
+  static JsonValue dspFilterConfig(const JsonValue& values) {
+    const auto* config = objectValue(values, "config");
+    if (config != nullptr) return *config;
+    const auto* preset = objectValue(values, "filter_preset");
+    if (preset != nullptr) return dspFilterPreset(*preset);
+    return dspFilterPreset(audio_studio::rpc::parseJson(R"("passthrough")"));
   }
 
   static JsonValue channelRemapPreset(const JsonValue& value) {

@@ -389,6 +389,62 @@
       ]
     }
   ],
+  "frontend_connections": [
+    {
+      "connection_id": "PLAYBACK_MAIN_FILE_INPUT",
+      "pipeline_id": "PLAYBACK_MAIN",
+      "host_node_id": "HOST_IN",
+      "host_stream": "as_config_playback",
+      "frontend_node": {
+        "node_id": "FILE_IN",
+        "name": "Playback File Input",
+        "module_type": "virtual.file_input",
+        "direction": "input",
+        "ui": {
+          "dx": -185,
+          "dy": 0
+        }
+      },
+      "from": "FILE_IN:L",
+      "to": "HOST_IN:in"
+    },
+    {
+      "connection_id": "CAPTURE_MAIN_FILE_OUTPUT",
+      "pipeline_id": "CAPTURE_MAIN",
+      "host_node_id": "HOST_OUT",
+      "host_stream": "as_config_capture",
+      "frontend_node": {
+        "node_id": "FILE_OUT",
+        "name": "Capture File Output",
+        "module_type": "virtual.audio_output",
+        "direction": "output",
+        "ui": {
+          "dx": 185,
+          "dy": 0
+        }
+      },
+      "from": "HOST_OUT:out",
+      "to": "FILE_OUT:L"
+    },
+    {
+      "connection_id": "DSP_FILTER_COVERAGE_FILE_INPUT",
+      "pipeline_id": "DSP_FILTER_COVERAGE",
+      "host_node_id": "HOST_IN",
+      "host_stream": "as_config_dsp_filter",
+      "frontend_node": {
+        "node_id": "FILE_IN",
+        "name": "DSP Filter File Input",
+        "module_type": "virtual.file_input",
+        "direction": "input",
+        "ui": {
+          "dx": -185,
+          "dy": 0
+        }
+      },
+      "from": "FILE_IN:L",
+      "to": "HOST_IN:in"
+    }
+  ],
   "presets": [
     {
       "preset_id": "playback.music",

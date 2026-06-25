@@ -1,10 +1,12 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "log_service.hpp"
@@ -71,10 +73,16 @@ struct SystemInfoSnapshot {
 
 class SystemInfoService {
 public:
+  ~SystemInfoService();
+
   bool consumeLogEntry(const framework::log::LogEntry& entry);
   SystemInfoSnapshot snapshot();
   void clear();
   void setHeartbeatTimeoutForTesting(std::chrono::milliseconds timeout);
+  framework::Status startLogPump(framework::log::LogService& log_service,
+                                 framework::log::LogSessionConfig config);
+  framework::Status stopLogPump();
+  bool logPumpRunning() const;
 
 private:
   using Fields = std::map<std::string, std::string>;
@@ -82,6 +90,7 @@ private:
   bool applyRecordLocked(const std::string& record);
   void clearRuntimeLocked();
   bool staleLocked(std::chrono::steady_clock::time_point now) const;
+  void logPumpLoop();
 
   static Fields parseFields(const std::string& payload);
   static std::string fieldString(const Fields& fields, const std::string& key, std::string fallback = {});
@@ -95,6 +104,15 @@ private:
   std::chrono::milliseconds heartbeat_timeout_{1000};
   std::chrono::steady_clock::time_point last_update_{};
   SystemInfoSnapshot snapshot_;
+
+  mutable std::mutex pump_mutex_;
+  std::condition_variable pump_cv_;
+  std::thread pump_thread_;
+  framework::log::LogService* pump_log_service_ = nullptr;
+  framework::log::LogSessionConfig pump_config_;
+  std::string pump_session_id_;
+  bool pump_running_ = false;
+  bool pump_stop_requested_ = false;
 };
 
 } // namespace audio_studio::framework::system_info
