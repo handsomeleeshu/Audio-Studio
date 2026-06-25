@@ -62,10 +62,10 @@ assert.ok(
 );
 assert.ok(
   html.includes('updated_pipelines') &&
-    html.includes('updated_module_instances') &&
+    html.includes('updated_frontend_connections') &&
   /findIndex\(p => String\(p\?\.pipe_id/.test(html) &&
     /findIndex\(p => String\(p\?\.name/.test(html),
-  'updated_pipelines should upsert by pipe_id first and name fallback, and module_instances should refresh'
+  'updated_pipelines should upsert by pipe_id first and name fallback, and frontend_connections should refresh'
 );
 
 assert.ok(

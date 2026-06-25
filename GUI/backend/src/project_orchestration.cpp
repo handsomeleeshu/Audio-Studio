@@ -437,8 +437,7 @@ struct SnapshotNode {
   std::string module_type;
   std::string pipeline_id;
   std::string pipeline_node_id;
-  std::string inst_ref;
-  std::string kind;
+  std::string params_json = "{}";
   bool debug_file_io = false;
   std::map<std::string, std::string> port_domains;
 };
@@ -462,7 +461,7 @@ struct SnapshotGroup {
 
 struct RegeneratedProject {
   std::string pipelines_json = "[]";
-  std::string module_instances_json = "[]";
+  std::string frontend_connections_json = "[]";
   std::set<std::string> generated_node_keys;
   std::vector<std::string> pipeline_ids;
 };
@@ -471,15 +470,7 @@ bool isDebugFileModule(const std::string& module_type) {
   std::string id;
   id.reserve(module_type.size());
   for (char c : module_type) id.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-  return id == "builtin.file_input" || id == "builtin.file_output" ||
-         id == "virtual.file_input" || id == "virtual.audio_output";
-}
-
-bool isHostOrDaiModule(const std::string& module_type) {
-  std::string id;
-  id.reserve(module_type.size());
-  for (char c : module_type) id.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-  return id == "builtin.host" || id == "host" || id == "builtin.dai" || id == "dai";
+  return id == "builtin.file_input" || id == "builtin.file_output";
 }
 
 std::string graphLocalNodeId(const SnapshotNode& node, const std::string& pipe_id) {
@@ -515,15 +506,6 @@ std::map<std::string, std::string> originalPipelineObjects(const std::string& wo
   return out;
 }
 
-std::map<std::string, std::string> originalModuleInstanceObjects(const std::string& workspace_json) {
-  std::map<std::string, std::string> out;
-  for (const auto& object : jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "module_instances"))) {
-    const std::string inst_id = simpleJsonStringField(object, "inst_id");
-    if (!inst_id.empty()) out[inst_id] = object;
-  }
-  return out;
-}
-
 std::string mergeTopLevelObjectArrayById(const std::string& current_json,
                                          const std::string& source_json,
                                          const std::string& field,
@@ -555,8 +537,6 @@ std::string workspaceJsonWithSourceBaseline(const std::string& workspace_json,
                                             const std::string& source_json) {
   if (source_json.empty()) return workspace_json;
   std::string out = workspace_json;
-  out = upsertObjectMember(out, "module_instances",
-      mergeTopLevelObjectArrayById(workspace_json, source_json, "module_instances", "inst_id"));
   out = upsertObjectMember(out, "pipelines",
       mergeTopLevelObjectArrayById(workspace_json, source_json, "pipelines", "pipe_id"));
   if (topLevelJsonMemberValue(out, "frontend_connections").empty()) {
@@ -576,8 +556,8 @@ std::vector<SnapshotNode> snapshotNodes(const std::string& snapshot_json) {
     node.module_type = simpleJsonStringField(object, "module_type");
     node.pipeline_id = jsonStringFieldAny(object, {"pipelineId", "pipeline_id"});
     node.pipeline_node_id = jsonStringFieldAny(object, {"pipelineNodeId", "pipeline_node_id"});
-    node.inst_ref = jsonStringFieldAny(object, {"inst_ref", "instId", "inst_id"});
-    node.kind = simpleJsonStringField(object, "kind", node.inst_ref.empty() ? "module_inline" : "module");
+    node.params_json = jsonMemberValue(object, "params");
+    if (node.params_json.empty()) node.params_json = "{}";
     node.debug_file_io = simpleJsonBoolField(object, "debug_file_io") || isDebugFileModule(node.module_type);
     node.port_domains = simpleJsonStringMapField(object, "port_domains");
     out.push_back(std::move(node));
@@ -642,7 +622,6 @@ bool regenerateProjectFromSnapshot(const std::string& workspace_json,
                                     RegeneratedProject& regenerated,
                                     std::vector<std::string>& diagnostics) {
   const auto originals = originalPipelineObjects(workspace_json);
-  const auto original_instances = originalModuleInstanceObjects(workspace_json);
   const auto nodes = snapshotNodes(snapshot_json);
   const auto connections = snapshotConnections(snapshot_json);
   auto groups = snapshotGroups(snapshot_json);
@@ -658,13 +637,7 @@ bool regenerateProjectFromSnapshot(const std::string& workspace_json,
       "{\"core_ref\":\"audio_core0\",\"priority\":0,\"clock\":\"timer\"}");
   std::ostringstream pipelines;
   pipelines << "[";
-  std::vector<std::string> module_instance_jsons;
-  std::set<std::string> included_instance_ids;
-  auto add_module_instance = [&](const std::string& inst_id, const std::string& object_json) {
-    if (inst_id.empty() || included_instance_ids.count(inst_id)) return;
-    included_instance_ids.insert(inst_id);
-    module_instance_jsons.push_back(object_json);
-  };
+  std::vector<std::string> frontend_connection_jsons;
 
   for (size_t gi = 0; gi < groups.size(); ++gi) {
     auto& group = groups[gi];
@@ -695,52 +668,44 @@ bool regenerateProjectFromSnapshot(const std::string& workspace_json,
     }
 
     std::map<std::string, std::string> graph_to_local;
-    std::set<std::string> included_graph_ids;
+    std::set<std::string> group_graph_ids;
+    std::set<std::string> debug_graph_ids;
     std::vector<std::string> node_jsons;
+    std::vector<std::string> ui_nodes_json;
     for (const auto& graph_id : group.node_ids) {
       const auto it = node_by_graph_id.find(graph_id);
       if (it == node_by_graph_id.end()) continue;
       const SnapshotNode& node = it->second;
-      if (node.debug_file_io) continue;
-      if (isHostOrDaiModule(node.module_type) && node.inst_ref.empty()) {
-        diagnostics.push_back("HOST/DAI node requires inst_ref: " + node.graph_id);
-        return false;
-      }
       if (node.module_type.empty()) {
         diagnostics.push_back("pipeline node requires module_type: " + node.graph_id);
         return false;
       }
       const std::string local_id = graphLocalNodeId(node, pipe_id);
       graph_to_local[node.graph_id] = local_id;
-      included_graph_ids.insert(node.graph_id);
-      regenerated.generated_node_keys.insert(pipe_id + "." + local_id);
+      group_graph_ids.insert(node.graph_id);
       std::ostringstream node_os;
-      node_os << "{\"node_id\":\"" << jsonEscape(local_id) << "\"";
-      if (!node.inst_ref.empty()) {
-        const auto inst_it = original_instances.find(node.inst_ref);
-        if (inst_it == original_instances.end()) {
-          diagnostics.push_back("pipeline node references unknown inst_ref: " + node.inst_ref);
-          return false;
-        }
-        add_module_instance(node.inst_ref, inst_it->second);
-        node_os << ",\"kind\":\"module\",\"inst_ref\":\"" << jsonEscape(node.inst_ref) << "\"";
+      node_os << "{\"node_id\":\"" << jsonEscape(local_id) << "\","
+              << "\"name\":\"" << jsonEscape(node.name.empty() ? local_id : node.name) << "\","
+              << "\"module_type\":\"" << jsonEscape(node.module_type) << "\","
+              << "\"params\":" << (node.params_json.empty() ? "{}" : node.params_json) << "}";
+      if (node.debug_file_io) {
+        debug_graph_ids.insert(node.graph_id);
+        ui_nodes_json.push_back(node_os.str());
       } else {
-        const std::string generated_inst_id = safeId(pipe_id + "_" + local_id);
-        const std::string generated_name = node.name.empty() ? local_id : node.name;
-        std::ostringstream inst_os;
-        inst_os << "{\"inst_id\":\"" << jsonEscape(generated_inst_id) << "\","
-                << "\"name\":\"" << jsonEscape(generated_name) << "\","
-                << "\"module_type\":\"" << jsonEscape(node.module_type) << "\"}";
-        add_module_instance(generated_inst_id, inst_os.str());
-        node_os << ",\"kind\":\"module\",\"inst_ref\":\"" << jsonEscape(generated_inst_id) << "\"";
+        regenerated.generated_node_keys.insert(pipe_id + "." + local_id);
+        node_jsons.push_back(node_os.str());
       }
-      node_os << "}";
-      node_jsons.push_back(node_os.str());
     }
 
     std::vector<std::string> edge_jsons;
+    std::vector<std::string> frontend_edge_jsons;
+    auto frontend_port = [&](const SnapshotNode& node, const std::string& port) {
+      if (node.module_type == "builtin.file_input") return std::string("out");
+      if (node.module_type == "builtin.file_output") return std::string("in");
+      return port;
+    };
     for (const auto& conn : connections) {
-      if (!included_graph_ids.count(conn.from_node) || !included_graph_ids.count(conn.to_node)) continue;
+      if (!group_graph_ids.count(conn.from_node) || !group_graph_ids.count(conn.to_node)) continue;
       const auto from_node_it = node_by_graph_id.find(conn.from_node);
       const auto to_node_it = node_by_graph_id.find(conn.to_node);
       if (from_node_it == node_by_graph_id.end() || to_node_it == node_by_graph_id.end()) continue;
@@ -750,15 +715,23 @@ bool regenerateProjectFromSnapshot(const std::string& workspace_json,
       const std::string to_domain = canonicalPortDomain(conn.to_domain.empty()
         ? nodePortDomain(to_node_it->second, conn.to_port)
         : conn.to_domain);
-      if (from_domain != "sof" || to_domain != "sof") continue;
-      edge_jsons.push_back("{\"from\":\"" + jsonEscape(graph_to_local[conn.from_node] + ":" + conn.from_port) +
-                           "\",\"to\":\"" + jsonEscape(graph_to_local[conn.to_node] + ":" + conn.to_port) + "\"}");
+      const bool frontend_edge = debug_graph_ids.count(conn.from_node) || debug_graph_ids.count(conn.to_node) ||
+                                 from_domain == "external" || to_domain == "external";
+      if (frontend_edge) {
+        frontend_edge_jsons.push_back("{\"from\":\"" +
+            jsonEscape(graph_to_local[conn.from_node] + ":" + frontend_port(from_node_it->second, conn.from_port)) +
+            "\",\"to\":\"" +
+            jsonEscape(graph_to_local[conn.to_node] + ":" + frontend_port(to_node_it->second, conn.to_port)) + "\"}");
+      } else if (from_domain == "sof" && to_domain == "sof") {
+        edge_jsons.push_back("{\"from\":\"" + jsonEscape(graph_to_local[conn.from_node] + ":" + conn.from_port) +
+                             "\",\"to\":\"" + jsonEscape(graph_to_local[conn.to_node] + ":" + conn.to_port) + "\"}");
+      }
     }
 
     pipelines << "{\"pipe_id\":\"" << jsonEscape(pipe_id) << "\","
               << "\"name\":\"" << jsonEscape(pipe_name) << "\","
               << "\"domain\":" << pipelineFieldOrDefault(originals, origin_pipe_id, "domain", "\"playback\"") << ","
-              << "\"frame\":" << pipelineFieldOrDefault(originals, origin_pipe_id, "frame", "{\"rate\":48000,\"block_ms\":4}") << ","
+              << "\"frame\":" << pipelineFieldOrDefault(originals, origin_pipe_id, "frame", "{\"block_ms\":4}") << ","
               << "\"runtime\":" << pipelineFieldOrDefault(originals, origin_pipe_id, "runtime", runtime_fallback) << ","
               << "\"nodes\":[";
     for (size_t i = 0; i < node_jsons.size(); ++i) {
@@ -771,10 +744,25 @@ bool regenerateProjectFromSnapshot(const std::string& workspace_json,
       pipelines << edge_jsons[i];
     }
     pipelines << "]}";
+    if (!ui_nodes_json.empty() || !frontend_edge_jsons.empty()) {
+      std::ostringstream frontend;
+      frontend << "{\"pipeline_id\":\"" << jsonEscape(pipe_id) << "\",\"nodes\":[";
+      for (size_t i = 0; i < ui_nodes_json.size(); ++i) {
+        if (i) frontend << ",";
+        frontend << ui_nodes_json[i];
+      }
+      frontend << "],\"edges\":[";
+      for (size_t i = 0; i < frontend_edge_jsons.size(); ++i) {
+        if (i) frontend << ",";
+        frontend << frontend_edge_jsons[i];
+      }
+      frontend << "]}";
+      frontend_connection_jsons.push_back(frontend.str());
+    }
   }
   pipelines << "]";
   regenerated.pipelines_json = pipelines.str();
-  regenerated.module_instances_json = jsonArrayFromObjects(module_instance_jsons);
+  regenerated.frontend_connections_json = jsonArrayFromObjects(frontend_connection_jsons);
   return true;
 }
 
@@ -824,8 +812,8 @@ std::string filterPresetNodeValues(const std::string& workspace_json,
 std::string mergeSnapshotWithRegeneratedProject(const std::string& workspace_json,
                                                 const std::string& snapshot_json,
                                                 const RegeneratedProject& regenerated) {
-  std::string out = upsertObjectMember(workspace_json, "module_instances", regenerated.module_instances_json);
-  out = upsertObjectMember(out, "pipelines", regenerated.pipelines_json);
+  std::string out = upsertObjectMember(workspace_json, "pipelines", regenerated.pipelines_json);
+  out = upsertObjectMember(out, "frontend_connections", regenerated.frontend_connections_json);
   return mergeSnapshot(out, snapshot_json);
 }
 
@@ -875,7 +863,7 @@ std::string upsertPipelineObject(const std::string& workspace_json, const std::s
 std::string buildExtraFields(const RegeneratedProject& regenerated, uint64_t workspace_revision) {
   std::ostringstream os;
   os << "\"updated_pipelines\":" << regenerated.pipelines_json
-     << ",\"updated_module_instances\":" << regenerated.module_instances_json
+     << ",\"updated_frontend_connections\":" << regenerated.frontend_connections_json
      << ",\"pipeline_ids\":[";
   for (size_t i = 0; i < regenerated.pipeline_ids.size(); ++i) {
     if (i) os << ",";

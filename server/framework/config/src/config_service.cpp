@@ -70,6 +70,7 @@ struct PortInfo {
   std::string hw_dir;
   bool has_dai_index = false;
   uint32_t dai_index = 0;
+  uint32_t min_ch = 0;
   uint32_t max_ch = 0;
   uint32_t tdm_slots = 0;
   uint32_t slot_width = 0;
@@ -77,23 +78,14 @@ struct PortInfo {
   uint32_t fsync_hz = 0;
 };
 
-struct InstanceInfo {
-  std::string inst_id;
-  std::string name;
-  std::string module_type;
-  std::string source_json;
-  bool endpoint_present = false;
-  PortInfo endpoint;
-};
-
 struct NodeInfo {
   std::string node_id;
-  std::string kind;
   std::string inst_id;
   std::string name;
   std::string module_type;
   std::string widget_name;
   std::string source_json;
+  std::map<std::string, std::string> params_json;
   bool endpoint_present = false;
   PortInfo endpoint;
 };
@@ -110,7 +102,6 @@ struct CoreResourceInfo {
 
 struct ResourceCatalogInfo {
   std::map<std::string, CoreResourceInfo> cores;
-  std::map<std::string, PortInfo> audio_endpoints;
 };
 
 struct SofSchedulingInfo {
@@ -208,7 +199,6 @@ struct PresetInfo {
 struct ProjectIr {
   std::string project_name = "a2";
   std::map<std::string, ModuleTypeInfo> module_types;
-  std::map<std::string, InstanceInfo> instances;
   std::vector<PipelineInfo> pipelines;
   std::vector<ControlInfo> controls;
   std::vector<InstallParamInfo> install_params;
@@ -441,6 +431,14 @@ std::vector<std::string> enumArray(const JsonValue& object, const std::string& k
       throw std::runtime_error("enum item must be string or object");
     }
   }
+  return out;
+}
+
+std::map<std::string, std::string> jsonObjectValueMap(const JsonValue& object, const std::string& key) {
+  std::map<std::string, std::string> out;
+  if (!object.isObject() || !object.has(key) || object.at(key).isNull()) return out;
+  const auto& values = requiredObject(object, key);
+  for (const auto& item : values.asObject()) out[item.first] = item.second.dump();
   return out;
 }
 
@@ -844,12 +842,31 @@ uint32_t maxChannelsFromPortInfos(const std::vector<PortInfo>& ports) {
   return max_channels;
 }
 
+uint32_t minChannelsFromPortInfos(const std::vector<PortInfo>& ports) {
+  uint32_t min_channels = 0;
+  for (const auto& port : ports) {
+    if (port.min_ch == 0) continue;
+    min_channels = min_channels == 0 ? port.min_ch : std::min(min_channels, port.min_ch);
+  }
+  return min_channels == 0 ? 1 : min_channels;
+}
+
 uint32_t sampleBitsFromPortInfos(const std::vector<PortInfo>& ports) {
   uint32_t sample_bits = 0;
   for (const auto& port : ports) {
     if (port.sample_bits != 0) sample_bits = std::max(sample_bits, port.sample_bits);
   }
   return sample_bits == 0 ? 32 : sample_bits;
+}
+
+uint32_t sampleRateFromPortInfos(const std::vector<PortInfo>& ports, uint32_t fallback) {
+  for (const auto& port : ports) {
+    if (port.role == "dai" && port.fsync_hz != 0) return port.fsync_hz;
+  }
+  for (const auto& port : ports) {
+    if (port.fsync_hz != 0) return port.fsync_hz;
+  }
+  return fallback == 0 ? 48000 : fallback;
 }
 
 uint32_t firstNumericArrayItem(const JsonValue& object, const std::string& key, uint32_t fallback) {
@@ -865,8 +882,13 @@ void applyCapabilitiesToPort(PortInfo& port, const JsonValue& object, uint32_t d
   const JsonValue* caps = optionalObject(object, "capabilities");
   if (caps == nullptr) caps = &object;
   if (caps->has("channels") && caps->at("channels").isObject()) {
+    port.min_ch = uintValue(caps->at("channels"), "min", port.min_ch);
     port.max_ch = uintValue(caps->at("channels"), "max", port.max_ch);
+  } else if (caps->has("channels") && caps->at("channels").isNumber()) {
+    port.min_ch = uintValue(*caps, "channels", port.min_ch);
+    port.max_ch = uintValue(*caps, "channels", port.max_ch);
   }
+  port.min_ch = uintValueAny(*caps, {"min_ch", "channels_min"}, port.min_ch);
   port.max_ch = uintValueAny(*caps, {"max_ch", "channels_max"}, port.max_ch);
   port.tdm_slots = uintValue(*caps, "tdm_slots", port.tdm_slots == 0 ? port.max_ch : port.tdm_slots);
   port.slot_width = uintValue(*caps, "slot_width", port.slot_width == 0 ? 32 : port.slot_width);
@@ -883,45 +905,25 @@ bool isDaiModuleType(const std::string& module_type) {
   return module_type == "builtin.dai" || module_type == "dai";
 }
 
-PortInfo parseEndpointModuleInstance(const JsonValue& instance_json, uint32_t default_rate) {
+PortInfo parseEndpointNode(const JsonValue& node_json, const JsonValue& params, uint32_t default_rate) {
   PortInfo port;
-  port.port_id = stringValue(instance_json, "inst_id");
-  port.role = stringValue(instance_json, "role");
+  port.port_id = stringValue(node_json, "node_id");
+  port.role = isHostModuleType(stringValue(node_json, "module_type")) ? "host" : "dai";
   port.resource_ref = port.port_id;
-  port.pcm_id = stringValue(instance_json, "stream_name",
-                            stringValue(instance_json, "stream_id", stringValue(instance_json, "pcm_id")));
-  port.dai_id = stringValue(instance_json, "link_name", stringValue(instance_json, "dai_id"));
-  port.aif_role = stringValue(instance_json, "role_label", stringValue(instance_json, "aif_role"));
-  port.transport = stringValue(instance_json, "dai_type", stringValue(instance_json, "transport"));
-  port.hw_id = stringValue(instance_json, "device_id", stringValue(instance_json, "hw_id"));
-  port.hw_dir = stringValue(instance_json, "data_flow", stringValue(instance_json, "dir"));
-  const std::string direction = stringValue(instance_json, "direction");
+  port.pcm_id = stringValue(params, "stream_name");
+  port.dai_id = stringValue(params, "link_name");
+  port.aif_role = stringValue(params, "role_label", stringValue(params, "aif_role"));
+  port.transport = stringValue(params, "dai_type");
+  port.hw_id = stringValue(params, "device_id");
+  const std::string direction = stringValue(params, "direction");
   if (port.hw_dir.empty() && direction == "playback") port.hw_dir = "out";
   if (port.hw_dir.empty() && direction == "capture") port.hw_dir = "in";
-  if (instance_json.has("dai_index") && !instance_json.at("dai_index").isNull()) {
+  if (params.has("dai_index") && !params.at("dai_index").isNull()) {
     port.has_dai_index = true;
-    port.dai_index = uintValue(instance_json, "dai_index", 0);
+    port.dai_index = uintValue(params, "dai_index", 0);
   }
-  applyCapabilitiesToPort(port, instance_json, default_rate);
+  applyCapabilitiesToPort(port, params, default_rate);
   return port;
-}
-
-PortInfo parseAudioEndpointResource(const JsonValue& endpoint_json, uint32_t default_rate) {
-  PortInfo endpoint;
-  endpoint.resource_ref = stringValue(endpoint_json, "id", stringValue(endpoint_json, "endpoint_id"));
-  if (endpoint.resource_ref.empty()) throw std::runtime_error("resource_catalog audio endpoint missing id");
-  endpoint.pcm_id = stringValue(endpoint_json, "stream_name",
-                                stringValue(endpoint_json, "stream_id", stringValue(endpoint_json, "pcm_id")));
-  endpoint.dai_id = stringValue(endpoint_json, "link_name", stringValue(endpoint_json, "dai_id"));
-  endpoint.aif_role = stringValue(endpoint_json, "role_label", stringValue(endpoint_json, "aif_role"));
-  endpoint.transport = stringValue(endpoint_json, "kind", stringValue(endpoint_json, "transport"));
-  endpoint.hw_id = stringValue(endpoint_json, "device_id", stringValue(endpoint_json, "id"));
-  endpoint.hw_dir = stringValue(endpoint_json, "data_flow", stringValue(endpoint_json, "dir"));
-  const std::string direction = stringValue(endpoint_json, "direction");
-  if (endpoint.hw_dir.empty() && direction == "playback") endpoint.hw_dir = "out";
-  if (endpoint.hw_dir.empty() && direction == "capture") endpoint.hw_dir = "in";
-  applyCapabilitiesToPort(endpoint, endpoint_json, default_rate);
-  return endpoint;
 }
 
 ResourceCatalogInfo parseResourceCatalog(const JsonValue& root) {
@@ -949,68 +951,7 @@ ResourceCatalogInfo parseResourceCatalog(const JsonValue& root) {
       catalog.cores.emplace(core.resource_id, std::move(core));
     }
   }
-  if (catalog_json->has("audio_endpoints") && catalog_json->at("audio_endpoints").isArray()) {
-    for (const auto& item : catalog_json->at("audio_endpoints").asArray()) {
-      auto endpoint = parseAudioEndpointResource(item, 48000);
-      catalog.audio_endpoints.emplace(endpoint.resource_ref, std::move(endpoint));
-    }
-  }
-  if (catalog_json->has("audio_ios") && catalog_json->at("audio_ios").isArray()) {
-    for (const auto& item : catalog_json->at("audio_ios").asArray()) {
-      auto endpoint = parseAudioEndpointResource(item, 48000);
-      catalog.audio_endpoints.emplace(endpoint.resource_ref, std::move(endpoint));
-    }
-  }
   return catalog;
-}
-
-PortInfo parsePort(const JsonValue& port_json, const ResourceCatalogInfo& catalog, uint32_t default_rate) {
-  PortInfo port;
-  port.port_id = stringValue(port_json, "port_id");
-  port.role = stringValue(port_json, "role");
-  port.resource_ref = stringValue(port_json, "resource_ref");
-  if (port.port_id.empty()) throw std::runtime_error("pipeline port missing port_id");
-  if (!port.resource_ref.empty()) {
-    const auto endpoint_it = catalog.audio_endpoints.find(port.resource_ref);
-    if (endpoint_it == catalog.audio_endpoints.end()) {
-      throw std::runtime_error("pipeline port references unknown resource_ref: " + port.resource_ref);
-    }
-    const auto port_id = port.port_id;
-    const auto role = port.role;
-    const auto resource_ref = port.resource_ref;
-    port = endpoint_it->second;
-    port.port_id = port_id;
-    port.role = role;
-    port.resource_ref = resource_ref;
-  }
-  if (port_json.has("alsa_hint") && port_json.at("alsa_hint").isObject()) {
-    const auto& hint = port_json.at("alsa_hint");
-    port.pcm_id = stringValue(hint, "pcm_id");
-    port.dai_id = stringValue(hint, "dai_id");
-    port.aif_role = stringValue(hint, "aif_role");
-  }
-  if (port_json.has("hw") && port_json.at("hw").isObject()) {
-    const auto& hw = port_json.at("hw");
-    port.transport = stringValue(hw, "transport");
-    port.hw_id = stringValue(hw, "id");
-    port.hw_dir = stringValue(hw, "dir");
-    port.max_ch = uintValue(hw, "max_ch", 0);
-    port.tdm_slots = uintValue(hw, "tdm_slots", port.max_ch);
-    port.slot_width = uintValue(hw, "slot_width", 32);
-    port.sample_bits = uintValue(hw, "sample_bits", 32);
-    port.fsync_hz = uintValue(hw, "fsync_hz", default_rate);
-  }
-  if (port_json.has("dai_index") && !port_json.at("dai_index").isNull()) {
-    port.has_dai_index = true;
-    port.dai_index = uintValue(port_json, "dai_index", 0);
-  }
-  if (port_json.has("stream") && port_json.at("stream").isObject()) {
-    const auto& stream = port_json.at("stream");
-    port.pcm_id = stringValue(stream, "stream_name", stringValue(stream, "stream_id", port.pcm_id));
-    port.aif_role = stringValue(stream, "role_label", port.aif_role);
-  }
-  applyCapabilitiesToPort(port, port_json, default_rate);
-  return port;
 }
 
 SofSchedulingInfo parseScheduling(const JsonValue& pipeline_json, const ResourceCatalogInfo& catalog) {
@@ -1163,25 +1104,6 @@ ProjectIr parseProject(const JsonValue& root,
     }
   }
 
-  for (const auto& item : requiredArray(root, "module_instances").asArray()) {
-    InstanceInfo inst;
-    inst.inst_id = stringValue(item, "inst_id");
-    inst.name = stringValue(item, "name", inst.inst_id);
-    inst.module_type = stringValue(item, "module_type");
-    inst.source_json = item.dump();
-    if (inst.inst_id.empty() || inst.module_type.empty()) throw std::runtime_error("module instance is missing inst_id or module_type");
-    if (ir.module_types.find(inst.module_type) == ir.module_types.end()) {
-      throw std::runtime_error("module instance references unknown module_type: " + inst.module_type);
-    }
-    if (isHostModuleType(inst.module_type) || isDaiModuleType(inst.module_type)) {
-      inst.endpoint_present = true;
-      inst.endpoint = parseEndpointModuleInstance(item, 48000);
-    }
-    if (!ir.instances.emplace(inst.inst_id, std::move(inst)).second) {
-      throw std::runtime_error("duplicate module instance");
-    }
-  }
-
   uint32_t pcm_index = 0;
   for (const auto& item : requiredArray(root, "pipelines").asArray()) {
     PipelineInfo pipe;
@@ -1191,42 +1113,34 @@ ProjectIr parseProject(const JsonValue& root,
     pipe.direction = directionForPipeline(item);
     pipe.source_json = item.dump();
     pipe.pcm_index = pcm_index++;
-    if (item.has("frame") && item.at("frame").isObject()) pipe.sample_rate = uintValue(item.at("frame"), "rate", 48000);
     pipe.scheduling = parseScheduling(item, resource_catalog);
-
-    if (item.has("ports") && item.at("ports").isArray()) {
-      for (const auto& port_json : item.at("ports").asArray()) {
-        pipe.ports.push_back(parsePort(port_json, resource_catalog, pipe.sample_rate));
-      }
-    }
-    pipe.channels_max = maxChannelsFromPortInfos(pipe.ports);
-    pipe.sample_bits = sampleBitsFromPortInfos(pipe.ports);
 
     for (const auto& node_json : requiredArray(item, "nodes").asArray()) {
       NodeInfo node;
       node.node_id = stringValue(node_json, "node_id");
-      node.kind = stringValue(node_json, "kind");
+      node.inst_id = node.node_id;
+      node.name = stringValue(node_json, "name", node.node_id);
+      node.module_type = stringValue(node_json, "module_type");
       node.source_json = node_json.dump();
+      node.params_json = jsonObjectValueMap(node_json, "params");
       if (node.node_id.empty()) throw std::runtime_error("pipeline node missing node_id in " + pipe.pipe_id);
-      if (node.kind == "module") {
-        node.inst_id = stringValue(node_json, "inst_ref");
-        const auto inst_it = ir.instances.find(node.inst_id);
-        if (inst_it == ir.instances.end()) throw std::runtime_error("node references unknown inst_ref: " + node.inst_id);
-        node.name = inst_it->second.name;
-        node.module_type = inst_it->second.module_type;
-        node.endpoint_present = inst_it->second.endpoint_present;
-        node.endpoint = inst_it->second.endpoint;
-      } else if (node.kind == "module_inline") {
-        const auto& inline_object = requiredObject(node_json, "inline");
-        node.inst_id = pipe.pipe_id + "." + node.node_id + ".__inline";
-        node.name = stringValue(inline_object, "name", node.node_id);
-        node.module_type = stringValue(inline_object, "module_type");
-        if (ir.module_types.find(node.module_type) == ir.module_types.end()) {
-          throw std::runtime_error("inline node references unknown module_type: " + node.module_type);
+      if (node.module_type.empty()) throw std::runtime_error("pipeline node missing module_type: " + pipe.pipe_id + "." + node.node_id);
+      const auto type_it = ir.module_types.find(node.module_type);
+      if (type_it == ir.module_types.end()) throw std::runtime_error("pipeline node references unknown module_type: " + node.module_type);
+      for (const auto& param : node.params_json) {
+        const auto found = std::any_of(type_it->second.parameters.begin(), type_it->second.parameters.end(),
+                                       [&](const auto& candidate) { return candidate.param_id == param.first; });
+        if (!found) {
+          throw std::runtime_error("node parameter is not declared by module_type: " +
+                                   pipe.pipe_id + "." + node.node_id + "." + param.first);
         }
-      } else {
-        node.inst_id = stringValue(node_json, "port_ref", node.node_id);
-        node.name = node.node_id;
+      }
+      if (isHostModuleType(node.module_type) || isDaiModuleType(node.module_type)) {
+        JsonValue empty_params = JsonValue::object();
+        const JsonValue* params_ptr = optionalObject(node_json, "params");
+        const JsonValue& params = params_ptr == nullptr ? empty_params : *params_ptr;
+        node.endpoint_present = true;
+        node.endpoint = parseEndpointNode(node_json, params, pipe.sample_rate);
       }
       node.widget_name = pipe.pipe_id + "." + node.node_id;
       pipe.nodes.push_back(std::move(node));
@@ -1239,8 +1153,10 @@ ProjectIr parseProject(const JsonValue& root,
                                          [&](const auto& port) { return port.port_id == endpoint.port_id; });
       if (!duplicate) pipe.ports.push_back(std::move(endpoint));
     }
+    pipe.channels_min = minChannelsFromPortInfos(pipe.ports);
     pipe.channels_max = maxChannelsFromPortInfos(pipe.ports);
     pipe.sample_bits = sampleBitsFromPortInfos(pipe.ports);
+    pipe.sample_rate = sampleRateFromPortInfos(pipe.ports, pipe.sample_rate);
 
     if (item.has("edges")) {
       for (const auto& edge_json : requiredArray(item, "edges").asArray()) {
@@ -1270,11 +1186,6 @@ const ModuleTypeInfo& moduleTypeForNode(const ProjectIr& ir, const NodeInfo& nod
   return it->second;
 }
 
-const InstanceInfo* instanceForNode(const ProjectIr& ir, const NodeInfo& node) {
-  const auto it = ir.instances.find(node.inst_id);
-  return it == ir.instances.end() ? nullptr : &it->second;
-}
-
 module_config::ModuleConfigRequest makeModuleConfigRequest(const ProjectIr& ir,
                                                            const PipelineInfo& pipe,
                                                            const NodeInfo& node,
@@ -1283,7 +1194,6 @@ module_config::ModuleConfigRequest makeModuleConfigRequest(const ProjectIr& ir,
                                                            std::string preset_id = {},
                                                            std::string preset_entry_json = {}) {
   const auto& type = moduleTypeForNode(ir, node);
-  const auto* instance = instanceForNode(ir, node);
 
   module_config::ModuleConfigRequest request;
   request.module_type = node.module_type;
@@ -1293,7 +1203,6 @@ module_config::ModuleConfigRequest makeModuleConfigRequest(const ProjectIr& ir,
   request.parameter_id = param == nullptr ? std::string{} : param->param_id;
   request.preset_id = std::move(preset_id);
   request.module_type_json = type.source_json;
-  request.module_instance_json = instance == nullptr ? std::string{} : instance->source_json;
   request.pipeline_json = pipe.source_json;
   request.node_json = node.source_json;
   request.parameter_json = param == nullptr ? std::string{} : param->source_json;
@@ -1324,16 +1233,21 @@ void addCheckedUid(std::map<uint32_t, std::string>& used, uint32_t uid, const st
   }
 }
 
-std::string singleParamValuesJson(const ParameterInfo& param) {
-  return "{" + quote(param.param_id) + ":" + param.default_json + "}";
+std::string valueJsonForNodeParam(const NodeInfo& node, const ParameterInfo& param) {
+  const auto it = node.params_json.find(param.param_id);
+  return it == node.params_json.end() ? param.default_json : it->second;
 }
 
-std::string allDefaultValuesJson(const ModuleTypeInfo& type) {
+std::string singleParamValuesJson(const NodeInfo& node, const ParameterInfo& param) {
+  return "{" + quote(param.param_id) + ":" + valueJsonForNodeParam(node, param) + "}";
+}
+
+std::string allDefaultValuesJson(const ModuleTypeInfo& type, const NodeInfo& node) {
   std::ostringstream json;
   json << "{";
   for (size_t i = 0; i < type.parameters.size(); ++i) {
     if (i != 0) json << ",";
-    json << quote(type.parameters[i].param_id) << ":" << type.parameters[i].default_json;
+    json << quote(type.parameters[i].param_id) << ":" << valueJsonForNodeParam(node, type.parameters[i]);
   }
   json << "}";
   return json.str();
@@ -1372,7 +1286,7 @@ Status packParameterDefault(const ProjectIr& ir,
   const auto* handler = module_configs.find(node.module_type);
   if (handler == nullptr) return Status::unavailable("no module config handler registered for module_type: " + node.module_type);
 
-  auto request = makeModuleConfigRequest(ir, pipe, node, &param, singleParamValuesJson(param));
+  auto request = makeModuleConfigRequest(ir, pipe, node, &param, singleParamValuesJson(node, param));
   auto status = runtime ? handler->packRuntimeParam(request, blob) : handler->packInstallConfig(request, blob);
   return fromModuleConfigStatus(status);
 }
@@ -1386,7 +1300,7 @@ Status packAggregateTopologyDefault(const ProjectIr& ir,
   if (handler == nullptr) return Status::unavailable("no module config handler registered for module_type: " + node.module_type);
 
   const auto& type = moduleTypeForNode(ir, node);
-  auto request = makeModuleConfigRequest(ir, pipe, node, nullptr, allDefaultValuesJson(type));
+  auto request = makeModuleConfigRequest(ir, pipe, node, nullptr, allDefaultValuesJson(type, node));
   request.parameter_id = "config";
   request.parameter_json = R"({"param_id":"config","param_name":"Config","value_type":"bytes"})";
   auto status = handler->packInstallConfig(request, blob);
@@ -1719,18 +1633,15 @@ std::string controlConf(const ControlInfo& control) {
 }
 
 std::string widgetType(const NodeInfo& node, const PipelineInfo& pipeline) {
-  if (node.kind == "port" || isHostModuleType(node.module_type)) return pipeline.direction == "capture" ? "aif_out" : "aif_in";
+  if (isHostModuleType(node.module_type)) return pipeline.direction == "capture" ? "aif_out" : "aif_in";
   if (isDaiModuleType(node.module_type)) return pipeline.direction == "capture" ? "dai_out" : "dai_in";
   if (node.module_type == "gain.volume") return "pga";
   return "mixer";
 }
 
 const PortInfo* findPort(const PipelineInfo& pipeline, const NodeInfo& node) {
+  (void)pipeline;
   if (node.endpoint_present) return &node.endpoint;
-  if (node.kind != "port") return nullptr;
-  for (const auto& port : pipeline.ports) {
-    if (port.port_id == node.inst_id) return &port;
-  }
   return nullptr;
 }
 
@@ -1773,25 +1684,19 @@ uint32_t daiIndexForPort(const PortInfo& port, uint32_t fallback) {
 }
 
 bool isDaiPortWidget(const NodeInfo& node, const PipelineInfo& pipeline) {
+  (void)pipeline;
   if (isDaiModuleType(node.module_type)) return true;
-  const PortInfo* port = findPort(pipeline, node);
-  if (port == nullptr) return false;
-  if (pipeline.direction == "playback") return port->role == "sink";
-  if (pipeline.direction == "capture") return port->role == "source";
-  return !port->hw_id.empty();
+  return false;
 }
 
 bool isHostPortWidget(const NodeInfo& node, const PipelineInfo& pipeline) {
+  (void)pipeline;
   if (isHostModuleType(node.module_type)) return true;
-  const PortInfo* port = findPort(pipeline, node);
-  if (port == nullptr) return false;
-  if (pipeline.direction == "playback") return port->role == "source";
-  if (pipeline.direction == "capture") return port->role == "sink";
   return false;
 }
 
 std::string sofWidgetType(const NodeInfo& node, const PipelineInfo& pipeline) {
-  if (node.kind == "port" || isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
+  if (isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
     if (isDaiPortWidget(node, pipeline)) return pipeline.direction == "capture" ? "dai_out" : "dai_in";
     return pipeline.direction == "capture" ? "aif_out" : "aif_in";
   }
@@ -1810,7 +1715,7 @@ const ModuleTypeInfo* moduleTypeForWidget(const ProjectIr& ir, const NodeInfo& n
 }
 
 std::string sofRegistryNameForNode(const NodeInfo& node, const PipelineInfo& pipeline) {
-  if (node.kind == "port" || isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
+  if (isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
     return isDaiPortWidget(node, pipeline) ? "dai" : "host";
   }
   if (node.module_type == "gain.volume") return "volume";
@@ -2229,7 +2134,7 @@ void emitSofWidgetData(std::ostringstream& out, const ProjectIr& ir, const Pipel
   out << "  index " << topologyQuote(std::to_string(pipeline.pcm_index + 1)) << "\n";
   out << "  type " << topologyQuote(sofWidgetType(node, pipeline)) << "\n";
   out << "  no_pm \"true\"\n";
-  if (node.kind == "port" || isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
+  if (isHostPortWidget(node, pipeline) || isDaiPortWidget(node, pipeline)) {
     const auto* port = findPort(pipeline, node);
     std::string stream_name = pipeline.name;
     if (port != nullptr && isDaiPortWidget(node, pipeline) && !port->dai_id.empty()) {
@@ -2322,15 +2227,10 @@ void emitDaiObjects(std::ostringstream& out, const PipelineInfo& pipeline) {
 }
 
 std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& private_data) {
+  (void)private_data;
   std::ostringstream out;
   out << "# Generated by Audio Studio as_config. Do not edit by hand.\n\n";
   emitSofVendorTokens(out);
-  out << "SectionData.\"AS_PRIVATE\" {\n";
-  out << "  bytes " << topologyQuote(hexBytes(private_data)) << "\n";
-  out << "}\n";
-  out << "SectionManifest.\"sof_manifest\" {\n";
-  out << "  data [ \"AS_PRIVATE\" ]\n";
-  out << "}\n\n";
 
   for (const auto& control : ir.controls) out << controlConf(control);
 
@@ -2712,7 +2612,7 @@ Status ConfigService::compile(const ConfigCompileRequest& request, ConfigCompile
   }
 
   output.module_type_count = ir.module_types.size();
-  output.module_instance_count = ir.instances.size();
+  output.module_instance_count = 0;
   output.pipeline_count = ir.pipelines.size();
   output.runtime_control_count = ir.controls.size();
   output.install_param_count = ir.install_params.size();

@@ -13,18 +13,14 @@ assert.ok(
 );
 assert.equal(
   registry.moduleTypes.size,
-  cfg.module_types.length + builtin.module_types.length + 3,
-  'registry must include product types, imported built-in types, and virtual I/O types'
+  cfg.module_types.length + builtin.module_types.length,
+  'registry must include product types and imported built-in types'
 );
 
-// Imported module types plus Audio Studio built-in virtual I/O modules:
-//   virtual.file_input, virtual.mic_input, virtual.audio_output
-assert.ok(registry.moduleTypes.has('virtual.file_input'));
-assert.ok(registry.moduleTypes.has('virtual.mic_input'));
-assert.ok(registry.moduleTypes.has('virtual.audio_output'));
-assert.equal(registry.moduleTypes.get('virtual.file_input').category, 'INPUT / OUTPUT');
-assert.equal(registry.moduleTypes.get('virtual.mic_input').category, 'INPUT / OUTPUT');
-assert.equal(registry.moduleTypes.get('virtual.audio_output').category, 'INPUT / OUTPUT');
+assert.ok(registry.moduleTypes.has('builtin.file_input'));
+assert.ok(registry.moduleTypes.has('builtin.file_output'));
+assert.equal(registry.moduleTypes.get('builtin.file_input').category, 'INPUT / OUTPUT');
+assert.equal(registry.moduleTypes.get('builtin.file_output').category, 'INPUT / OUTPUT');
 assert.ok(registry.moduleTypes.has('filter.channel_remap'));
 assert.ok(registry.moduleTypes.has('filter.dsp_filter'));
 assert.ok(registry.moduleTypes.has('gain.volume'));
@@ -33,17 +29,16 @@ assert.equal((cfg.module_types || []).some(mt => mt.type_id === 'filter.dsp_filt
 assert.ok(Array.isArray(cfg.frontend_connections), 'A2.json must persist frontend File I/O connections outside pipelines[]');
 assert.equal(cfg.frontend_connections.length, 3, 'A2.json must describe the playback, capture, and DSP coverage frontend links');
 
-assert.equal(registry.instances.size, cfg.module_instances.length);
+assert.equal(Object.prototype.hasOwnProperty.call(cfg, 'module_instances'), false);
 const playback = convertPipeline(cfg, 'PLAYBACK_MAIN', { catalogs: [builtin] });
 assert.ok(playback.nodes.length > 4);
 assert.ok(playback.edges.length > 4);
 assert.equal(playback.frontendNodes.length, 1);
 assert.equal(playback.frontendEdges.length, 1);
 assert.equal(playback.frontendNodes[0].id, 'FILE_IN');
-assert.equal(playback.frontendNodes[0].moduleTypeId, 'virtual.file_input');
-assert.equal(playback.frontendNodes[0].staticParams.host_stream, 'as_config_playback');
+assert.equal(playback.frontendNodes[0].moduleTypeId, 'builtin.file_input');
 assert.equal(playback.frontendEdges[0].from.nodeId, 'FILE_IN');
-assert.equal(playback.frontendEdges[0].from.portName, 'L');
+assert.equal(playback.frontendEdges[0].from.portName, 'out');
 assert.equal(playback.frontendEdges[0].to.nodeId, 'HOST_IN');
 assert.equal(playback.frontendEdges[0].to.portName, 'in');
 const playbackHost = playback.nodes.find(n => n.id === 'HOST_IN');
@@ -59,7 +54,7 @@ assert.deepEqual(playbackDai.outputs.map(p => p.name), []);
 assert.equal(playbackDai.staticParams.dai_type, 'file_io_dai');
 assert.equal(playbackDai.staticParams.dai_index, 0);
 assert.equal(playbackDai.staticParams.direction, 'playback');
-assert.equal(playbackDai.moduleType.parameters.find(p => p.param_id === 'file_path').value_type, 'file_io');
+assert.equal(playbackDai.moduleType.parameters.find(p => p.param_id === 'link_name').value_type, 'string');
 const chremap = playback.nodes.find(n => n.id === 'CHREMAP');
 assert.deepEqual(chremap.inputs.map(p => p.name), ['in']);
 assert.deepEqual(chremap.outputs.map(p => p.name), ['out']);
@@ -87,10 +82,9 @@ assert.equal(captureHost.outputs.find(p => p.name === 'out').domain, 'external')
 assert.equal(capture.frontendNodes.length, 1);
 assert.equal(capture.frontendEdges.length, 1);
 assert.equal(capture.frontendNodes[0].id, 'FILE_OUT');
-assert.equal(capture.frontendNodes[0].moduleTypeId, 'virtual.audio_output');
-assert.equal(capture.frontendNodes[0].staticParams.host_stream, 'as_config_capture');
+assert.equal(capture.frontendNodes[0].moduleTypeId, 'builtin.file_output');
 assert.equal(capture.frontendEdges[0].from.nodeId, 'HOST_OUT');
 assert.equal(capture.frontendEdges[0].from.portName, 'out');
 assert.equal(capture.frontendEdges[0].to.nodeId, 'FILE_OUT');
-assert.equal(capture.frontendEdges[0].to.portName, 'L');
+assert.equal(capture.frontendEdges[0].to.portName, 'in');
 console.log('config-parser.test passed');

@@ -51,7 +51,7 @@
         {
           "param_id": "file_path",
           "param_name": "File Path",
-          "value_type": "string",
+          "value_type": "file_io",
           "default": "",
           "apply": {
             "settable_states": [
@@ -150,7 +150,7 @@
         {
           "param_id": "file_path",
           "param_name": "File Path",
-          "value_type": "string",
+          "value_type": "file_save",
           "default": "",
           "apply": {
             "settable_states": [
@@ -205,9 +205,87 @@
             ],
             "mode": "build"
           }
+        },
+        {
+          "param_id": "direction",
+          "param_name": "Direction",
+          "value_type": "enum",
+          "default": "playback",
+          "enum": [
+            "playback",
+            "capture"
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "channels_min",
+          "param_name": "Minimum Channels",
+          "value_type": "uint8",
+          "default": 1,
+          "range": {
+            "min": 1,
+            "max": 32,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "channels_max",
+          "param_name": "Maximum Channels",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 32,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "sample_bits",
+          "param_name": "Sample Bits",
+          "value_type": "uint32_list",
+          "default": [
+            16
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "sample_rates",
+          "param_name": "Sample Rates",
+          "value_type": "uint32_list",
+          "default": [
+            48000
+          ],
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
         }
       ],
-      "description": "SOF host PCM endpoint. Static stream_name fields live on module_instances."
+      "description": "SOF host PCM endpoint."
     },
     {
       "type_id": "builtin.dai",
@@ -286,19 +364,116 @@
           }
         },
         {
-          "param_id": "file_path",
-          "param_name": "File Path",
-          "value_type": "file_io",
+          "param_id": "link_name",
+          "param_name": "Link Name",
+          "value_type": "string",
           "default": "",
           "apply": {
             "settable_states": [
               "PIPE_LOADED"
             ],
-            "mode": "safe_point"
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "device_id",
+          "param_name": "Device ID",
+          "value_type": "string",
+          "default": "",
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "sample_rate",
+          "param_name": "Sample Rate",
+          "value_type": "uint32",
+          "default": 48000,
+          "range": {
+            "min": 8000,
+            "max": 384000,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "channels",
+          "param_name": "Channels",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 32,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "sample_bits",
+          "param_name": "Sample Bits",
+          "value_type": "uint16",
+          "default": 16,
+          "range": {
+            "min": 8,
+            "max": 32,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "tdm_slots",
+          "param_name": "TDM Slots",
+          "value_type": "uint8",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 32,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
+          }
+        },
+        {
+          "param_id": "slot_width",
+          "param_name": "Slot Width",
+          "value_type": "uint16",
+          "default": 16,
+          "range": {
+            "min": 8,
+            "max": 64,
+            "step": 1
+          },
+          "apply": {
+            "settable_states": [
+              "PIPE_LOADED"
+            ],
+            "mode": "build"
           }
         }
       ],
-      "description": "Digital Audio Interface endpoint. Static dai_type, dai_index and file_io path fields live on module_instances."
+      "description": "Digital Audio Interface endpoint."
     },
     {
       "type_id": "builtin.mic_input",

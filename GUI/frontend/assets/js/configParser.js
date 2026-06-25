@@ -1,90 +1,17 @@
-import { deepClone, getByPath, parseEndpoint, safeName } from './utils.js';
-
-const VIRTUAL_IO_MODULE_TYPES = [
-  {
-    type_id: 'virtual.file_input',
-    name: 'File Input',
-    category: 'INPUT / OUTPUT',
-    io: { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }] },
-    static_schema: {
-      fields: [
-        { key: 'source', type: 'enum', enum: ['local_file', 'demo_sine', 'demo_speech'], default: 'local_file' },
-        { key: 'loop', type: 'bool', default: true }
-      ]
-    },
-    runtime_params: [
-      { param_id: 'gain', param_name: 'Gain', value_type: 'float', default: 0, unit: 'dB', range: { min: -60, max: 12, step: 0.5 } }
-    ]
-  },
-  {
-    type_id: 'virtual.mic_input',
-    name: 'Mic Input',
-    category: 'INPUT / OUTPUT',
-    io: { in_ports: [], out_ports: [{ name: 'mic0', max_ch: 1 }, { name: 'mic1', max_ch: 1 }, { name: 'mic2', max_ch: 1 }, { name: 'mic3', max_ch: 1 }] },
-    static_schema: {
-      fields: [
-        { key: 'device', type: 'enum', enum: ['browser_mic', 'virtual_mic_array'], default: 'browser_mic' },
-        { key: 'channels', type: 'uint', default: 4, range: { min: 1, max: 8, step: 1 } }
-      ]
-    },
-    runtime_params: [
-      { param_id: 'pre_gain', param_name: 'Pre Gain', value_type: 'float', default: 0, unit: 'dB', range: { min: -20, max: 20, step: 0.5 } }
-    ]
-  },
-  {
-    type_id: 'virtual.audio_output',
-    name: 'Audio Output',
-    category: 'INPUT / OUTPUT',
-    io: { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }], out_ports: [] },
-    static_schema: {
-      fields: [
-        { key: 'sink', type: 'enum', enum: ['browser_playback', 'wav_render', 'virtual_speaker'], default: 'browser_playback' }
-      ]
-    },
-    runtime_params: [
-      { param_id: 'volume', param_name: 'Volume', value_type: 'float', default: 0, unit: 'dB', range: { min: -60, max: 12, step: 0.5 } },
-      { param_id: 'mute', param_name: 'Mute', value_type: 'bool', default: false }
-    ]
-  }
-];
-
-function defaultPortForRole(role) {
-  if (role === 'source') return { inputs: [], outputs: [{ name: 'out', max_ch: 32 }] };
-  if (role === 'sink') return { inputs: [{ name: 'in', max_ch: 32 }], outputs: [] };
-  return { inputs: [{ name: 'in', max_ch: 32 }], outputs: [{ name: 'out', max_ch: 32 }] };
-}
-
-function audioResourceMap(productConfig) {
-  const catalog = productConfig.resource_catalog || productConfig.hardware_hints || {};
-  const endpoints = catalog.audio_endpoints || catalog.audio_ios || [];
-  return new Map(endpoints.map(e => [e.id || e.endpoint_id, e]));
-}
-
-function endpointMaxChannels(port, endpoint) {
-  const caps = endpoint && endpoint.capabilities || {};
-  return Number(
-    caps.channels && caps.channels.max ||
-    caps.max_ch ||
-    caps.channels_max ||
-    port && port.hw && port.hw.max_ch ||
-    2
-  );
-}
+import { deepClone, parseEndpoint, safeName } from './utils.js';
 
 function buildParamDefaults(moduleType, presetValues = {}) {
   const staticParams = {};
   const runtimeParams = {};
-  const legacyStaticFields = moduleType && moduleType.static_schema ? moduleType.static_schema.fields || [] : [];
-  const legacyRuntimeFields = moduleType ? moduleType.runtime_params || [] : [];
   const unifiedParams = moduleType ? moduleType.parameters || [] : [];
-  const staticFields = legacyStaticFields.concat(unifiedParams.filter(param => {
+  const staticFields = unifiedParams.filter(param => {
     const states = param.apply ? param.apply.settable_states || [] : [];
     return states.indexOf('RUNNING') < 0;
-  }));
-  const runtimeFields = legacyRuntimeFields.concat(unifiedParams.filter(param => {
+  });
+  const runtimeFields = unifiedParams.filter(param => {
     const states = param.apply ? param.apply.settable_states || [] : [];
     return states.indexOf('RUNNING') >= 0;
-  }));
+  });
   for (const field of staticFields) {
     const key = field.key || field.param_id;
     if (!key) continue;
@@ -98,38 +25,9 @@ function buildParamDefaults(moduleType, presetValues = {}) {
   return { staticParams, runtimeParams };
 }
 
-function instanceMaxChannels(inst, fallback = 2) {
-  const caps = inst && inst.capabilities || {};
-  return Number(
-    caps.channels && caps.channels.max ||
-    caps.max_ch ||
-    caps.channels_max ||
-    inst && inst.max_ch ||
-    fallback ||
-    2
-  );
-}
-
-function endpointInstanceParamValues(inst, moduleTypeId) {
-  if (!inst) return {};
-  if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
-    return { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
-  }
-  if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
-    return {
-      dai_type: inst.dai_type || 'file_io_dai',
-      dai_index: Number(inst.dai_index || 0),
-      direction: inst.direction || 'playback',
-      file_path: inst.file_path || ''
-    };
-  }
-  return {};
-}
-
-function endpointInstancePorts(inst, moduleTypeId, fallbackInputs, fallbackOutputs) {
-  if (!inst) return { inputs: fallbackInputs, outputs: fallbackOutputs };
-  const maxCh = instanceMaxChannels(inst, 2);
-  const direction = String(inst.direction || '').toLowerCase();
+function endpointNodePorts(params, moduleTypeId, fallbackInputs, fallbackOutputs) {
+  const maxCh = Number(params && (params.channels_max || params.channels) || 2);
+  const direction = String(params && params.direction || '').toLowerCase();
   if (moduleTypeId === 'builtin.host' || moduleTypeId === 'host') {
     const playback = direction !== 'capture';
     return {
@@ -138,7 +36,7 @@ function endpointInstancePorts(inst, moduleTypeId, fallbackInputs, fallbackOutpu
     };
   }
   if (moduleTypeId === 'builtin.dai' || moduleTypeId === 'dai') {
-    const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction !== 'capture';
+    const hasInput = direction !== 'capture';
     return {
       inputs: hasInput ? [{ name: 'in', max_ch: maxCh, domain: 'sof' }] : [],
       outputs: hasInput ? [] : [{ name: 'out', max_ch: maxCh, domain: 'sof' }]
@@ -167,10 +65,10 @@ function convertPort(port, dir, index) {
 
 function normalizedLibraryCategory(moduleType) {
   const text = `${moduleType && moduleType.type_id || ''} ${moduleType && moduleType.category || ''} ${moduleType && moduleType.name || ''}`.toLowerCase();
-  if (text.includes('virtual.') || text.includes('port.source') || text.includes('port.sink') || text.includes('file') || text.includes('mic_input') || text.includes('audio_output')) return 'INPUT / OUTPUT';
+  if (text.includes('port.source') || text.includes('port.sink') || text.includes('file') || text.includes('mic_input') || text.includes('audio_output')) return 'INPUT / OUTPUT';
   if (text.includes('neural') || text.includes('npu') || text.includes('/ai') || text.endsWith(' ai') || text.includes(' ai.')) return 'AI';
   if (text.includes('aec') || text.includes('beam') || text.includes('noise') || text.includes('ns') || text.includes('agc') || text.includes('vad') || text.includes('kws') || text.includes('asr') || text.includes('voice')) return 'VOICE';
-  if (text.includes('eq') || text.includes('drc') || text.includes('mixer') || text.includes('mix') || text.includes('volume') || text.includes('gain') || text.includes('loudness') || text.includes('fader') || text.includes('balance') || text.includes('virtual') || text.includes('playback/eq') || text.includes('playback/dynamics')) return 'EFFECTS';
+  if (text.includes('eq') || text.includes('drc') || text.includes('mixer') || text.includes('mix') || text.includes('volume') || text.includes('gain') || text.includes('loudness') || text.includes('fader') || text.includes('balance') || text.includes('playback/eq') || text.includes('playback/dynamics')) return 'EFFECTS';
   if (text.includes('src') || text.includes('asrc') || text.includes('delay') || text.includes('route') || text.includes('mux') || text.includes('filter') || text.includes('resampler') || text.includes('graph/basic') || text.includes('graph/routing') || text.includes('common/filter')) return 'UTILITIES';
   return String(moduleType && moduleType.category || 'UTILITIES').toUpperCase();
 }
@@ -194,34 +92,22 @@ function addModuleType(moduleTypes, moduleType, source) {
 
 export function buildRegistry(productConfig, options = {}) {
   const moduleTypes = new Map();
-  const instances = new Map();
-
-  // Audio Studio front-end virtual I/O controls are always available.
-  // They are intentionally independent from product JSON so a project can always
-  // use local file input, browser microphone input, and browser/output render nodes.
-  for (const mt of VIRTUAL_IO_MODULE_TYPES) addModuleType(moduleTypes, deepClone(mt), 'virtual I/O');
 
   for (const mt of importedCatalogModuleTypes(options)) addModuleType(moduleTypes, mt, 'imported catalog');
 
   for (const mt of productConfig.module_types || []) {
     addModuleType(moduleTypes, mt, 'project config');
   }
-  for (const inst of productConfig.module_instances || []) instances.set(inst.inst_id, inst);
-  return { moduleTypes, instances };
+  return { moduleTypes };
 }
 
 export function resolveModuleForNode(productConfig, registry, node) {
-  if (node.kind === 'module') {
-    const inst = registry.instances.get(node.inst_ref);
-    const moduleType = registry.moduleTypes.get(inst && inst.module_type);
-    const preset = getByPath(productConfig, inst && inst.static_preset);
-    return { inst, moduleType, displayName: inst && inst.name || node.node_id, presetValues: preset && preset.values || {} };
-  }
-  if (node.kind === 'module_inline') {
-    const moduleType = registry.moduleTypes.get(node.inline && node.inline.module_type);
-    return { inst: null, moduleType, displayName: node.inline && node.inline.name || moduleType && moduleType.name || node.node_id, presetValues: {} };
-  }
-  return { inst: null, moduleType: null, displayName: node.node_id, presetValues: {} };
+  const moduleType = registry.moduleTypes.get(node.module_type);
+  return {
+    moduleType,
+    displayName: node.name || moduleType && (moduleType.name || moduleType.ui && moduleType.ui.display_name) || node.node_id,
+    presetValues: node.params || {}
+  };
 }
 
 function inferFrontendDirection(spec, moduleTypeId) {
@@ -232,47 +118,26 @@ function inferFrontendDirection(spec, moduleTypeId) {
   return 'input';
 }
 
-function frontendModuleTypeFallback(moduleTypeId, direction) {
-  const isOutput = direction === 'output';
-  return {
-    type_id: moduleTypeId || (isOutput ? 'virtual.audio_output' : 'virtual.file_input'),
-    name: isOutput ? 'Audio Output' : 'File Input',
-    category: 'INPUT / OUTPUT',
-    io: isOutput
-      ? { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }], out_ports: [] }
-      : { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }] },
-    static_schema: { fields: [] },
-    runtime_params: []
-  };
-}
-
-function convertFrontendConnection(productConfig, registry, conn, index) {
-  const spec = conn.frontend_node || conn.node || {};
-  const nodeId = spec.node_id || spec.id || conn.frontend_node_id || conn.node_id || `FRONTEND_${index + 1}`;
-  const moduleTypeId = spec.module_type || spec.moduleType || conn.module_type || conn.moduleType ||
-    (String(spec.direction || conn.direction || '').toLowerCase() === 'output' ? 'virtual.audio_output' : 'virtual.file_input');
-  const direction = inferFrontendDirection({ ...conn, ...spec }, moduleTypeId);
-  const moduleType = registry.moduleTypes.get(moduleTypeId) || frontendModuleTypeFallback(moduleTypeId, direction);
-  const defaults = buildParamDefaults(moduleType, spec.static_params || {});
+function convertFrontendNode(registry, spec, index) {
+  const nodeId = spec.node_id || spec.id || `FRONTEND_${index + 1}`;
+  const moduleTypeId = spec.module_type || spec.moduleType;
+  const direction = inferFrontendDirection(spec, moduleTypeId);
+  const moduleType = registry.moduleTypes.get(moduleTypeId);
+  const defaults = buildParamDefaults(moduleType, spec.params || {});
   const staticParams = {
     ...defaults.staticParams,
-    ...(spec.params || {}),
-    direction,
-    host_stream: conn.host_stream || conn.hostStream || '',
-    host_node_id: conn.host_node_id || conn.hostNodeId || '',
-    connection_id: conn.connection_id || conn.id || ''
+    ...(spec.params || {})
   };
   const inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
   const outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
   return {
     id: nodeId,
     kind: 'frontend',
-    title: spec.name || spec.title || moduleType.name || nodeId,
-    instId: null,
+    title: spec.name || spec.title || moduleType && moduleType.name || nodeId,
     moduleTypeId,
-    category: moduleType.category || 'INPUT / OUTPUT',
-    subtitle: `${direction} · ${staticParams.host_stream || 'host stream'}`,
-    raw: deepClone(conn),
+    category: moduleType && moduleType.category || 'INPUT / OUTPUT',
+    subtitle: direction,
+    raw: deepClone(spec),
     moduleType: deepClone(moduleType),
     inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
     outputs: outputs.map((p, i) => convertPort(p, 'out', i)),
@@ -282,7 +147,7 @@ function convertFrontendConnection(productConfig, registry, conn, index) {
     x: Number(spec.ui && spec.ui.x || 0),
     y: Number(spec.ui && spec.ui.y || 0),
     cost: { cpu: 0, memKb: 0, latencyMs: 0, rms: -60, peak: -60 },
-    frontendConnection: deepClone(conn)
+    frontendConnection: deepClone(spec)
   };
 }
 
@@ -296,48 +161,23 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
   const pipelines = productConfig.pipelines || [];
   const pipe = pipelines.find(p => p.pipe_id === pipeId) || pipelines[0];
   if (!pipe) throw new Error('No pipeline in product config');
-  const portMap = new Map((pipe.ports || []).map(p => [p.port_id, p]));
-  const resources = audioResourceMap(productConfig);
   const nodes = [];
   for (const raw of pipe.nodes || []) {
-    const { inst, moduleType, displayName, presetValues } = resolveModuleForNode(productConfig, registry, raw);
-    let inputs = [];
-    let outputs = [];
-    let category = 'port';
-    let moduleTypeId = 'port';
-    let subtitle = 'pipeline port';
-    if (raw.kind === 'port') {
-      const port = portMap.get(raw.port_ref);
-      const endpoint = port && port.resource_ref ? resources.get(port.resource_ref) : null;
-      const portRole = port && port.role;
-      const ports = defaultPortForRole(portRole);
-      const maxCh = endpointMaxChannels(port, endpoint);
-      inputs = ports.inputs;
-      outputs = ports.outputs;
-      category = `port/${portRole || 'io'}`;
-      moduleTypeId = `port.${portRole || 'io'}`;
-      subtitle = `${portRole || 'port'} · ${endpoint && (endpoint.id || endpoint.endpoint_id) || port && port.resource_ref || port && port.hw && port.hw.id || raw.port_ref || ''}`;
-      inputs = inputs.map(p => ({ ...p, max_ch: maxCh }));
-      outputs = outputs.map(p => ({ ...p, max_ch: maxCh }));
-    } else {
-      inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
-      outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
-      category = moduleType && moduleType.category || 'module';
-      moduleTypeId = moduleType && moduleType.type_id || 'unknown';
-      subtitle = moduleTypeId;
-      const endpointPorts = endpointInstancePorts(inst, moduleTypeId, inputs, outputs);
-      inputs = endpointPorts.inputs;
-      outputs = endpointPorts.outputs;
-    }
-    const defaults = buildParamDefaults(moduleType, { ...endpointInstanceParamValues(inst, moduleTypeId), ...presetValues });
+    const { moduleType, displayName, presetValues } = resolveModuleForNode(productConfig, registry, raw);
+    let inputs = moduleType && moduleType.io ? moduleType.io.in_ports || [] : [];
+    let outputs = moduleType && moduleType.io ? moduleType.io.out_ports || [] : [];
+    const moduleTypeId = moduleType && moduleType.type_id || raw.module_type || 'unknown';
+    const endpointPorts = endpointNodePorts(raw.params || {}, moduleTypeId, inputs, outputs);
+    inputs = endpointPorts.inputs;
+    outputs = endpointPorts.outputs;
+    const defaults = buildParamDefaults(moduleType, presetValues);
     nodes.push({
       id: raw.node_id,
-      kind: raw.kind,
+      kind: 'module',
       title: displayName,
-      instId: raw.inst_ref || null,
       moduleTypeId,
-      category,
-      subtitle,
+      category: moduleType && moduleType.category || 'module',
+      subtitle: moduleTypeId,
       raw: deepClone(raw),
       moduleType: deepClone(moduleType),
       inputs: inputs.map((p, i) => convertPort(p, 'in', i)),
@@ -356,17 +196,17 @@ export function convertPipeline(productConfig, pipeId, options = {}) {
     return { id: `edge_${idx}_${from.nodeId}_${to.nodeId}`, from, to };
   });
   const frontendConnections = frontendConnectionsForPipeline(productConfig, pipe.pipe_id);
-  const frontendNodes = frontendConnections.map((conn, idx) => convertFrontendConnection(productConfig, registry, conn, idx));
-  const frontendEdges = frontendConnections.map((conn, idx) => {
-    const from = parseEndpoint(conn.from);
-    const to = parseEndpoint(conn.to);
+  const frontendNodes = frontendConnections.flatMap((conn, connIdx) =>
+    (conn.nodes || []).map((node, nodeIdx) => convertFrontendNode(registry, node, connIdx + nodeIdx)));
+  const frontendEdges = frontendConnections.flatMap((conn, connIdx) => (conn.edges || []).map((edge, edgeIdx) => {
+    const from = parseEndpoint(edge.from);
+    const to = parseEndpoint(edge.to);
     return {
-      id: `frontend_edge_${idx}_${from.nodeId}_${to.nodeId}`,
+      id: `frontend_edge_${connIdx}_${edgeIdx}_${from.nodeId}_${to.nodeId}`,
       from,
-      to,
-      frontendConnectionId: conn.connection_id || conn.id || ''
+      to
     };
-  });
+  }));
   return { pipe: deepClone(pipe), nodes, edges, frontendNodes, frontendEdges, registry };
 }
 
@@ -376,13 +216,12 @@ export function makeNodeFromModuleType(moduleType, x = 100, y = 100) {
   const id = safeName(`${moduleType.type_id.split('.').pop().toUpperCase()}_${Math.random().toString(16).slice(2, 6)}`);
   return {
     id,
-    kind: 'module_inline',
+    kind: 'module',
     title,
-    instId: null,
     moduleTypeId: moduleType.type_id,
     category: moduleType.category || 'module',
     subtitle: moduleType.type_id,
-    raw: { node_id: id, kind: 'module_inline', inline: { module_type: moduleType.type_id, name: title } },
+    raw: { node_id: id, name: title, module_type: moduleType.type_id, params: defaults.staticParams },
     moduleType: deepClone(moduleType),
     inputs: (moduleType.io && moduleType.io.in_ports || []).map((p, i) => convertPort(p, 'in', i)),
     outputs: (moduleType.io && moduleType.io.out_ports || []).map((p, i) => convertPort(p, 'out', i)),
@@ -401,14 +240,12 @@ export function exportPipelineJson(state) {
     name: state.pipeline && state.pipeline.name || state.currentPipeId,
     nodes: state.nodes.map(n => ({
       node_id: n.id,
-      kind: n.kind,
+      name: n.title,
       module_type: n.moduleTypeId,
-      inst_ref: n.instId,
-      title: n.title,
       x: Math.round(n.x),
       y: Math.round(n.y),
       core: n.core,
-      static_params: n.staticParams,
+      params: n.staticParams,
       runtime_params: n.runtimeParams
     })),
     edges: state.edges.map(e => ({ from: `${e.from.nodeId}:${e.from.portName}`, to: `${e.to.nodeId}:${e.to.portName}` }))

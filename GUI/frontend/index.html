@@ -4047,23 +4047,21 @@
     }
     function debugFileIoDirection(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
-      if (id === 'virtual.audio_output') return 'output';
       if (id.includes('file_output')) return 'output';
       if (id.includes('file_input')) return 'input';
       return n?.type === 'output' ? 'output' : 'input';
     }
     function isDebugFileIoNode(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
-      return id === 'builtin.file_input' || id === 'builtin.file_output' || id === 'virtual.file_input' || id === 'virtual.audio_output';
+      return id === 'builtin.file_input' || id === 'builtin.file_output';
     }
     function isHostComponentNode(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
-      const endpointKind = String(n?.rawEndpoint?.kind || '').toLowerCase();
-      return id === 'builtin.host' || id === 'host' || id.startsWith('port.') || endpointKind === 'host';
+      return id === 'builtin.host' || id === 'host';
     }
     function isDaiFileIoNode(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
-      return (id === 'builtin.dai' || id === 'dai') && (n?.paramValues?.dai_type === 'file_io_dai' || String(n?.rawEndpoint?.kind || '').toLowerCase() === 'file_io');
+      return (id === 'builtin.dai' || id === 'dai') && n?.paramValues?.dai_type === 'file_io_dai';
     }
     function portDomain(p) {
       const domain = String(p?.domain || (p?.external ? 'external' : 'sof') || 'sof').toLowerCase();
@@ -4151,8 +4149,6 @@
         pipelineId: inferNodePipelineId(n),
         pipelineNodeId: originalNodeId(n),
         module_type: n.moduleTypeId,
-        inst_ref: n.instId || n.rawEndpoint?.inst_id || '',
-        kind: n.nodeKind || (n.instId || n.rawEndpoint?.inst_id ? 'module' : 'module_inline'),
         params: inspectorPresetValuesForNode(n),
         debug_file_io: isDebugFileIoNode(n),
         in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
@@ -4181,7 +4177,6 @@
         pipelineId: inferNodePipelineId(n),
         pipelineNodeId: originalNodeId(n),
         module_type: n.moduleTypeId,
-        inst_ref: n.instId || n.rawEndpoint?.inst_id || '',
         params: inspectorPresetValuesForNode(n),
         in_ports: nodePortList(n, 'in').map(p => p.name || 'in'),
         out_ports: nodePortList(n, 'out').map(p => p.name || 'out'),
@@ -4511,16 +4506,14 @@
       }).map(p => ({ ...p, key: p.key || p.param_id })) : [];
       return fields.length ? { fields } : null;
     }
-    function maxChannelsFromInstance(inst = {}, fallback = 2) {
-      const caps = inst.capabilities || {};
-      return Number(caps.channels?.max || caps.max_ch || caps.channels_max || inst.max_ch || fallback || 2);
+    function maxChannelsFromParams(params = {}, fallback = 2) {
+      return Number(params.channels_max || params.channels || fallback || 2);
     }
     function componentFromModuleType(mt) {
       const inDefs = mt.io?.in_ports || [];
       const outDefs = mt.io?.out_ports || [];
       const typeId = String(mt.type_id || '').toLowerCase();
-      const debugExternal = !!mt.debug_only || typeId === 'builtin.file_input' || typeId === 'builtin.file_output' ||
-        typeId === 'virtual.file_input' || typeId === 'virtual.audio_output';
+      const debugExternal = !!mt.debug_only || typeId === 'builtin.file_input' || typeId === 'builtin.file_output';
       const normalizeModulePort = (p, dir, i) => {
         const domain = debugExternal ? 'external' : portDomain(p);
         return { name: p.name || `${dir}${i}`, max_ch: p.max_ch || maxCh, domain, external: domain === 'external' };
@@ -4560,21 +4553,6 @@
         rawModuleType: mt
       };
     }
-    function debugFileOutputModuleType() {
-      return {
-        type_id: 'builtin.file_output',
-        category: 'builtin/input_output',
-        ui: { display_name: 'File Output', library_category: 'INPUT / OUTPUT', library_type: 'output', icon: 'file', channels: '2ch', source: 'built-in' },
-        io: { in_ports: [{ name: 'in', max_ch: 2, domain: 'external', external: true }], out_ports: [] },
-        performance: { cpu_percent: 0.2, mem_kb: 96, latency_ms: 0.1 },
-        parameters: [
-          { param_id: 'enable', param_name: 'Enable', value_type: 'bool', default: true, apply: { settable_states: ['PIPE_LOADED', 'RUNNING'], mode: 'next_frame' } },
-          { param_id: 'file_path', param_name: 'Save Path', value_type: 'file_save', default: '', apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' } },
-          { param_id: 'overwrite', param_name: 'Overwrite', value_type: 'bool', default: false, apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' } }
-        ],
-        description: 'Debug-only host WAV sink. It is carried in snapshot.debug_file_io and omitted from as_config payload.'
-      };
-    }
     function mergeLibraryComponents() {
       components.splice(0, components.length, ...builtInComponents, ...platformComponents);
     }
@@ -4597,11 +4575,6 @@
       (cfg?.module_types || []).forEach(mt => m.set(mt.type_id, mt));
       return m;
     }
-    function instanceMap(cfg = currentProjectConfig) {
-      const m = new Map();
-      (cfg?.module_instances || []).forEach(inst => m.set(inst.inst_id, inst));
-      return m;
-    }
     function splitEndpoint(ep = '') {
       const [node = '', port = 'out'] = String(ep).split(':');
       return { node, port };
@@ -4612,85 +4585,36 @@
     function graphNodeId(pipeId, nodeId) {
       return `${safeGraphId(pipeId)}__${safeGraphId(nodeId)}`;
     }
-    function componentFromResolvedModule(mt, displayName = '', inst = null) {
+    function componentFromResolvedModule(mt, displayName = '', params = {}) {
       const fallback = { type_id: 'graph.unknown', category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
       const c = componentFromModuleType(mt || fallback);
       if (displayName) c.name = displayName;
-      const typeId = String(mt?.type_id || inst?.module_type || '').toLowerCase();
-      if (inst && (typeId === 'builtin.host' || typeId === 'host')) {
-        const maxCh = maxChannelsFromInstance(inst, 2);
-        const isPlayback = String(inst.direction || '').toLowerCase() !== 'capture';
+      const typeId = String(mt?.type_id || '').toLowerCase();
+      if (typeId === 'builtin.host' || typeId === 'host') {
+        const maxCh = maxChannelsFromParams(params, 2);
+        const isPlayback = String(params.direction || '').toLowerCase() !== 'capture';
         c.type = isPlayback ? 'input' : 'output';
         c.inPorts = [{ name: 'in', max_ch: maxCh, domain: isPlayback ? 'external' : 'sof', external: isPlayback }];
         c.outPorts = [{ name: 'out', max_ch: maxCh, domain: isPlayback ? 'sof' : 'external', external: !isPlayback }];
         c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
-        c.paramValues = { stream_name: inst.stream_name || inst.stream_id || inst.pcm_id || '' };
-        c.rawEndpoint = inst;
+        c.paramValues = { ...params };
       }
-      if (inst && (typeId === 'builtin.dai' || typeId === 'dai')) {
-        const maxCh = maxChannelsFromInstance(inst, 2);
-        const direction = String(inst.direction || '').toLowerCase() === 'capture' ? 'capture' : 'playback';
-        const hasInput = String(inst.data_flow || '').toLowerCase() === 'out' || direction === 'playback';
+      if (typeId === 'builtin.dai' || typeId === 'dai') {
+        const maxCh = maxChannelsFromParams(params, 2);
+        const direction = String(params.direction || '').toLowerCase() === 'capture' ? 'capture' : 'playback';
+        const hasInput = direction === 'playback';
         c.type = hasInput ? 'output' : 'input';
         c.inPorts = hasInput ? [{ name: 'in', max_ch: maxCh, domain: 'sof' }] : [];
         c.outPorts = hasInput ? [] : [{ name: 'out', max_ch: maxCh, domain: 'sof' }];
         c.ch = maxCh === 1 ? '1ch' : `${maxCh}ch`;
-        c.paramValues = {
-          dai_type: inst.dai_type || 'file_io_dai',
-          dai_index: Number(inst.dai_index || 0),
-          direction,
-          file_path: inst.file_path || ''
-        };
-        c.rawEndpoint = inst;
+        c.paramValues = { ...params, direction };
       }
       return c;
     }
-    function componentFromPipelinePort(pipe, portRef) {
-      const p = (pipe.ports || []).find(x => x.port_id === portRef) || { port_id: portRef, role: 'source', hw: { max_ch: 2 } };
-      const catalog = currentProjectConfig?.resource_catalog || currentProjectConfig?.hardware_hints || {};
-      const endpoints = catalog.audio_endpoints || catalog.audio_ios || [];
-      const endpoint = p.resource_ref ? endpoints.find(x => (x.id || x.endpoint_id) === p.resource_ref) : null;
-      const caps = endpoint?.capabilities || {};
-      const maxCh = Number(caps.channels?.max || caps.max_ch || caps.channels_max || p.hw?.max_ch || 2);
-      const isSource = p.role !== 'sink';
-      const isFileIoDai = String(endpoint?.kind || '').toLowerCase() === 'file_io';
-      const daiIndex = Number(String(endpoint?.device_id || endpoint?.link_name || p.resource_ref || '').match(/(\d+)(?!.*\d)/)?.[1] || 0);
-      const daiParams = isFileIoDai ? [
-        { param_id: 'dai_type', param_name: 'DAI Type', value_type: 'enum', enum: ['file_io_dai'], default: 'file_io_dai', apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } },
-        { param_id: 'dai_index', param_name: 'DAI Index', value_type: 'uint8', default: daiIndex, range: { min: 0, max: 15, step: 1 }, apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } },
-        { param_id: 'direction', param_name: 'Direction', value_type: 'enum', enum: ['playback', 'capture'], default: endpoint?.direction || (isSource ? 'capture' : 'playback'), apply: { settable_states: ['PIPE_LOADED'], mode: 'build' } }
-      ] : [];
-      return {
-        cat: 'PIPELINE PORTS',
-        type: isSource ? 'input' : 'output',
-        icon: isSource ? '🎙' : '🔊',
-        name: p.port_id || portRef,
-        ch: maxCh === 1 ? '1ch' : `${maxCh}ch`,
-        cpu: 0.1,
-        mem: 32 + maxCh * 8,
-        lat: 0.05,
-        moduleTypeId: isFileIoDai ? 'builtin.dai' : `port.${p.role || 'io'}`,
-        inPorts: isSource ? [] : [{ name: 'in', max_ch: maxCh, domain: 'sof' }],
-        outPorts: isSource ? [{ name: 'out', max_ch: maxCh, domain: 'sof' }] : [],
-        runtimeParams: daiParams,
-        paramValues: isFileIoDai ? { dai_type: 'file_io_dai', dai_index: daiIndex, direction: endpoint?.direction || (isSource ? 'capture' : 'playback') } : {},
-        rawEndpoint: endpoint || null
-      };
-    }
     function resolvePipelineNodeComponent(cfg, pipe, pn) {
-      if (pn.kind === 'port') return componentFromPipelinePort(pipe, pn.port_ref);
       const mtById = moduleTypeMap(cfg);
-      const instById = instanceMap(cfg);
-      if (pn.kind === 'module') {
-        const inst = instById.get(pn.inst_ref) || {};
-        const mt = mtById.get(inst.module_type) || { type_id: inst.module_type || pn.inst_ref, category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
-        return componentFromResolvedModule(mt, inst.name || friendlyName(mt.type_id), inst);
-      }
-      if (pn.kind === 'module_inline') {
-        const mt = mtById.get(pn.inline?.module_type) || { type_id: pn.inline?.module_type || pn.node_id, category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
-        return componentFromResolvedModule(mt, pn.inline?.name || friendlyName(mt.type_id));
-      }
-      return componentFromResolvedModule(null, pn.node_id);
+      const mt = mtById.get(pn.module_type) || { type_id: pn.module_type || pn.node_id, category: 'module', io: { in_ports: [{ name: 'in', max_ch: 2 }], out_ports: [{ name: 'out', max_ch: 2 }] } };
+      return componentFromResolvedModule(mt, pn.name || friendlyName(mt.type_id), pn.params || {});
     }
     function mkNodeFromComponent(id, c, x, y) {
       const inPorts = normalizePortsForComponent(c, 'in');
@@ -4699,7 +4623,7 @@
       const h = Math.max(142, 108 + Math.max(inPorts.length, outPorts.length, 1) * 18);
       const name = c.name || id;
       const core = name === 'KWS' || name === 'VAD' ? 2 : (name === 'EQ' || name === 'DRC' || name === 'Volume' || name === 'NS' || name === 'AGC' ? 1 : 0);
-      return { id, name, type: c.type || 'util', icon: c.icon || '≋', x, y, w: 128, h, cpu: c.cpu || 0.8, mem: c.mem || Math.round(96 + maxCh * 24), lat: c.lat || 0.2, core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || (maxCh === 1 ? '1ch' : `${maxCh}ch`), moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, rawEndpoint: c.rawEndpoint || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
+      return { id, name, type: c.type || 'util', icon: c.icon || '≋', x, y, w: 128, h, cpu: c.cpu || 0.8, mem: c.mem || Math.round(96 + maxCh * 24), lat: c.lat || 0.2, core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || (maxCh === 1 ? '1ch' : `${maxCh}ch`), moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
     }
     function pipelineLayoutKey(pipeId, projectFile = currentProjectFile) {
       return `${projectFile || 'a2/A2.json'}::PIPE::${pipeId || 'ALL'}`;
@@ -5108,20 +5032,17 @@
       const connections = Array.isArray(cfg?.frontend_connections) ? cfg.frontend_connections : [];
       return connections.filter(conn => conn && conn.pipeline_id === pipeId);
     }
-    function frontendNodeSpec(conn) {
-      return conn?.frontend_node || conn?.node || {};
-    }
-    function frontendConnectionDirection(conn, moduleTypeId = '') {
-      const spec = frontendNodeSpec(conn);
-      const explicit = String(spec.direction || conn?.direction || '').toLowerCase();
+    function frontendNodeDirection(spec = {}, moduleTypeId = '') {
+      const explicit = String(spec.direction || '').toLowerCase();
       if (explicit === 'input' || explicit === 'output') return explicit;
-      const typeId = String(moduleTypeId || spec.module_type || conn?.module_type || '').toLowerCase();
+      const typeId = String(moduleTypeId || spec.module_type || '').toLowerCase();
       return typeId.includes('output') ? 'output' : 'input';
     }
-    function frontendVirtualModuleType(moduleTypeId, direction) {
+    function frontendFallbackModuleType(moduleTypeId) {
+      const direction = String(moduleTypeId || '').includes('output') ? 'output' : 'input';
       const output = direction === 'output';
       return {
-        type_id: moduleTypeId || (output ? 'virtual.audio_output' : 'virtual.file_input'),
+        type_id: moduleTypeId || (output ? 'builtin.file_output' : 'builtin.file_input'),
         category: 'builtin/input_output',
         ui: {
           display_name: output ? 'File Output' : 'File Input',
@@ -5132,8 +5053,8 @@
           source: 'platform'
         },
         io: output
-          ? { in_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }], out_ports: [] }
-          : { in_ports: [], out_ports: [{ name: 'L', max_ch: 1, domain: 'external', external: true }, { name: 'R', max_ch: 1, domain: 'external', external: true }] },
+          ? { in_ports: [{ name: 'in', max_ch: 2, domain: 'external', external: true }], out_ports: [] }
+          : { in_ports: [], out_ports: [{ name: 'out', max_ch: 2, domain: 'external', external: true }] },
         performance: { cpu_percent: 0.2, mem_kb: 96, latency_ms: 0.1 },
         static_schema: {
           fields: [
@@ -5149,20 +5070,16 @@
         runtime_params: []
       };
     }
-    function frontendComponentFromConnection(conn) {
-      const spec = frontendNodeSpec(conn);
-      const moduleTypeId = spec.module_type || spec.moduleType || conn?.module_type || conn?.moduleType ||
-        (String(spec.direction || conn?.direction || '').toLowerCase() === 'output' ? 'virtual.audio_output' : 'virtual.file_input');
-      const direction = frontendConnectionDirection(conn, moduleTypeId);
-      const mt = moduleTypeMap(currentProjectConfig).get(moduleTypeId) || frontendVirtualModuleType(moduleTypeId, direction);
-      const c = componentFromResolvedModule(mt, spec.name || spec.title || mt.name || friendlyName(moduleTypeId));
+    function frontendComponentFromNodeSpec(spec = {}) {
+      const moduleTypeId = spec.module_type || spec.moduleType || 'builtin.file_input';
+      const direction = frontendNodeDirection(spec, moduleTypeId);
+      const mt = moduleTypeMap(currentProjectConfig).get(moduleTypeId) || frontendFallbackModuleType(moduleTypeId);
+      const c = componentFromResolvedModule(mt, spec.name || spec.title || mt.name || friendlyName(moduleTypeId), spec.params || {});
       c.type = direction === 'output' ? 'output' : 'input';
       c.paramValues = {
         ...(c.paramValues || {}),
-        direction,
-        host_stream: conn?.host_stream || conn?.hostStream || '',
-        host_node_id: conn?.host_node_id || conn?.hostNodeId || '',
-        connection_id: conn?.connection_id || conn?.id || ''
+        ...(spec.params || {}),
+        direction
       };
       return c;
     }
@@ -5174,39 +5091,37 @@
     function addFrontendConnectionsToPipelineGraph(pipe, nodes, edges, idSet) {
       const conns = frontendConnectionsForPipeline(currentProjectConfig, pipe.pipe_id);
       conns.forEach((conn, idx) => {
-        const spec = frontendNodeSpec(conn);
-        const localNodeId = spec.node_id || spec.id || conn.frontend_node_id || conn.node_id || `FRONTEND_${idx + 1}`;
-        const graphId = graphNodeId(pipe.pipe_id, localNodeId);
-        const c = frontendComponentFromConnection(conn);
-        const hostLocalId = conn.host_node_id || conn.hostNodeId || splitEndpoint(conn.from || '').node || splitEndpoint(conn.to || '').node || '';
-        const hostNode = hostLocalId ? nodes.find(n => n.id === graphNodeId(pipe.pipe_id, hostLocalId)) : null;
-        const ui = spec.ui || {};
-        const direction = frontendConnectionDirection(conn, c.moduleTypeId);
-        const x = Number.isFinite(Number(ui.x)) ? Number(ui.x) :
-          Math.max(20, (hostNode?.x ?? 120) + Number(ui.dx ?? (direction === 'output' ? 185 : -185)));
-        const y = Number.isFinite(Number(ui.y)) ? Number(ui.y) :
-          Math.max(40, (hostNode?.y ?? 95) + Number(ui.dy ?? 0));
-        if (!nodes.some(n => n.id === graphId)) {
-          const gn = mkNodeFromComponent(graphId, c, x, y);
-          gn.pipelineId = pipe.pipe_id;
-          gn.pipelineName = pipe.name || pipe.pipe_id;
-          gn.pipelineNodeId = localNodeId;
-          gn.instId = null;
-          gn.nodeKind = 'frontend';
-          gn.frontendConnectionId = conn.connection_id || conn.id || '';
-          gn.debugFileIo = {
-            direction,
-            host_stream: conn.host_stream || conn.hostStream || '',
-            host_node_id: conn.host_node_id || conn.hostNodeId || '',
-            connection_id: conn.connection_id || conn.id || ''
-          };
-          nodes.push(gn);
-        }
-        idSet.add(localNodeId);
-        const from = graphEndpointForPipeline(pipe.pipe_id, conn.from, localNodeId, direction === 'output' ? 'out' : 'L');
-        const to = graphEndpointForPipeline(pipe.pipe_id, conn.to, localNodeId, direction === 'output' ? 'L' : 'in');
-        if (!nodes.some(n => n.id === from.node) || !nodes.some(n => n.id === to.node)) return;
-        edges.push(makeEdge(from.node, from.port, to.node, to.port));
+        const frontendNodes = Array.isArray(conn.nodes) ? conn.nodes : [];
+        frontendNodes.forEach((spec, nodeIdx) => {
+          const localNodeId = spec.node_id || spec.id || `FRONTEND_${idx + 1}_${nodeIdx + 1}`;
+          const graphId = graphNodeId(pipe.pipe_id, localNodeId);
+          const c = frontendComponentFromNodeSpec(spec);
+          const ui = spec.ui || {};
+          const direction = frontendNodeDirection(spec, c.moduleTypeId);
+          const edgeRefs = (conn.edges || []).flatMap(edge => [splitEndpoint(edge.from || '').node, splitEndpoint(edge.to || '').node]);
+          const hostLocalId = edgeRefs.find(nodeId => nodeId && nodeId !== localNodeId) || '';
+          const hostNode = hostLocalId ? nodes.find(n => n.id === graphNodeId(pipe.pipe_id, hostLocalId)) : null;
+          const x = Number.isFinite(Number(ui.x)) ? Number(ui.x) :
+            Math.max(20, (hostNode?.x ?? 120) + Number(ui.dx ?? (direction === 'output' ? 185 : -185)));
+          const y = Number.isFinite(Number(ui.y)) ? Number(ui.y) :
+            Math.max(40, (hostNode?.y ?? 95) + Number(ui.dy ?? 0));
+          if (!nodes.some(n => n.id === graphId)) {
+            const gn = mkNodeFromComponent(graphId, c, x, y);
+            gn.pipelineId = pipe.pipe_id;
+            gn.pipelineName = pipe.name || pipe.pipe_id;
+            gn.pipelineNodeId = localNodeId;
+            gn.frontendConnectionId = conn.connection_id || conn.id || '';
+            gn.debugFileIo = { direction };
+            nodes.push(gn);
+          }
+          idSet.add(localNodeId);
+        });
+        (conn.edges || []).forEach(edge => {
+          const from = graphEndpointForPipeline(pipe.pipe_id, edge.from, '', 'out');
+          const to = graphEndpointForPipeline(pipe.pipe_id, edge.to, '', 'in');
+          if (!nodes.some(n => n.id === from.node) || !nodes.some(n => n.id === to.node)) return;
+          edges.push(makeEdge(from.node, from.port, to.node, to.port));
+        });
       });
     }
     function loadPipelineGraphFromConfig(pipelineId = 'ALL') {
@@ -5227,8 +5142,6 @@
           gn.pipelineId = pipe.pipe_id;
           gn.pipelineName = pipe.name || pipe.pipe_id;
           gn.pipelineNodeId = pn.node_id;
-          gn.instId = pn.inst_ref || c.rawEndpoint?.inst_id || null;
-          gn.nodeKind = pn.kind || (gn.instId ? 'module' : 'module_inline');
           nodes.push(gn);
         });
         (pipe.edges || []).forEach(e => {
@@ -5373,7 +5286,7 @@
         renderLibrary($('#searchInput')?.value || '');
         return false;
       }
-      builtInModuleTypes = [...cfg.module_types, debugFileOutputModuleType()];
+      builtInModuleTypes = [...cfg.module_types];
       builtInComponents = builtInModuleTypes.map(mt => ({ ...componentFromModuleType(mt), source: 'built-in' }));
       mergeLibraryComponents();
       renderLibrary($('#searchInput')?.value || '');
@@ -5456,7 +5369,7 @@
       const inPorts = normalizePortsForComponent(c, 'in');
       const outPorts = normalizePortsForComponent(c, 'out');
       const h = Math.max(142, 108 + Math.max(inPorts.length, outPorts.length, 1) * 18);
-      return { id, name, type, icon, x, y, w: 128, h, cpu: c.cpu || rnd(.2, 5), mem: c.mem || Math.round(rnd(64, 512)), lat: c.lat || rnd(.1, 2.2), core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || '2ch', moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, rawEndpoint: c.rawEndpoint || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
+      return { id, name, type, icon, x, y, w: 128, h, cpu: c.cpu || rnd(.2, 5), mem: c.mem || Math.round(rnd(64, 512)), lat: c.lat || rnd(.1, 2.2), core, rms: -rnd(10, 30), peak: -rnd(1, 10), selected: false, ch: c.ch || '2ch', moduleTypeId: c.moduleTypeId || '', inPorts, outPorts, runtimeParams: c.runtimeParams || [], staticSchema: c.staticSchema || null, description: c.description || '', notes: c.notes || null, rawModuleType: c.rawModuleType || null, paramValues: { ...(c.paramValues || {}) }, portsFlipped: false };
     }
     function toast(msg, level = 'info') { const t = $('#toast'); if (!t) return; t.textContent = msg; t.className = `toast ${String(level || 'info').toLowerCase()} show`; setTimeout(() => t.classList.remove('show'), 2200) }
     function addLog(kind, msg, sub = '') {
@@ -6237,7 +6150,7 @@
     function runtimeDeviceNameForNode(n) {
       if (!n) return '';
       const streamParam = nodeDisplayParams(n).find(p => String(paramId(p)).toLowerCase() === 'stream_name');
-      return String(n.paramValues?.stream_name || (streamParam ? nodeParamValue(n, streamParam) : '') || n.rawEndpoint?.stream_name || n.rawEndpoint?.stream_id || '');
+      return String(n.paramValues?.stream_name || (streamParam ? nodeParamValue(n, streamParam) : '') || '');
     }
     function runtimeDeviceNameForEdge(ep, groups) {
       if (!ep) return '';
@@ -12967,13 +12880,13 @@
     function upsertUpdatedPipelineFromBuildResponse(res = {}) {
       currentProjectConfig = currentProjectConfig || {};
       currentProjectConfig.pipelines = Array.isArray(currentProjectConfig.pipelines) ? currentProjectConfig.pipelines : [];
-      if (Array.isArray(res?.updated_module_instances)) {
-        currentProjectConfig.module_instances = res.updated_module_instances;
+      if (Array.isArray(res?.updated_frontend_connections)) {
+        currentProjectConfig.frontend_connections = res.updated_frontend_connections;
       }
       const updates = Array.isArray(res?.updated_pipelines)
         ? res.updated_pipelines
         : (res?.updated_pipeline && typeof res.updated_pipeline === 'object' ? [res.updated_pipeline] : []);
-      if (!updates.length && !Array.isArray(res?.updated_module_instances)) return false;
+      if (!updates.length && !Array.isArray(res?.updated_frontend_connections)) return false;
       const pipelines = currentProjectConfig.pipelines;
       updates.filter(p => p && typeof p === 'object').forEach(updated => {
         const pipeId = String(updated.pipe_id || '');

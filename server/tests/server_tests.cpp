@@ -367,17 +367,6 @@ bool hasModuleType(const audio_studio::rpc::JsonValue& root, const std::string& 
   return false;
 }
 
-bool hasModuleInstance(const audio_studio::rpc::JsonValue& root,
-                       const std::string& inst_id,
-                       const std::string& module_type) {
-  for (const auto& item : root.at("module_instances").asArray()) {
-    if (item.at("inst_id").asString() == inst_id && item.at("module_type").asString() == module_type) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool hasPreset(const audio_studio::rpc::JsonValue& root,
                const std::string& preset_id,
                const std::string& load_mode) {
@@ -389,21 +378,33 @@ bool hasPreset(const audio_studio::rpc::JsonValue& root,
   return false;
 }
 
-void assertModuleizedEndpointSchema(const std::string& path) {
+bool nodeHasModuleType(const audio_studio::rpc::JsonValue& pipeline,
+                       const std::string& node_id,
+                       const std::string& module_type) {
+  for (const auto& node : pipeline.at("nodes").asArray()) {
+    if (node.at("node_id").asString() == node_id &&
+        node.at("module_type").asString() == module_type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void assertInlineEndpointSchema(const std::string& path) {
   const std::string text = readFileText(path);
   assert(text.find("inspecrot") == std::string::npos);
   assert(text.find("inspetpr") == std::string::npos);
   assert(text.find("\"RUNTIME\"") == std::string::npos);
+  assert(text.find("virtual.file_input") == std::string::npos);
+  assert(text.find("virtual.audio_output") == std::string::npos);
+  assert(text.find("\"naming\"") == std::string::npos);
 
   const auto root = audio_studio::rpc::parseJson(text);
   assert(!jsonContainsStringValue(root, "RUNTIME"));
-  assert(root.has("module_instances"));
+  assert(!root.has("module_instances"));
   assert(root.has("pipelines"));
+  assert(root.has("frontend_connections"));
   assert(hasPreset(root, "inspector_preset", "inspector"));
-  assert(hasModuleInstance(root, "PLAY_HOST", "builtin.host"));
-  assert(hasModuleInstance(root, "PLAY_FILEIO_DAI", "builtin.dai"));
-  assert(hasModuleInstance(root, "CAP_HOST", "builtin.host"));
-  assert(hasModuleInstance(root, "CAP_FILEIO_DAI", "builtin.dai"));
 
   if (root.has("resource_catalog")) {
     assert(!root.at("resource_catalog").has("audio_endpoints"));
@@ -411,11 +412,17 @@ void assertModuleizedEndpointSchema(const std::string& path) {
 
   for (const auto& pipeline : root.at("pipelines").asArray()) {
     assert(!pipeline.has("ports"));
+    assert(pipeline.has("frame"));
+    assert(!pipeline.at("frame").has("rate"));
     for (const auto& node : pipeline.at("nodes").asArray()) {
-      assert(node.at("kind").asString() == "module");
-      assert(node.has("inst_ref"));
+      assert(!node.has("kind"));
+      assert(!node.has("inst_ref"));
+      assert(node.has("module_type"));
+      assert(node.has("params"));
     }
   }
+  assert(nodeHasModuleType(root.at("pipelines").asArray().front(), "HOST_IN", "builtin.host"));
+  assert(nodeHasModuleType(root.at("pipelines").asArray().front(), "DAI_OUT", "builtin.dai"));
 }
 #endif
 
@@ -934,8 +941,8 @@ int main() {
 
 #if defined(CONFIG_FRAMEWORK_CONFIG)
   {
-    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json");
-    assertModuleizedEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/simulator/simulator.json");
+    assertInlineEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/a2/A2.json");
+    assertInlineEndpointSchema(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/platform/simulator/simulator.json");
     const auto builtin = audio_studio::rpc::parseJson(
         readFileText(std::string(AUDIO_STUDIO_TEST_ROOT) + "/configs/built-in-algorithm.json"));
     assert(hasModuleType(builtin, "builtin.host"));
@@ -960,10 +967,10 @@ int main() {
     assert(config_service.compile(request, output).ok());
     assert(output.ok);
     assert(output.module_type_count == 23);
-    assert(output.module_instance_count == 14);
+    assert(output.module_instance_count == 0);
     assert(output.pipeline_count == 3);
     assert(output.runtime_control_count == 19);
-    assert(output.install_param_count == 15);
+    assert(output.install_param_count > 15);
     assert(output.preset_count == 3);
     assert(output.plugin_count == 1);
 

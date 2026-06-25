@@ -51,7 +51,12 @@ assert.ok(hostType.parameters.some(p => p.param_id === 'stream_name' && p.value_
 const daiType = builtin.module_types.find(mt => mt.type_id === 'builtin.dai');
 assert.ok(daiType.parameters.some(p => p.param_id === 'dai_type' && p.value_type === 'enum'));
 assert.ok(daiType.parameters.some(p => p.param_id === 'dai_index' && p.value_type === 'uint8'));
-assert.ok(daiType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_io'));
+assert.ok(daiType.parameters.some(p => p.param_id === 'link_name' && p.value_type === 'string'));
+assert.ok(daiType.parameters.some(p => p.param_id === 'tdm_slots' && p.value_type === 'uint8'));
+const fileInputType = builtin.module_types.find(mt => mt.type_id === 'builtin.file_input');
+const fileOutputType = builtin.module_types.find(mt => mt.type_id === 'builtin.file_output');
+assert.ok(fileInputType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_io'));
+assert.ok(fileOutputType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_save'));
 
 const vol = graph.nodes.find(n => n.id === 'VOLUME');
 assert.equal(vol.moduleType.parameters.find(p => p.param_id === 'volume_db').value_type, 'float');

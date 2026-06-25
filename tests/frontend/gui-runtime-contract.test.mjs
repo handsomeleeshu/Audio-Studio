@@ -49,7 +49,7 @@ assertIncludes('frontend_connections', 'pipeline layout should restore frontend 
 assertIncludes('addFrontendConnectionsToPipelineGraph', 'pipeline layout load should merge frontend connections with SOF pipeline nodes');
 assertIncludes('working_groups', 'snapshot should send working groups for backend pipeline regeneration');
 assertIncludes('pipelineNodeId', 'snapshot should send original/local pipeline node ids');
-assertIncludes('inst_ref', 'snapshot should send module instance references for HOST/DAI');
+assertNotIncludes('inst_ref', 'snapshot must not send removed module instance references');
 assertIncludes('port_domains', 'snapshot should send per-port SOF/external domains');
 assertIncludes('data-file-param-action', 'file_open/file_save controls should be rendered');
 assertIncludes("t === 'file_io'", 'Inspector should map file_io value_type to file open/save controls');
@@ -68,7 +68,7 @@ assertIncludes('capture_request', 'runtime run response should carry capture req
 assertIncludes('runtimeDeviceNameForEdge', 'file I/O runtime requests should pass the connected HOST stream name to GUI backend');
 assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*['"]run_complete['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
 assertIncludes('isDebugFileIoNode', 'debug file I/O nodes should be identifiable');
-assert.ok(/function isDebugFileIoNode[\s\S]*id === 'virtual\.audio_output'/.test(html), 'virtual audio output must be treated as a debug file I/O node');
+assert.ok(/function isDebugFileIoNode[\s\S]*id === 'builtin\.file_output'/.test(html), 'builtin file output must be treated as a debug file I/O node');
 assertIncludes('as_config_nodes', 'snapshot should separate final as_config payload nodes');
 assertIncludes("id === 'builtin.host'", 'debug file I/O connection policy should recognize host modules');
 assertIncludes('isExternalPort', 'frontend should distinguish external/debug ports');
@@ -80,7 +80,7 @@ assertIncludes('isDaiFileIoNode', 'DAI file_io_dai direction handling should be 
 assertIncludes("id === 'builtin.dai'", 'FILE_IO DAI should be represented as builtin.dai plus parameters');
 assertIncludes("dai_type", 'DAI parameters should include dai_type');
 assertIncludes("dai_index", 'DAI parameters should include dai_index');
-assertIncludes("file_path", 'FILE_IO DAI should expose a file path parameter');
+assertIncludes('paramValues', 'DAI parameters should stay in the node params object');
 assertNotIncludes("type_id: 'file_io_dai'", 'frontend should not introduce a standalone file_io_dai module type');
 assertIncludes('updateDaiDirectionParam', 'DAI port side switch should update direction param');
 

@@ -38,9 +38,9 @@
 
 1. `GET /api/config?project=...` 将 `configs/platform/<project>` 拷贝到 `/tmp/audio-studio-gui-workspaces/.../${platform}_pipeline_all.json`，并把 all copy 返回前端。
 2. `POST /api/pipeline/build` 接受 frontend 直接提交的裸 layout snapshot，也兼容 `{ "snapshot": ... }` 包装格式。Build 按 snapshot 中的 working groups 编译；单 pipeline 视图提交单个 working group 时就是 scoped build。
-3. Backend 根据 snapshot 的 working groups 重建 `${platform}_pipeline_all.json` 的根 `module_instances[]` 和 `pipelines[]`；重建前会用源项目 JSON 作为 baseline 补齐未显示 pipeline 的 module instance 引用，避免从 playback scoped build 切到 capture scoped build 时丢失 HOST/DAI 实例。
-4. 顶层 `frontend_connections[]` 是 GUI layout/runtime metadata，描述 File Input/Output 前端虚拟节点和 HOST stream 的连接关系。Backend build/save 保留这个 section，但重生成 `pipelines[]` 时会忽略它。
-5. 重生成时会剔除 `builtin.file_input`、`builtin.file_output`、`virtual.file_input`、`virtual.audio_output` debug 节点以及 external/debug 连接；HOST/DAI 节点必须引用已有 module instance，普通新增算法节点会生成稳定 `module_instances[]` entry。
+3. Backend 根据 snapshot 的 working groups 重建 `${platform}_pipeline_all.json` 的根 `pipelines[]` 和 `frontend_connections[]`。SOF 节点直接写入 `{ node_id, name, module_type, params }`；File Input/Output 节点写入 `frontend_connections[]`。
+4. 顶层 `frontend_connections[]` 是 GUI layout/runtime metadata，结构与 `pipelines[]` 一样使用 `nodes[]` 和 `edges[]`，描述 `builtin.file_input` / `builtin.file_output` 与 HOST external port 的连接关系。`as_config` 编译时忽略这个 section。
+5. 重生成时会把 external/debug 连接放入 `frontend_connections[]`，SOF 内部连接保留在 `pipelines[]`。HOST、DAI 和算法节点都不再引用独立 module instance。
 6. 编译阶段先尝试连接常驻 `as_server` 的 `config.compile` JSON-RPC；如果 socket 不可用，则直接调用 `as_server --rpc-once <jsonrpc>`，避免 GUI build 依赖手工预启动一个编译 server。
 7. 编译成功后生成 `audio_studio_test_list.txt`，内容包含 `ac_run --endpoint as_datalink --mtu 512`、`trace on`、`pipeinstall <tplg>`。
 8. 默认验证 runner 调用 `application/rv32qemu/sof-build-test.py -t <test_list> --audio-controller-log --gui-keep-alive --gui-ready-marker <file>`，该脚本负责启动 simulator 和验证用 as_server。
@@ -66,24 +66,25 @@ AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS=120000
 `9901` 用于验证脚本启动的 as_server，避免和 `config.compile` 常驻服务抢默认 `9900`。
 如果未设置上述 path 变量，backend 会从启动目录和父目录向上查找 `out/linux/simulator/rpc_socket/Debug/as_server`、兼容旧构建的 `out/linux/a2/as_config/Debug/as_server`、`application/rv32qemu/sof-build-test.py` 和 `application/rv32qemu/build/sof.ldc` 等默认位置。
 
-当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI build 按当前 layout snapshot 的 working groups 编译；单 pipeline 视图只编译该 pipeline，但 backend 会从源 JSON baseline 恢复未显示 pipeline 的 `module_instances[]`，保证前后切换 build 不丢实例定义。成功响应返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines` 和 `updated_module_instances`，前端用这些字段同步内存中的当前 workspace config。
+当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI build 按当前 layout snapshot 的 working groups 编译；单 pipeline 视图只编译该 pipeline，但 backend 会保留源 JSON 中未显示 pipeline。成功响应返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines` 和 `updated_frontend_connections`，前端用这些字段同步内存中的当前 workspace config。
 
 平台 JSON 中 `frontend_connections[]` 与 `pipelines[]` 并列，例如 File Input 到 playback HOST 的连接：
 
 ```json
 {
-  "connection_id": "PLAYBACK_MAIN_FILE_INPUT",
   "pipeline_id": "PLAYBACK_MAIN",
-  "host_node_id": "HOST_IN",
-  "host_stream": "as_config_playback",
-  "frontend_node": {
-    "node_id": "FILE_IN",
-    "name": "Playback File Input",
-    "module_type": "virtual.file_input",
-    "direction": "input"
-  },
-  "from": "FILE_IN:L",
-  "to": "HOST_IN:in"
+  "nodes": [
+    {
+      "node_id": "FILE_IN",
+      "name": "File Input Playback",
+      "module_type": "builtin.file_input",
+      "params": {"enable": true, "file_path": "", "loop": true},
+      "ui": {"dx": -185, "dy": 0}
+    }
+  ],
+  "edges": [
+    {"from": "FILE_IN:out", "to": "HOST_IN:in"}
+  ]
 }
 ```
 

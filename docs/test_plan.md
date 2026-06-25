@@ -87,6 +87,6 @@ out/linux/a2/rpc_pipe/Debug/as_control --rpc pipe --request-pipe /tmp/audio-stud
 ## 建议后续增加
 
 - 浏览器 E2E：Playwright 检查拖拽、连线、参数修改。
-- JSON Schema 校验：module_types/pipelines/presets/module_instances。
+- JSON Schema 校验：module_types/pipelines/frontend_connections/presets。
 - DSP runtime contract test：验证 TLV 编码和算法参数下发。
 - Telemetry 压测：多节点、多 session、长时间运行。

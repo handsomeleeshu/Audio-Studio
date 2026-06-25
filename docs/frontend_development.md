@@ -85,12 +85,12 @@ Runtime Dashboard
 
 ## Endpoint 与 File I/O
 
-- `builtin.host` 和 `builtin.dai` 是普通 module type，pipeline nodes 使用 `kind: "module"` 引用 module instances，不再使用旧的 pipeline `ports` / `audio_endpoints` 描述。
-- `builtin.host` module instance 使用 `stream_name` 字符串参数；配置中仍可保留 `stream_id` 作为 as_config 兼容字段。
-- FILE_IO DAI 不是单独 module type。它是 `builtin.dai` instance，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction` 和 `file_path`。
+- `builtin.host` 和 `builtin.dai` 是普通 module type，pipeline nodes 直接声明 `module_type` 和 `params`，不再依赖独立实例表或旧端点资源表。
+- `builtin.host` node 使用 `stream_name`、`direction`、`channels_min/max`、`sample_bits` 和 `sample_rates` 参数描述 HOST stream 能力。
+- FILE_IO DAI 不是单独 module type。它是 `builtin.dai` node，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction`、`link_name`、`device_id`、`sample_rate`、`channels`、`sample_bits`、`tdm_slots` 和 `slot_width`。
 - `value_type: "file_io"` 由 Inspector 根据 DAI 当前方向显示为打开 WAV 或选择保存路径；port 方向切换会同步更新 `direction`。
 - `builtin.host` 在 pipeline layout 中始终显示一个 input 和一个 output，其中一侧是 SOF internal port，另一侧是 external debug port。external port 和 file input/output port 渲染为实心小圆孔，颜色仍按 input/output 原规则。
-- `builtin.file_input` 和 `builtin.file_output` 是 debug-only 前端虚拟组件：它们显示为特殊颜色，只能连接 HOST external port，并且不会进入 backend 重生成后的根 `pipelines[]`。
+- `builtin.file_input` 和 `builtin.file_output` 是前端 runtime 节点：它们显示为特殊颜色，只能连接 HOST external port，并且持久化在根 `frontend_connections[]`，不会进入 `pipelines[]` 或 tplg 编译。
 - Build 请求必须提交完整 layout snapshot，同时用 `group_id` 指明本次 build 的 working group；`group_id:"ALL"` 才表示请求全量 pipeline build。
 - Build 成功只接受 backend 返回 `ok: true` 且 `runtime_state: "PIPE_LOADED"`；无 backend、HTTP 失败或 `null` response 都必须显示 Build failed。
 

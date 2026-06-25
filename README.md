@@ -380,8 +380,8 @@ IRealTimeProbeController
 ```text
 imports
 module_types
-module_instances
 pipelines
+frontend_connections
 nodes
 edges
 parameters
@@ -394,9 +394,9 @@ ui
 
 - `imports`：显式导入共享 module catalog，例如 `configs/built-in-algorithm.json`。
 - `module_types`：项目私有算法类型定义；通用内置算法不在 `A2.json` 重复声明。
-- `module_instances`：具体模块实例。
-- `pipelines`：pipeline 拓扑。
-- `nodes`：pipeline 中的算法节点。
+- `pipelines`：SOF pipeline 拓扑。每个 node 直接声明 `module_type` 和初始化 `params`。
+- `frontend_connections`：File Input/File Output 等前端节点与 HOST stream 的 layout/runtime 连接关系，不参与 tplg 编译。
+- `nodes`：pipeline 中的算法、HOST、DAI 节点。
 - `edges`：节点之间的 buffer connection。
 - `parameters`：算法参数模板；带 `RUNNING` settable state 的参数会在 Inspector 中自动显示为 toggle、select、slider 或 number input。
 - `performance`：默认 CPU / latency / memory hints。

@@ -184,13 +184,16 @@ std::string validGuiPipelineSnapshot() {
        "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"FILE_IN","in_ports":[],"out_ports":["out"],
        "port_domains":{"out":"external"}},
       {"id":"PLAYBACK_MAIN__HOST_IN","name":"Playback HOST","module_type":"builtin.host",
-       "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"HOST_IN","inst_ref":"PLAY_HOST",
+       "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"HOST_IN",
+       "params":{"stream_name":"as_config_playback","direction":"playback","channels_min":1,"channels_max":2,"sample_bits":[16],"sample_rates":[48000]},
        "in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"external","out":"sof"}},
-      {"id":"PLAYBACK_MAIN__NEW_VOLUME","name":"New Volume","module_type":"gain.volume",
+      {"id":"PLAYBACK_MAIN__NEW_VOLUME","name":"Vol New","module_type":"gain.volume",
        "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"NEW_VOLUME",
+       "params":{},
        "in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"sof"}},
-      {"id":"PLAYBACK_MAIN__DAI_OUT","name":"Playback FILE_IO DAI","module_type":"builtin.dai",
-       "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"DAI_OUT","inst_ref":"PLAY_FILEIO_DAI",
+      {"id":"PLAYBACK_MAIN__DAI_OUT","name":"DAI FILE_IO Playback","module_type":"builtin.dai",
+       "pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"DAI_OUT",
+       "params":{"dai_type":"file_io_dai","dai_index":0,"link_name":"FILE_IO_PLAYBACK_DAI0","device_id":"FILEIO0","direction":"playback","sample_rate":48000,"channels":2,"sample_bits":16,"tdm_slots":2,"slot_width":16},
        "in_ports":["in"],"out_ports":[],"port_domains":{"in":"sof"}}
     ],
     "connections":[
@@ -230,7 +233,7 @@ std::string validGuiPipelineSnapshotWithUnselectedGroup() {
   snapshot.replace(node_pos, node_marker.size(),
       "      ,{\"id\":\"UNSELECTED__NODE\",\"name\":\"Unselected\",\"module_type\":\"gain.volume\","
       "\"pipelineId\":\"GUI_PIPE_2\",\"pipelineNodeId\":\"NODE\",\"in_ports\":[\"in\"],"
-      "\"out_ports\":[\"out\"],\"port_domains\":{\"in\":\"sof\",\"out\":\"sof\"}}\n"
+      "\"out_ports\":[\"out\"],\"params\":{},\"port_domains\":{\"in\":\"sof\",\"out\":\"sof\"}}\n"
       "    ],\n"
       "    \"connections\":[");
   return snapshot;
@@ -254,14 +257,17 @@ std::string validCaptureGuiPipelineSnapshot() {
       ]
     }],
     "nodes":[
-      {"id":"CAPTURE_MAIN__DAI_IN","name":"Capture FILE_IO DAI","module_type":"builtin.dai",
-       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"DAI_IN","inst_ref":"CAP_FILEIO_DAI",
+      {"id":"CAPTURE_MAIN__DAI_IN","name":"DAI FILE_IO Capture","module_type":"builtin.dai",
+       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"DAI_IN",
+       "params":{"dai_type":"file_io_dai","dai_index":0,"link_name":"FILE_IO_CAPTURE_DAI0","device_id":"FILEIO0","direction":"capture","sample_rate":48000,"channels":2,"sample_bits":16,"tdm_slots":2,"slot_width":16},
        "in_ports":[],"out_ports":["out"],"port_domains":{"out":"sof"}},
-      {"id":"CAPTURE_MAIN__HOST_OUT","name":"Capture HOST","module_type":"builtin.host",
-       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"HOST_OUT","inst_ref":"CAP_HOST",
+      {"id":"CAPTURE_MAIN__HOST_OUT","name":"HOST Capture","module_type":"builtin.host",
+       "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"HOST_OUT",
+       "params":{"stream_name":"as_config_capture","direction":"capture","channels_min":1,"channels_max":2,"sample_bits":[16],"sample_rates":[48000]},
        "in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"external"}},
-      {"id":"CAPTURE_MAIN__FILE_OUT","name":"File Output","module_type":"virtual.audio_output","debug_file_io":true,
+      {"id":"CAPTURE_MAIN__FILE_OUT","name":"File Output","module_type":"builtin.file_output","debug_file_io":true,
        "pipelineId":"CAPTURE_MAIN","pipelineNodeId":"FILE_OUT",
+       "params":{"enable":true,"file_path":""},
        "in_ports":["L"],"out_ports":[],"port_domains":{"L":"external"}}
     ],
     "connections":[
@@ -487,7 +493,8 @@ int main() {
   assert(build_res.body.find("PIPE_LOADED") != std::string::npos);
   assert(build_res.body.find("RUNTIME") == std::string::npos);
   assert(build_res.body.find("\"updated_pipelines\"") != std::string::npos);
-  assert(build_res.body.find("\"updated_module_instances\"") != std::string::npos);
+  assert(build_res.body.find("\"updated_module_instances\"") == std::string::npos);
+  assert(build_res.body.find("\"updated_frontend_connections\"") != std::string::npos);
   assert(build_res.body.find("\"workspace_revision\"") != std::string::npos);
   assert(compile->called);
   assert(validation->called);
@@ -527,15 +534,19 @@ int main() {
   assert(regenerated_pipelines.find("builtin.file_output") == std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN") == std::string::npos);
   assert(regenerated_pipelines.find("\"node_id\":\"NEW_VOLUME\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"kind\":\"module_inline\"") == std::string::npos);
-  assert(regenerated_pipelines.find("\"inst_ref\":\"PLAYBACK_MAIN_NEW_VOLUME\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"inst_ref\":\"PLAY_HOST\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"inst_ref\":\"PLAY_FILEIO_DAI\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"inst_ref\":\"GUI_PIPE_2_NODE\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"kind\"") == std::string::npos);
+  assert(regenerated_pipelines.find("\"inst_ref\"") == std::string::npos);
+  assert(regenerated_pipelines.find("\"module_type\":\"builtin.host\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"module_type\":\"builtin.dai\"") != std::string::npos);
+  assert(regenerated_pipelines.find("\"module_type\":\"gain.volume\"") != std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN:out") == std::string::npos);
   assert(regenerated_pipelines.find("\"from\":\"HOST_IN:out\"") != std::string::npos);
   assert(regenerated_pipelines.find("\"to\":\"NEW_VOLUME:in\"") != std::string::npos);
-  assert(global_pipeline_json_after_build.find("\"inst_id\":\"GUI_PIPE_2_NODE\"") != std::string::npos);
+  assert(global_pipeline_json_after_build.find("\"module_instances\"") == std::string::npos);
+  const std::string regenerated_frontend_connections = testJsonArrayField(global_pipeline_json_after_build, "frontend_connections");
+  assert(regenerated_frontend_connections.find("\"module_type\":\"builtin.file_input\"") != std::string::npos);
+  assert(regenerated_frontend_connections.find("\"from\":\"FILE_IN:out\"") != std::string::npos);
+  assert(regenerated_frontend_connections.find("\"to\":\"HOST_IN:in\"") != std::string::npos);
   assert(global_pipeline_json_after_build.find("\"node_id\":\"VOLUME\"") == std::string::npos);
 
   const std::string all_workspace_json_after_build = readText(workspace_all_path);
@@ -620,11 +631,11 @@ int main() {
   auto capture_after_playback_build_res = orchestrated_server.handle(capture_after_playback_build_req);
   assert(capture_after_playback_build_res.status == 200);
   assert(capture_after_playback_build_res.body.find("\"ok\":true") != std::string::npos);
-  assert(capture_after_playback_build_res.body.find("unknown inst_ref") == std::string::npos);
   const std::string capture_workspace_json = readText(compile->last_request.input_path);
   const std::string capture_pipelines = testJsonArrayField(capture_workspace_json, "pipelines");
   assert(capture_pipelines.find("\"pipe_id\":\"CAPTURE_MAIN\"") != std::string::npos);
-  assert(capture_pipelines.find("\"inst_ref\":\"CAP_FILEIO_DAI\"") != std::string::npos);
+  assert(capture_pipelines.find("\"inst_ref\"") == std::string::npos);
+  assert(capture_pipelines.find("\"module_type\":\"builtin.dai\"") != std::string::npos);
   assert(capture_pipelines.find("virtual.audio_output") == std::string::npos);
 
   auto restore_scoped_build_res = orchestrated_server.handle(scoped_build_req);
@@ -669,7 +680,8 @@ int main() {
   assert(fail_build_res.body.find("\"status\":\"failed\"") != std::string::npos);
   assert(fail_build_res.body.find("\"stage\":\"compile\"") != std::string::npos);
   assert(fail_build_res.body.find("\"updated_pipelines\"") != std::string::npos);
-  assert(fail_build_res.body.find("\"updated_module_instances\"") != std::string::npos);
+  assert(fail_build_res.body.find("\"updated_module_instances\"") == std::string::npos);
+  assert(fail_build_res.body.find("\"updated_frontend_connections\"") != std::string::npos);
   assert(fail_build_res.body.find("\"diagnostics\"") != std::string::npos);
   assert(fail_build_res.body.find("\"node_marks\"") != std::string::npos);
   assert(fail_build_res.body.find("\"port_marks\"") != std::string::npos);
@@ -695,14 +707,14 @@ int main() {
   invalid_build_req.path = "/api/pipeline/build";
   invalid_build_req.body = "{\"workspace_id\":\"" + invalid_workspace_id + "\",\"project\":\"a2/A2.json\","
                            "\"snapshot\":{\"working_groups\":[{\"id\":\"GUI_PIPE_1\",\"nodes\":[\"GUI_HOST\"],\"edges\":[]}],"
-                           "\"nodes\":[{\"id\":\"GUI_HOST\",\"name\":\"HOST\",\"module_type\":\"builtin.host\","
+                           "\"nodes\":[{\"id\":\"GUI_HOST\",\"name\":\"HOST\","
                            "\"pipelineId\":\"GUI_PIPE_1\",\"pipelineNodeId\":\"HOST\",\"in_ports\":[\"in\"],\"out_ports\":[\"out\"],"
                            "\"port_domains\":{\"in\":\"external\",\"out\":\"sof\"}}],\"connections\":[]}}";
   auto invalid_build_res = invalid_server.handle(invalid_build_req);
   assert(invalid_build_res.status == 200);
   assert(invalid_build_res.body.find("\"ok\":false") != std::string::npos);
   assert(invalid_build_res.body.find("\"stage\":\"workspace\"") != std::string::npos);
-  assert(invalid_build_res.body.find("HOST/DAI") != std::string::npos);
+  assert(invalid_build_res.body.find("pipeline node requires module_type") != std::string::npos);
   assert(!invalid_compile->called);
   assert(!invalid_validation->called);
 

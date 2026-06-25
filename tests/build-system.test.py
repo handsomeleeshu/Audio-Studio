@@ -84,6 +84,9 @@ def write_module_config_plugin_project(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         '''{
+  "imports": [
+    {"kind": "module_catalog", "path": "configs/built-in-algorithm.json"}
+  ],
   "module_types": [
     {
       "type_id": "test.third_party",
@@ -104,24 +107,53 @@ def write_module_config_plugin_project(path):
       ]
     }
   ],
-  "module_instances": [
-    {"inst_id": "TP0", "name": "Third Party", "module_type": "test.third_party"}
-  ],
   "pipelines": [
     {
       "pipe_id": "PLUGIN_PIPE",
       "name": "Plugin Pipe",
       "domain": "playback",
-      "frame": {"rate": 48000},
-      "ports": [],
+      "frame": {"block_ms": 4},
       "nodes": [
-        {"node_id": "IN", "kind": "port", "port_ref": "P_IN"},
-        {"node_id": "TP", "kind": "module", "inst_ref": "TP0"},
-        {"node_id": "OUT", "kind": "port", "port_ref": "P_OUT"}
+        {
+          "node_id": "HOST_IN",
+          "name": "HOST Playback",
+          "module_type": "builtin.host",
+          "params": {
+            "stream_name": "plugin_playback",
+            "direction": "playback",
+            "channels_min": 2,
+            "channels_max": 2,
+            "sample_bits": [16],
+            "sample_rates": [48000]
+          }
+        },
+        {
+          "node_id": "TP",
+          "name": "Third Party",
+          "module_type": "test.third_party",
+          "params": {}
+        },
+        {
+          "node_id": "DAI_OUT",
+          "name": "DAI FILE_IO Playback",
+          "module_type": "builtin.dai",
+          "params": {
+            "dai_type": "file_io_dai",
+            "dai_index": 0,
+            "direction": "playback",
+            "link_name": "FILE_IO_PLAYBACK_DAI0",
+            "device_id": "FILEIO0",
+            "sample_rate": 48000,
+            "channels": 2,
+            "sample_bits": 16,
+            "tdm_slots": 2,
+            "slot_width": 16
+          }
+        }
       ],
       "edges": [
-        {"from": "IN:out", "to": "TP:in"},
-        {"from": "TP:out", "to": "OUT:in"}
+        {"from": "HOST_IN:out", "to": "TP:in"},
+        {"from": "TP:out", "to": "DAI_OUT:in"}
       ]
     }
   ],
