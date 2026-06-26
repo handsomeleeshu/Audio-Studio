@@ -12986,7 +12986,12 @@
     }
     async function startRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const current = runtimeStatusForGroupId(groupId);
-      if (current !== RUNTIME_STATES.PIPE_LOADED && current !== RUNTIME_STATES.RUNNING) {
+      if (current === RUNTIME_STATES.RUNNING) {
+        toast('Pipeline is already running', 'warn');
+        addLog('warn', 'Run ignored', 'Pipeline is already running');
+        return true;
+      }
+      if (current !== RUNTIME_STATES.PIPE_LOADED) {
         toast('Please Build first', 'warn');
         return false;
       }

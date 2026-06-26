@@ -1825,6 +1825,10 @@ struct GuiRuntimeEngine::PlaybackWorker {
   }
 
   std::string start(const std::string& request_json) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (active_ && !eof_requested_ && rpc_ready_) return statusJsonLocked(true);
+    }
     stop();
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2387,6 +2391,10 @@ struct GuiRuntimeEngine::CaptureWorker {
   }
 
   std::string start(const std::string& request_json) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (active_ && rpc_ready_) return statusJsonLocked();
+    }
     stop();
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2579,8 +2587,7 @@ private:
 #endif
   }
 
-  std::string statusJson() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+  std::string statusJsonLocked() const {
     const bool ok = error_.empty();
     std::ostringstream os;
     os << "{\"ok\":" << (ok ? "true" : "false")
@@ -2595,6 +2602,11 @@ private:
     if (!error_.empty()) os << ",\"error\":\"" << jsonEscape(error_) << "\"";
     os << "}}";
     return os.str();
+  }
+
+  std::string statusJson() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return statusJsonLocked();
   }
 
   mutable std::mutex mutex_;

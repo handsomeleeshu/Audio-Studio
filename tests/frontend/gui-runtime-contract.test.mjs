@@ -71,6 +71,10 @@ assertNotIncludes('/api/runtime/audio/stream', 'frontend must not use unscoped a
 assertNotIncludes('/api/runtime/audio/frame', 'frontend must not use unscoped audio frame routes');
 assertIncludes('/api/runtime/audio/playback/eos', 'file input playback must send explicit EOS after the last WAV frame');
 assertIncludes('finishPlaybackFramePump', 'playback pump should wait for backend EOS result before restoring RUN state');
+assert.ok(
+  /async function startRuntimeGroup[\s\S]*current === RUNTIME_STATES\.RUNNING[\s\S]*return true[\s\S]*postRuntimeGroupState\('run'/.test(html),
+  'RUNNING groups should ignore duplicate RUN clicks before posting /api/runtime/run'
+);
 assertIncludes('startCaptureFramePump', 'file output capture should start a backend-driven frame pump');
 assertIncludes('/api/runtime/audio/capture/frame', 'file output capture should pull frames from GUI backend');
 assertIncludes('capture_request', 'runtime run response should carry capture request metadata');

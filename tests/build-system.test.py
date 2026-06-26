@@ -419,6 +419,10 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(gui_backend, 'runtimeAudioDriverFactory(request_json)')
     require_contains(gui_backend, 'envString("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "simulator")')
     require_contains(gui_backend, 'config.blocking_write = true')
+    playback_start = gui_backend.split('struct GuiRuntimeEngine::PlaybackWorker', 1)[1].split('std::string stopJson()', 1)[0]
+    capture_start = gui_backend.split('struct GuiRuntimeEngine::CaptureWorker', 1)[1].split('void stop()', 1)[0]
+    require_contains(playback_start, 'active_ && !eof_requested_ && rpc_ready_')
+    require_contains(capture_start, 'active_ && rpc_ready_')
     assert 'config.blocking_write = false' not in gui_backend
     assert 'writeFrames(frame.bytes, {1000})' not in gui_backend
     require_contains(gui_backend_cmake, 'AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS')
