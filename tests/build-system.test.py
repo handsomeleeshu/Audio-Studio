@@ -100,7 +100,7 @@ def write_module_config_plugin_project(path):
           "value_type": "uint8",
           "default": 7,
           "apply": {
-            "settable_states": ["PIPE_LOADED", "RUNNING"],
+            "settable_states": ["PIPE_UNLOADED", "PIPE_LOADED", "PIPE_RUNNING"],
             "mode": "next_frame"
           }
         }
@@ -809,19 +809,24 @@ def main():
         '--out-dir', str(as_config_out),
         '--project-name', 'a2_test',
     ])
-    require_contains(as_config_result, '"runtime_control_count":19')
+    require_contains(as_config_result, '"runtime_control_count":8')
     require_contains(as_config_result, '"pipeline_count":3')
     require_contains(as_config_result, '"tplg_built":true')
     assert_as_config_decode_status(as_config_result, as_config_out, 'a2_test')
     as_config_conf = read_text(as_config_out / 'a2_test.conf')
     for expected_control in [
-        '"PLAYBACK_MAIN CHREMAP Channel Remap"',
-        '"PLAYBACK_MAIN DELAY Delay Line"',
-        '"PLAYBACK_MAIN FADER Fader Balance"',
-        '"DSP_FILTER_COVERAGE DSP_FILTER DSP Filter"',
+        '"PLAYBACK_MAIN VOLUME Enable"',
+        '"PLAYBACK_MAIN VOLUME Volume"',
+        '"PLAYBACK_MAIN VOLUME Mute"',
+        '"CAPTURE_MAIN VOLUME Enable"',
+        '"CAPTURE_MAIN VOLUME Volume"',
+        '"CAPTURE_MAIN VOLUME Mute"',
+        '"CAPTURE_MAIN SRC Enable"',
+        '"CAPTURE_MAIN SRC Dither"',
     ]:
         require_contains(as_config_conf, expected_control)
     for split_control in [
+        '"PLAYBACK_MAIN CHREMAP Channel Remap"',
         '"PLAYBACK_MAIN CHREMAP Channel Layout"',
         '"PLAYBACK_MAIN DELAY Max Delay"',
         '"PLAYBACK_MAIN FADER Balance"',
@@ -848,8 +853,8 @@ def main():
     conf_text = read_text(as_config_out / 'a2_test.conf')
     require_contains(conf_text, 'SOF_TKN_DAI_TYPE "FILE_IO"')
     assert 'SOF_TKN_DAI_TYPE "VSI_TDM"' not in conf_text
-    require_contains(conf_text, 'SectionControlBytes.')
-    require_contains(conf_text, 'bytes [')
+    require_contains(conf_text, 'SectionControlMixer.')
+    require_contains(conf_text, 'SectionTLV.')
     require_contains(conf_text, 'SOF_TKN_PROCESS_TYPE "CHAN_REMAP"')
     require_contains(conf_text, 'SOF_TKN_PROCESS_TYPE "DELAY_LINE"')
     require_contains(conf_text, 'SOF_TKN_PROCESS_TYPE "FADER_BALANCE"')
@@ -936,11 +941,12 @@ def main():
             '--project-name', 'a2_no_tplg_test',
             '--no-tplg',
         ], cwd=no_tplg_cwd, env=no_tplg_env)
-    require_contains(no_tplg_result, '"runtime_control_count":19')
+    require_contains(no_tplg_result, '"runtime_control_count":8')
     require_contains(no_tplg_result, '"pipeline_count":3')
     require_contains(no_tplg_result, '"tplg_built":false')
     no_tplg_conf = read_text(as_config_no_tplg_out / 'a2_no_tplg_test.conf')
-    require_contains(no_tplg_conf, '"PLAYBACK_MAIN CHREMAP Channel Remap"')
+    require_contains(no_tplg_conf, '"PLAYBACK_MAIN VOLUME Volume"')
+    assert '"PLAYBACK_MAIN CHREMAP Channel Remap"' not in no_tplg_conf
     assert '"PLAYBACK_MAIN DELAY Max Delay"' not in no_tplg_conf
     for path in [
         as_config_no_tplg_out / 'a2_no_tplg_test.conf',
@@ -1018,11 +1024,11 @@ def main():
         '"project_name":"a2_rpc_test","build_tplg":true}}',
     ])
     require_contains(rpc_compile, '"jsonrpc":"2.0"')
-    require_contains(rpc_compile, '"runtime_control_count":19')
+    require_contains(rpc_compile, '"runtime_control_count":8')
     require_contains(rpc_compile, '"pipeline_count":3')
     assert_as_config_decode_status(rpc_compile, rpc_config_out, 'a2_rpc_test')
     rpc_conf = read_text(rpc_config_out / 'a2_rpc_test.conf')
-    require_contains(rpc_conf, '"PLAYBACK_MAIN FADER Fader Balance"')
+    require_contains(rpc_conf, '"PLAYBACK_MAIN VOLUME Volume"')
     assert '"PLAYBACK_MAIN FADER Balance"' not in rpc_conf
     assert (rpc_config_out / 'a2_rpc_test.tplg').exists()
     assert 'ALSA lib' not in read_text(rpc_config_out / 'a2_rpc_test_alsatplg.log')

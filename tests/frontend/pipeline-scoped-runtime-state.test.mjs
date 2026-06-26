@@ -7,6 +7,7 @@ for (const token of [
   'Pipeline-scoped runtime state model',
   'pipelineRuntimeStates',
   'runtime-not-ready',
+  'runtime-pipe-unloaded',
   'runtime-pipe-loaded',
   'runtime-running',
   'runtime-error',
@@ -23,8 +24,8 @@ for (const token of [
 }
 
 assert.ok(
-  html.includes('if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING)') ||
-    html.includes('if(edgePipelineRuntimeState(ep)===RUNTIME_STATES.RUNNING)'),
+  html.includes('if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING)') ||
+    html.includes('if(edgePipelineRuntimeState(ep)===RUNTIME_STATES.PIPE_RUNNING)'),
   'edge animation and sample-rate labels should be gated by per-edge pipeline runtime state'
 );
 assert.ok(

@@ -16,7 +16,7 @@ function count(pattern) {
 }
 
 assertIncludes('const RUNTIME_STATES = Object.freeze({', 'frontend should expose the canonical runtime enum');
-for (const state of ['NOT_READY', 'PIPE_LOADED', 'RUNNING', 'ERROR']) {
+for (const state of ['NOT_READY', 'PIPE_UNLOADED', 'PIPE_LOADED', 'PIPE_RUNNING', 'ERROR']) {
   assertIncludes(state, `runtime enum must include ${state}`);
 }
 assertNotIncludes('validated: { label:', 'validated must not remain an API/runtime state');
@@ -72,14 +72,34 @@ assertNotIncludes('/api/runtime/audio/frame', 'frontend must not use unscoped au
 assertIncludes('/api/runtime/audio/playback/eos', 'file input playback must send explicit EOS after the last WAV frame');
 assertIncludes('finishPlaybackFramePump', 'playback pump should wait for backend EOS result before restoring RUN state');
 assert.ok(
-  /async function startRuntimeGroup[\s\S]*current === RUNTIME_STATES\.RUNNING[\s\S]*return true[\s\S]*postRuntimeGroupState\('run'/.test(html),
-  'RUNNING groups should ignore duplicate RUN clicks before posting /api/runtime/run'
+  /async function startRuntimeGroup[\s\S]*current === RUNTIME_STATES\.PIPE_RUNNING[\s\S]*return true[\s\S]*postRuntimeGroupState\('run'/.test(html),
+  'PIPE_RUNNING groups should ignore duplicate RUN clicks before posting /api/runtime/run'
 );
 assertIncludes('startCaptureFramePump', 'file output capture should start a backend-driven frame pump');
 assertIncludes('/api/runtime/audio/capture/frame', 'file output capture should pull frames from GUI backend');
 assertIncludes('capture_request', 'runtime run response should carry capture request metadata');
 assertIncludes('runtimeDeviceNameForEdge', 'file I/O runtime requests should pass the connected HOST stream name to GUI backend');
 assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*['"]run_complete['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
+assert.ok(
+  /function isParamEnabledForNode[\s\S]*return states\.includes\(status\)/.test(html),
+  'parameter editability should be driven directly by the JSON settable state list'
+);
+assert.ok(
+  !/status === RUNTIME_STATES\.PIPE_UNLOADED[\s\S]*states\.includes\(RUNTIME_STATES\.PIPE_LOADED\)/.test(html),
+  'PIPE_LOADED must not implicitly enable PIPE_UNLOADED edits'
+);
+assertIncludes('validateRuntimeFileIoForGroup', 'RUN should validate frontend File I/O selections before contacting backend runtime');
+assert.ok(
+  /async function startRuntimeGroup[\s\S]*validateRuntimeFileIoForGroup\(groupId\)[\s\S]*postRuntimeGroupState\('run'/.test(html),
+  'RUN must reject missing/invalid File I/O before POST /api/runtime/run'
+);
+assertIncludes('assertValidWavInfo', 'WAV file selection must reject invalid local files before runtime requests');
+assertIncludes('applyDaiInputAudioInfoToParams', 'File_IO DAI input WAV selection should update DAI audio format params for build');
+assertIncludes('data-dai-file-param-action', 'File_IO DAI source nodes should expose a frontend WAV chooser');
+assert.ok(
+  /apiPost\('\/api\/param\/update'[\s\S]*workspace_id:[\s\S]*pipeline_node_id:[\s\S]*runtime_state:/.test(html),
+  'runtime parameter updates should include workspace and original node identity for backend inspector_preset storage'
+);
 assertIncludes('isDebugFileIoNode', 'debug file I/O nodes should be identifiable');
 assert.ok(/function isDebugFileIoNode[\s\S]*id === 'builtin\.file_output'/.test(html), 'builtin file output must be treated as a debug file I/O node');
 assertIncludes('as_config_nodes', 'snapshot should separate final as_config payload nodes');

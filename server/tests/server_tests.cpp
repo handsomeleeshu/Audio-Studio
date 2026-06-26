@@ -986,7 +986,7 @@ int main() {
     assert(output.module_type_count == 23);
     assert(output.module_instance_count == 0);
     assert(output.pipeline_count == 3);
-    assert(output.runtime_control_count == 19);
+    assert(output.runtime_control_count == 8);
     assert(output.install_param_count > 15);
     assert(output.preset_count == 3);
     assert(output.plugin_count == 1);
@@ -994,18 +994,18 @@ int main() {
     audio_studio::drivers::filesystem::FileInfo info;
     assert(drivers.filesystem().stat(output.conf_path, info).ok() && info.size > 0);
     const auto a2_conf = readFileText(output.conf_path);
-    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Remap\"") != std::string::npos);
-    assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Delay Line\"") != std::string::npos);
-    assert(a2_conf.find("\"PLAYBACK_MAIN FADER Fader Balance\"") != std::string::npos);
-    assert(a2_conf.find("\"DSP_FILTER_COVERAGE DSP_FILTER DSP Filter\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN VOLUME Enable\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN VOLUME Volume\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN VOLUME Mute\"") != std::string::npos);
+    assert(a2_conf.find("\"CAPTURE_MAIN VOLUME Enable\"") != std::string::npos);
+    assert(a2_conf.find("\"CAPTURE_MAIN VOLUME Volume\"") != std::string::npos);
+    assert(a2_conf.find("\"CAPTURE_MAIN VOLUME Mute\"") != std::string::npos);
+    assert(a2_conf.find("\"CAPTURE_MAIN SRC Enable\"") != std::string::npos);
+    assert(a2_conf.find("\"CAPTURE_MAIN SRC Dither\"") != std::string::npos);
+    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Remap\"") == std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Layout\"") == std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Max Delay\"") == std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN FADER Balance\"") == std::string::npos);
-    const auto playback_chremap = a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN CHREMAP Channel Remap\"");
-    assert(playback_chremap != std::string::npos);
-    const auto playback_chremap_end = a2_conf.find("}\n\n", playback_chremap);
-    assert(playback_chremap_end != std::string::npos);
-    assert(a2_conf.substr(playback_chremap, playback_chremap_end - playback_chremap).find("max \"224\"") != std::string::npos);
     assert(drivers.filesystem().stat(output.private_bin_path, info).ok() && info.size > 0);
     assert(output.tplg_built == audio_studio::framework::config::kHostSupportsAlsaTplg);
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
@@ -1046,7 +1046,8 @@ int main() {
     assert(conf.find("stream_name \"FILE_IO_PLAYBACK_DAI0\"") != std::string::npos);
     assert(conf.find("stream_name \"FILE_IO_DSP_FILTER_DAI1\"") != std::string::npos);
     assert(conf.find("SOF_TKN_DAI_TYPE \"VSI_TDM\"") == std::string::npos);
-    assert(conf.find("SectionControlBytes.") != std::string::npos);
+    assert(conf.find("SectionControlMixer.") != std::string::npos);
+    assert(conf.find("SectionTLV.") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"CHAN_REMAP\"") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"DELAY_LINE\"") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"FADER_BALANCE\"") != std::string::npos);

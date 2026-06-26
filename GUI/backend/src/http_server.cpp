@@ -492,7 +492,10 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/runtime/audio/playback/eos") return {200, "application/json", runtime_->finishAudioInput(req.body)};
   if (req.method == "GET" && req.path == "/api/runtime/audio/capture/frame") return {200, "application/json", runtime_->captureAudioFrame(req.query)};
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
-  if (req.method == "POST" && req.path == "/api/param/update") return {200, "application/json", parameter_controller_->updateParameter(req.body)};
+  if (req.method == "POST" && req.path == "/api/param/update") {
+    if (build_orchestrator_) return build_orchestrator_->updateRuntimeParameter(req.body);
+    return {200, "application/json", parameter_controller_->updateParameter(req.body)};
+  }
   if (req.method == "POST" && req.path == "/api/inspector/inspect") {
     if (!inspector_controller_) return {503, "application/json", R"({"ok":false,"error":"inspector controller not configured"})"};
     return {200, "application/json", inspector_controller_->inspectNode(req.body)};

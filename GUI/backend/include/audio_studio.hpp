@@ -135,6 +135,7 @@ public:
   HttpResponse buildPipeline(const std::string& request_json);
   HttpResponse unloadPipeline(const std::string& request_json);
   HttpResponse saveProject(const std::string& request_json);
+  HttpResponse updateRuntimeParameter(const std::string& request_json);
 
 private:
   struct WorkspaceRecord {

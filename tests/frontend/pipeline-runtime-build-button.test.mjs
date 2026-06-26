@@ -18,17 +18,21 @@ assert.ok(
   'the transient building group should disable the button and show Building'
 );
 assert.ok(
-  /RUNTIME_STATES\.RUNNING[\s\S]*buildBtn\.disabled\s*=\s*true[\s\S]*▣ Running/.test(html),
-  'RUNNING target groups should disable the button and show Running'
+  /RUNTIME_STATES\.PIPE_RUNNING[\s\S]*buildBtn\.disabled\s*=\s*true[\s\S]*▣ Running/.test(html),
+  'PIPE_RUNNING target groups should disable the button and show Running'
 );
 assert.ok(
-  /#buildBtn'\)\.addEventListener\('click'[\s\S]*const groupId = targetRuntimeGroupId\(\)[\s\S]*runtimeStatusForGroupId\(groupId\)[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*unloadRuntimeGroup\(groupId\)[\s\S]*buildRuntimeGroup\(groupId\)/.test(html),
-  'Build button click should use the selected runtime target for build/unload'
+  /#buildBtn'\)\.addEventListener\('click'[\s\S]*const groupId = ['"]ALL['"][\s\S]*runtimeStatusForGroupId\(groupId\)[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*unloadRuntimeGroup\(groupId\)[\s\S]*buildRuntimeGroup\(groupId\)/.test(html),
+  'Build button click should always build/unload all working pipeline groups'
 );
 
 assert.ok(
   /const buildPayload = \{[\s\S]*\.\.\.pipelineSnapshot\(\)[\s\S]*build_scope:\s*groupId === ['"]ALL['"] \? ['"]all_pipelines['"] : ['"]selected_pipeline['"][\s\S]*group_id:\s*groupId[\s\S]*target_group/.test(html),
-  'build payload should target the selected pipeline group instead of forcing ALL'
+  'build payload should explicitly describe whether it targets all or a selected group'
+);
+assert.ok(
+  /async function buildRuntimeGroup\(groupId = ['"]ALL['"]\)[\s\S]*const groups = groupsForRuntimeId\(groupId\)[\s\S]*setRuntimeStatusForGroup\(groupId,\s*ok \? RUNTIME_STATES\.PIPE_LOADED/.test(html),
+  'buildRuntimeGroup should keep ALL as the default so success updates all groups together'
 );
 assert.ok(
   /apiPost\(['"]\/api\/pipeline\/build['"],\s*buildPayload\)/.test(html),
@@ -47,12 +51,12 @@ assert.ok(
   'unload payload should reuse pipelineSnapshot shape and target selected group information'
 );
 assert.ok(
-  /res && res\.ok === true[\s\S]*normalizeRuntimeStatus\(res\?\.runtime_state\) === RUNTIME_STATES\.NOT_READY/.test(html),
-  'unload success should require ok:true and runtime_state NOT_READY'
+  /res && res\.ok === true[\s\S]*normalizeRuntimeStatus\(res\?\.runtime_state\) === RUNTIME_STATES\.PIPE_UNLOADED/.test(html),
+  'unload success should require ok:true and runtime_state PIPE_UNLOADED'
 );
 assert.ok(
-  /setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.NOT_READY,\s*['"]unload_success['"]\)/.test(html),
-  'successful unload should set the selected runtime target to NOT_READY'
+  /setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_UNLOADED,\s*['"]unload_success['"]\)/.test(html),
+  'successful unload should set the selected runtime target to PIPE_UNLOADED'
 );
 
 assertIncludes('function upsertUpdatedPipelineFromBuildResponse', 'build responses should upsert backend-generated pipeline data');
@@ -77,7 +81,7 @@ assert.ok(
 
 assertIncludes('function runtimeGroupAllowsGraphMutation', 'graph mutations should be guarded by per-group runtime state');
 assert.ok(
-  /function runtimeAllowsStructuralEdit[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*RUNTIME_STATES\.RUNNING[\s\S]*toast/.test(html),
+  /function runtimeAllowsStructuralEdit[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*RUNTIME_STATES\.PIPE_RUNNING[\s\S]*toast/.test(html),
   'loaded/running global state should block structural edits with a user-visible warning'
 );
 assert.ok(

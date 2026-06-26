@@ -165,7 +165,7 @@ std::string validGuiPipelineSnapshot() {
   return R"({
     "active_pipeline":"PLAYBACK_MAIN",
     "group_id":"PLAYBACK_MAIN",
-    "runtime_state":"NOT_READY",
+    "runtime_state":"PIPE_UNLOADED",
     "pipeline_descriptions":[{"pipe_id":"PLAYBACK_MAIN","name":"Renamed Playback"}],
     "working_groups":[{
       "id":"PLAYBACK_MAIN",
@@ -243,7 +243,7 @@ std::string validCaptureGuiPipelineSnapshot() {
   return R"({
     "active_pipeline":"CAPTURE_MAIN",
     "group_id":"CAPTURE_MAIN",
-    "runtime_state":"NOT_READY",
+    "runtime_state":"PIPE_UNLOADED",
     "pipeline_descriptions":[{"pipe_id":"CAPTURE_MAIN","name":"AS Config Capture"}],
     "working_groups":[{
       "id":"CAPTURE_MAIN",
@@ -586,7 +586,7 @@ int main() {
   auto unload_res = orchestrated_server.handle(unload_req);
   assert(unload_res.status == 200);
   assert(unload_res.body.find("\"ok\":true") != std::string::npos);
-  assert(unload_res.body.find("\"runtime_state\":\"NOT_READY\"") != std::string::npos);
+  assert(unload_res.body.find("\"runtime_state\":\"PIPE_UNLOADED\"") != std::string::npos);
 
   raw_build_res = orchestrated_server.handle(raw_build_req);
   assert(raw_build_res.status == 200);
@@ -653,9 +653,29 @@ int main() {
   auto save_after_build_res = orchestrated_server.handle(save_after_build);
   assert(save_after_build_res.status == 200);
   assert(save_after_build_res.body.find("\"ok\":true") != std::string::npos);
-  assert(readText(temp_source).find("\"audio_studio_gui\"") != std::string::npos);
-  assert(readText(temp_source).find("\"debug_file_io\"") != std::string::npos);
+  assert(readText(workspace_all_path).find("\"audio_studio_gui\"") != std::string::npos);
+  assert(readText(temp_source).find("\"audio_studio_gui\"") == std::string::npos);
+  assert(readText(temp_source).find("\"debug_file_io\"") == std::string::npos);
   assert(readText(temp_source).find("\"name\":\"Renamed Playback\"") != std::string::npos);
+
+  audiostudio::HttpRequest runtime_param_update;
+  runtime_param_update.method = "POST";
+  runtime_param_update.path = "/api/param/update";
+  runtime_param_update.body =
+      "{\"workspace_id\":\"" + workspace_id + "\",\"project\":\"a2/A2.json\","
+      "\"pipeline_id\":\"PLAYBACK_MAIN\",\"node_id\":\"PLAYBACK_MAIN__VOLUME\","
+      "\"pipeline_node_id\":\"VOLUME\",\"module_type\":\"gain.volume\","
+      "\"param_id\":\"volume_db\",\"value\":-9.5,\"runtime_state\":\"PIPE_RUNNING\"}";
+  auto runtime_param_update_res = orchestrated_server.handle(runtime_param_update);
+  assert(runtime_param_update_res.status == 200);
+  assert(runtime_param_update_res.body.find("\"ok\":true") != std::string::npos);
+  assert(runtime_param_update_res.body.find("\"preset_id\":\"inspector_preset\"") != std::string::npos);
+  assert(runtime_param_update_res.body.find("\"control_apply\":\"pending_as_control\"") != std::string::npos);
+  const std::string workspace_after_runtime_param = readText(workspace_all_path);
+  assert(workspace_after_runtime_param.find("\"preset_id\":\"inspector_preset\"") != std::string::npos);
+  assert(workspace_after_runtime_param.find("\"pipeline_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
+  assert(workspace_after_runtime_param.find("\"node_id\":\"VOLUME\"") != std::string::npos);
+  assert(workspace_after_runtime_param.find("\"volume_db\":-9.5") != std::string::npos);
 
   const fs::path fail_root = makeTempRoot();
   auto fail_compile = std::make_shared<FakeCompileClient>();

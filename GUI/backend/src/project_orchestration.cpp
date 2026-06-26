@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "autoconfig.h"
+#include "json_value.hpp"
 
 #if defined(CONFIG_RPC_CLIENT) && defined(CONFIG_RPC_TRANSPORT_SOCKET) && defined(CONFIG_DRIVER_SOCKET)
 #include "audio_rpc_client.hpp"
@@ -315,6 +316,19 @@ std::string upsertObjectMember(const std::string& object_json, const std::string
     return out;
   }
   return appendObjectFields(object_json, "\"" + field + "\":" + value_json);
+}
+
+std::string removeTopLevelObjectMember(const std::string& object_json, const std::string& field) {
+  size_t begin = 0;
+  size_t end = 0;
+  if (!topLevelMemberRange(object_json, field, begin, end)) return object_json;
+  std::string out = object_json;
+  out.erase(begin, end - begin);
+  return out;
+}
+
+std::string stripGuiOnlySectionsForSave(const std::string& workspace_json) {
+  return removeTopLevelObjectMember(workspace_json, "audio_studio_gui");
 }
 
 std::string topLevelJsonMemberValue(const std::string& object_json, const std::string& field) {
@@ -1769,7 +1783,7 @@ HttpResponse BuildOrchestrator::unloadPipeline(const std::string& request_json) 
   }
 
   std::ostringstream os;
-  os << "{\"ok\":true,\"status\":\"UNLOADED\",\"runtime_state\":\"NOT_READY\""
+  os << "{\"ok\":true,\"status\":\"PIPE_UNLOADED\",\"runtime_state\":\"PIPE_UNLOADED\""
      << ",\"workspace_id\":\"" << jsonEscape(record.workspace_id) << "\""
      << ",\"workspace_revision\":" << workspace_revision << "}";
   return {200, "application/json; charset=utf-8", os.str()};
@@ -1793,12 +1807,158 @@ HttpResponse BuildOrchestrator::saveProject(const std::string& request_json) {
   }
 
   const std::string workspace_json = readTextFile(record.input_path);
-  if (workspace_json.empty() || !writeTextFile(record.source_path, workspace_json)) {
+  const std::string source_json = stripGuiOnlySectionsForSave(workspace_json);
+  if (workspace_json.empty() || source_json.empty() || !writeTextFile(record.source_path, source_json)) {
     return {500, "application/json; charset=utf-8",
             "{\"ok\":false,\"status\":\"failed\",\"stage\":\"save\",\"error\":\"write_failed\",\"diagnostics\":[\"failed to write source config JSON\"]}"};
   }
   return {200, "application/json; charset=utf-8",
           "{\"ok\":true,\"status\":\"saved\",\"source_path\":\"" + jsonEscape(record.source_path) + "\"}"};
+}
+
+namespace {
+
+std::string jsonStringMember(const audio_studio::rpc::JsonValue& value,
+                             const std::string& field,
+                             const std::string& fallback = {}) {
+  if (!value.isObject() || !value.has(field)) return fallback;
+  const auto& item = value.at(field);
+  if (item.isString()) return item.asString();
+  if (item.isNumber()) return item.dump();
+  if (item.isBool()) return item.asBool() ? "true" : "false";
+  return fallback;
+}
+
+std::string localNodeIdFromRuntimeParamRequest(const audio_studio::rpc::JsonValue& request) {
+  const std::string explicit_id = jsonStringMember(request, "pipeline_node_id");
+  if (!explicit_id.empty()) return explicit_id;
+  std::string node_id = jsonStringMember(request, "node_id");
+  const std::string marker = "__";
+  const size_t marker_pos = node_id.find(marker);
+  if (marker_pos != std::string::npos) node_id = node_id.substr(marker_pos + marker.size());
+  return node_id;
+}
+
+} // namespace
+
+HttpResponse BuildOrchestrator::updateRuntimeParameter(const std::string& request_json) {
+  audio_studio::rpc::JsonValue request;
+  try {
+    request = audio_studio::rpc::parseJson(request_json.empty() ? "{}" : request_json);
+  } catch (const std::exception& e) {
+    return {400, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"invalid_json\",\"diagnostics\":[\"" + jsonEscape(e.what()) + "\"]}"};
+  }
+
+  const std::string pipeline_id = jsonStringMember(request, "pipeline_id");
+  const std::string node_id = localNodeIdFromRuntimeParamRequest(request);
+  const std::string param_id = jsonStringMember(request, "param_id");
+  if (pipeline_id.empty() || node_id.empty() || param_id.empty() || !request.has("value")) {
+    return {400, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"missing_fields\",\"diagnostics\":[\"pipeline_id, node_id, param_id and value are required\"]}"};
+  }
+
+  WorkspaceRecord record;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    std::string workspace_id = jsonStringMember(request, "workspace_id");
+    if (workspace_id.empty()) {
+      auto& opened = openProjectLocked(jsonStringMember(request, "project", "a2/A2.json"));
+      workspace_id = opened.workspace_id;
+    }
+    auto* found = findWorkspaceLocked(workspace_id);
+    if (!found) {
+      return {404, "application/json; charset=utf-8",
+              "{\"ok\":false,\"error\":\"workspace_not_found\"}"};
+    }
+    record = *found;
+  }
+
+  const std::string workspace_json = readTextFile(record.input_path);
+  if (workspace_json.empty()) {
+    return {404, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"workspace_json_missing\"}"};
+  }
+
+  audio_studio::rpc::JsonValue project;
+  try {
+    project = audio_studio::rpc::parseJson(workspace_json);
+  } catch (const std::exception& e) {
+    return {500, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"workspace_json_invalid\",\"diagnostics\":[\"" + jsonEscape(e.what()) + "\"]}"};
+  }
+
+  auto& presets = project["presets"];
+  if (!presets.isArray()) presets = audio_studio::rpc::JsonValue::array();
+  auto& preset_array = presets.asArray();
+  audio_studio::rpc::JsonValue* preset = nullptr;
+  for (auto& item : preset_array) {
+    if (item.isObject() && jsonStringMember(item, "preset_id") == "inspector_preset") {
+      preset = &item;
+      break;
+    }
+  }
+  if (!preset) {
+    audio_studio::rpc::JsonValue created = audio_studio::rpc::JsonValue::object();
+    created["preset_id"] = "inspector_preset";
+    created["description"] = "Frontend Inspector scratch values.";
+    created["load_mode"] = "frontend_only";
+    created["node_values"] = audio_studio::rpc::JsonValue::array();
+    preset_array.push_back(std::move(created));
+    preset = &preset_array.back();
+  }
+
+  auto& node_values = (*preset)["node_values"];
+  if (!node_values.isArray()) node_values = audio_studio::rpc::JsonValue::array();
+  auto& values_array = node_values.asArray();
+  audio_studio::rpc::JsonValue* entry = nullptr;
+  for (auto& item : values_array) {
+    if (!item.isObject()) continue;
+    if (jsonStringMember(item, "pipeline_id") == pipeline_id &&
+        jsonStringMember(item, "node_id") == node_id) {
+      entry = &item;
+      break;
+    }
+  }
+  if (!entry) {
+    audio_studio::rpc::JsonValue created = audio_studio::rpc::JsonValue::object();
+    created["pipeline_id"] = pipeline_id;
+    created["node_id"] = node_id;
+    created["values"] = audio_studio::rpc::JsonValue::object();
+    values_array.push_back(std::move(created));
+    entry = &values_array.back();
+  }
+
+  auto& values = (*entry)["values"];
+  if (!values.isObject()) values = audio_studio::rpc::JsonValue::object();
+  values[param_id] = request.at("value");
+
+  if (!writeTextFile(record.input_path, project.dump())) {
+    return {500, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"workspace_write_failed\"}"};
+  }
+
+  uint64_t workspace_revision = record.workspace_revision;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(record.workspace_id);
+    if (found) {
+      found->workspace_revision += 1;
+      workspace_revision = found->workspace_revision;
+    }
+  }
+
+  std::ostringstream os;
+  os << "{\"ok\":true,\"preset_id\":\"inspector_preset\""
+     << ",\"pipeline_id\":\"" << jsonEscape(pipeline_id) << "\""
+     << ",\"node_id\":\"" << jsonEscape(node_id) << "\""
+     << ",\"param_id\":\"" << jsonEscape(param_id) << "\""
+     << ",\"runtime_state\":\"" << jsonEscape(jsonStringMember(request, "runtime_state")) << "\""
+     << ",\"control_apply\":\"pending_as_control\""
+     << ",\"workspace_id\":\"" << jsonEscape(record.workspace_id) << "\""
+     << ",\"workspace_revision\":" << workspace_revision
+     << "}";
+  return {200, "application/json; charset=utf-8", os.str()};
 }
 
 struct GuiRuntimeEngine::PlaybackWorker {
@@ -2340,7 +2500,7 @@ private:
     std::ostringstream os;
     os << "{\"ok\":" << (ok ? "true" : "false")
        << ",\"running\":" << (ok && active_ ? "true" : "false")
-       << ",\"runtime_state\":\"" << (ok && active_ ? "RUNNING" : "PIPE_LOADED") << "\""
+       << ",\"runtime_state\":\"" << (ok && active_ ? "PIPE_RUNNING" : "PIPE_LOADED") << "\""
        << ",\"playback\":{\"active\":" << (active_ ? "true" : "false")
        << ",\"rpc_ready\":" << (rpc_ready_ ? "true" : "false")
        << ",\"queued_bytes\":" << queued_bytes_;
@@ -2592,7 +2752,7 @@ private:
     std::ostringstream os;
     os << "{\"ok\":" << (ok ? "true" : "false")
        << ",\"running\":" << (ok ? "true" : "false")
-       << ",\"runtime_state\":\"" << (ok ? "RUNNING" : "PIPE_LOADED") << "\""
+       << ",\"runtime_state\":\"" << (ok ? "PIPE_RUNNING" : "PIPE_LOADED") << "\""
        << ",\"capture\":{\"active\":" << (active_ ? "true" : "false")
        << ",\"rpc_ready\":" << (rpc_ready_ ? "true" : "false")
        << ",\"queued_bytes\":0"
@@ -2693,7 +2853,7 @@ std::string GuiRuntimeEngine::run(const std::string& session_id) {
   std::ostringstream os;
   os << "{\"ok\":" << (ok ? "true" : "false")
      << ",\"running\":" << (ok ? "true" : "false")
-     << ",\"runtime_state\":\"" << (ok ? "RUNNING" : "PIPE_LOADED") << "\"";
+     << ",\"runtime_state\":\"" << (ok ? "PIPE_RUNNING" : "PIPE_LOADED") << "\"";
   const std::string playback_json = jsonMemberValue(playback_status, "playback");
   const std::string capture_json = jsonMemberValue(capture_status, "capture");
   if (!playback_json.empty()) os << ",\"playback\":" << playback_json;

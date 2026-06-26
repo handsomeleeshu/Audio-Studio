@@ -4,13 +4,15 @@ function buildParamDefaults(moduleType, presetValues = {}) {
   const staticParams = {};
   const runtimeParams = {};
   const unifiedParams = moduleType ? moduleType.parameters || [] : [];
-  const staticFields = unifiedParams.filter(param => {
+  const canSetWhileRunning = param => {
     const states = param.apply ? param.apply.settable_states || [] : [];
-    return states.indexOf('RUNNING') < 0;
+    return states.indexOf('PIPE_RUNNING') >= 0;
+  };
+  const staticFields = unifiedParams.filter(param => {
+    return !canSetWhileRunning(param);
   });
   const runtimeFields = unifiedParams.filter(param => {
-    const states = param.apply ? param.apply.settable_states || [] : [];
-    return states.indexOf('RUNNING') >= 0;
+    return canSetWhileRunning(param);
   });
   for (const field of staticFields) {
     const key = field.key || field.param_id;

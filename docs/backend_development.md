@@ -66,7 +66,9 @@ AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS=120000
 `9901` 用于验证脚本启动的 as_server，避免和 `config.compile` 常驻服务抢默认 `9900`。
 如果未设置上述 path 变量，backend 会从启动目录和父目录向上查找 `out/linux/simulator/rpc_socket/Debug/as_server`、兼容旧构建的 `out/linux/a2/as_config/Debug/as_server`、`application/rv32qemu/sof-build-test.py` 和 `application/rv32qemu/build/sof.ldc` 等默认位置。
 
-当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI build 按当前 layout snapshot 的 working groups 编译；单 pipeline 视图只编译该 pipeline，但 backend 会保留源 JSON 中未显示 pipeline。成功响应返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines` 和 `updated_frontend_connections`，前端用这些字段同步内存中的当前 workspace config。
+当前 simulator 原始 JSON 包含 playback、capture 和 DSP filter coverage 多条 pipeline。GUI Build 按 layout snapshot 中的所有 working groups 一次性编译；单 pipeline 视图只影响 RUN/STOP 目标，不影响 Build 范围。成功响应返回 `runtime_state:"PIPE_LOADED"`、`updated_pipelines` 和 `updated_frontend_connections`，前端用这些字段同步内存中的当前 workspace config。Unload 成功后返回 `runtime_state:"PIPE_UNLOADED"`。
+
+Backend workspace JSON 会保留 GUI-only 的 `audio_studio_gui` section，用于恢复 frontend layout snapshot、debug File I/O 选择痕迹和 runtime state；`POST /api/project/save` 写回平台 JSON 前会 strip 掉该 section，因此 `as_config` 输入和保存后的平台 JSON 不包含 GUI-only runtime 数据。
 
 平台 JSON 中 `frontend_connections[]` 与 `pipelines[]` 并列，例如 File Input 到 playback HOST 的连接：
 

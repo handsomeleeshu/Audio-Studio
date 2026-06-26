@@ -69,16 +69,16 @@ Runtime Dashboard
 3. `imports` 指向的 module catalog、项目私有 `module_types` 和 `configs/built-in-algorithm.json` 共同生成算法库。
 4. `pipelines` 生成节点、端口、连线和初始 layout。
 5. UI 编辑通过 `/api/pipeline/edit`、`/api/pipeline/tool`、`/api/node/action` 回调后端。
-6. Validate/Build/Run/Stop 调用对应 `/api/*`。
+6. Validate/Build/Run/Stop 调用对应 `/api/*`。Build 始终针对当前 layout 的全部 working groups；Run/Stop 针对当前选中的 pipeline group。
 7. running 或 stopped 状态下的 dashboard/inspector 数据都通过后端 live API 获取。
 
 ## 参数与运行态规则
 
-- Frontend/backend runtime state enum 固定为 `NOT_READY`、`PIPE_LOADED`、`RUNNING`、`ERROR`。
-- `parameters[]`：统一参数模型；没有 `RUNNING` settable state 的参数作为 install/static 参数处理。
-- 带 `RUNNING` settable state 的 `bool`、`enum`、`int/float` 参数会在 Inspector 自动显示为 toggle、select、slider 或 number input，running 时调用 `/api/param/update`。
+- Frontend/backend runtime state enum 使用 `PIPE_UNLOADED`、`PIPE_LOADED`、`PIPE_RUNNING` 作为 pipeline 生命周期三态；`NOT_READY` 和 `ERROR` 只表示 UI 内部不可用/错误状态。
+- `parameters[]`：统一参数模型；Inspector 完全按 `apply.settable_states` 自动置灰。`PIPE_UNLOADED` 表示 build/load 前可改，`PIPE_LOADED` 表示 build 后未运行时可改，`PIPE_RUNNING` 表示运行中可改。
+- 带 `PIPE_RUNNING` settable state 的 `bool`、`enum`、`int/float` 参数会在 Inspector 自动显示为 toggle、select、slider 或 number input，running 时调用 `/api/param/update`。
 - Inspector 显示参数值时优先使用 `presets[].preset_id == "inspector_preset"`；不存在时前端自动创建。该 preset 中没有值时，再回退到 module parameter default。
-- `PIPE_LOADED` 参数只在对应 pipeline build 成功后可编辑；进入 `RUNNING` 后，未声明 `RUNNING` settable state 的参数会置灰。
+- Build 前修改的参数会写入 frontend snapshot，并在 build 时进入临时 workspace JSON 的 `pipelines[].nodes[].params`；运行中修改的参数会调用 `/api/param/update`，backend 更新 workspace `inspector_preset` 并返回 `control_apply:"pending_as_control"` 作为后续 as_control 接入点。
 - `static_schema.fields` 和 `runtime_params` 只作为旧 catalog 的兼容输入，新 built-in catalog 不再以它们为主模型。
 - 节点新增、删除、移动、连线、删线：仅 stopped 状态允许。
 - buffer dump 和 real-time probe 数据必须来自后端接口，前端不生成 fake PCM 或 fake spectrum 数据。
@@ -88,10 +88,11 @@ Runtime Dashboard
 - `builtin.host` 和 `builtin.dai` 是普通 module type，pipeline nodes 直接声明 `module_type` 和 `params`，不再依赖独立实例表或旧端点资源表。
 - `builtin.host` node 使用 `stream_name`、`direction`、`channels_min/max`、`sample_bits` 和 `sample_rates` 参数描述 HOST stream 能力。
 - FILE_IO DAI 不是单独 module type。它是 `builtin.dai` node，参数包含 `dai_type: "file_io_dai"`、`dai_index`、`direction`、`link_name`、`device_id`、`sample_rate`、`channels`、`sample_bits`、`tdm_slots` 和 `slot_width`。
-- `value_type: "file_io"` 由 Inspector 根据 DAI 当前方向显示为打开 WAV 或选择保存路径；port 方向切换会同步更新 `direction`。
+- `value_type: "file_io"`/`file_save` 由 Inspector 显示为打开 WAV 或选择保存路径。File Input 必须选择合法 PCM WAV；File Output 必须选择 `.wav` 输出路径，否则 RUN 前会被前端拒绝。
+- FILE_IO DAI 当作 capture/input source 时，Inspector 提供本地 WAV 选择控件；选择成功后只同步 DAI 已声明的音频格式参数（`sample_rate`、`channels`、`sample_bits`、`tdm_slots`、`slot_width`），不会向 DAI params 写入未声明的 `file_path`。
 - `builtin.host` 在 pipeline layout 中始终显示一个 input 和一个 output，其中一侧是 SOF internal port，另一侧是 external debug port。external port 和 file input/output port 渲染为实心小圆孔，颜色仍按 input/output 原规则。
 - `builtin.file_input` 和 `builtin.file_output` 是前端 runtime 节点：它们显示为特殊颜色，只能连接 HOST external port，并且持久化在根 `frontend_connections[]`，不会进入 `pipelines[]` 或 tplg 编译。
-- Build 请求必须提交完整 layout snapshot，同时用 `group_id` 指明本次 build 的 working group；`group_id:"ALL"` 才表示请求全量 pipeline build。
+- Build 请求必须提交完整 layout snapshot，frontend Build 按 `group_id:"ALL"` 全量编译所有 working groups；单 pipeline 选择只影响 RUN/STOP。
 - Build 成功只接受 backend 返回 `ok: true` 且 `runtime_state: "PIPE_LOADED"`；无 backend、HTTP 失败或 `null` response 都必须显示 Build failed。
 
 ## 连接策略

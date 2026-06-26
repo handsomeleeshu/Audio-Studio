@@ -1330,7 +1330,7 @@ Status buildParameterTables(ProjectIr& ir, const ModuleConfigRegistry& module_co
         if (!status.ok()) return status;
       }
       for (const auto& param : type.parameters) {
-        if (containsString(param.states, "RUNNING")) {
+        if (containsString(param.states, "PIPE_RUNNING")) {
           ControlInfo control;
           control.pipe_id = pipe.pipe_id;
           control.node_id = node.node_id;

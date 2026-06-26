@@ -3389,6 +3389,11 @@
       box-shadow: 0 0 10px rgba(125, 139, 160, .7) !important;
     }
 
+    .pipeline-node.runtime-pipe-unloaded .alive {
+      background: #00d8ff !important;
+      box-shadow: 0 0 10px rgba(0, 216, 255, .55) !important;
+    }
+
     .pipeline-node.runtime-pipe-loaded .alive {
       background: var(--purple) !important;
       box-shadow: 0 0 12px rgba(182, 92, 255, .9) !important;
@@ -3407,6 +3412,11 @@
     .active-label.runtime-not-ready {
       color: #93a2b8 !important;
       text-shadow: 0 0 12px rgba(125, 139, 160, .35) !important;
+    }
+
+    .active-label.runtime-pipe-unloaded {
+      color: #9beeff !important;
+      text-shadow: 0 0 12px rgba(0, 216, 255, .45) !important;
     }
 
     .active-label.runtime-pipe-loaded {
@@ -3731,8 +3741,9 @@
     const API_SESSION_ID = 'standalone_html_demo';
     const RUNTIME_STATES = Object.freeze({
       NOT_READY: 'NOT_READY',
+      PIPE_UNLOADED: 'PIPE_UNLOADED',
       PIPE_LOADED: 'PIPE_LOADED',
-      RUNNING: 'RUNNING',
+      PIPE_RUNNING: 'PIPE_RUNNING',
       ERROR: 'ERROR'
     });
     let audioStudioJsonRpcNextId = 1;
@@ -4030,28 +4041,23 @@
       return (p?.apply?.settable_states || []).map(s => normalizeRuntimeStatus(s));
     }
     function isParamEnabledForNode(n, p) {
-      if (isBuildAffectingParam(p) && runtimeHasStructuralEditLock()) return false;
       const states = normalizeSettableStates(p);
       const status = runtimeStatusForNode(n);
-      if (!states.length) return status !== RUNTIME_STATES.RUNNING;
-      if (status === RUNTIME_STATES.RUNNING) return states.includes(RUNTIME_STATES.RUNNING);
+      if (!states.length) return status !== RUNTIME_STATES.PIPE_RUNNING;
+      if (status === RUNTIME_STATES.PIPE_RUNNING) return states.includes(RUNTIME_STATES.PIPE_RUNNING);
       if (states.includes(RUNTIME_STATES.PIPE_LOADED)) return status === RUNTIME_STATES.PIPE_LOADED;
       return states.includes(status);
-    }
-    function isBuildAffectingParam(p) {
-      const mode = String(p?.apply?.mode || '').toLowerCase();
-      if (mode === 'runtime' || mode === 'next_frame') return false;
-      if (mode) return mode === 'build' || mode === 'compile' || mode === 'static' || mode === 'safe_point';
-      return !normalizeSettableStates(p).length;
-    }
-    function runtimeAllowsBuildAffectingParameterEdit(n, p, kind = 'build_affecting_param_updated') {
-      if (!isBuildAffectingParam(p)) return true;
-      return runtimeAllowsStructuralEdit(kind);
     }
     function debugFileIoDirection(n) {
       const id = String(n?.moduleTypeId || '').toLowerCase();
       if (id.includes('file_output')) return 'output';
       if (id.includes('file_input')) return 'input';
+      if (isDaiFileIoNode(n)) {
+        const direction = String(n?.paramValues?.direction || '').toLowerCase();
+        if (direction === 'capture') return 'input';
+        if (direction === 'playback') return 'output';
+        return nodePortList(n, 'in').length > 0 ? 'output' : 'input';
+      }
       return n?.type === 'output' ? 'output' : 'input';
     }
     function isDebugFileIoNode(n) {
@@ -4131,7 +4137,7 @@
     }
     function pipelineSnapshot() {
       const groupId = typeof targetRuntimeGroupId === 'function' ? targetRuntimeGroupId() : currentPipelineId;
-      const runtimeState = typeof runtimeStatusForGroupId === 'function' ? runtimeStatusForGroupId(groupId) : RUNTIME_STATES.NOT_READY;
+      const runtimeState = typeof runtimeStatusForGroupId === 'function' ? runtimeStatusForGroupId(groupId) : RUNTIME_STATES.PIPE_UNLOADED;
       const workingGroupsRaw = window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.() || [];
       const edgeDomain = (p, side) => {
         const node = nodeById(side === 'from' ? p.from : p.to);
@@ -4497,7 +4503,7 @@
       const legacy = Array.isArray(mt?.runtime_params) ? mt.runtime_params : [];
       const unified = Array.isArray(mt?.parameters) ? mt.parameters.filter(p => {
         const states = p?.apply?.settable_states || [];
-        return states.includes('RUNNING');
+        return states.includes('PIPE_RUNNING');
       }) : [];
       return legacy.concat(unified);
     }
@@ -4505,7 +4511,7 @@
       if (mt?.static_schema) return mt.static_schema;
       const fields = Array.isArray(mt?.parameters) ? mt.parameters.filter(p => {
         const states = p?.apply?.settable_states || [];
-        return !states.includes('RUNNING');
+        return !states.includes('PIPE_RUNNING');
       }).map(p => ({ ...p, key: p.key || p.param_id })) : [];
       return fields.length ? { fields } : null;
     }
@@ -5067,7 +5073,7 @@
               param_name: output ? 'Save Path' : 'WAV File',
               value_type: output ? 'file_save' : 'file_io',
               default: '',
-              apply: { settable_states: ['PIPE_LOADED'], mode: 'safe_point' }
+              apply: { settable_states: ['PIPE_UNLOADED', 'PIPE_LOADED'], mode: 'safe_point' }
             }
           ]
         },
@@ -5408,7 +5414,7 @@
     }
 
     function nodeRuntimeVisualState(n) {
-      const status = window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || RUNTIME_STATES.NOT_READY;
+      const status = window.audioStudioPipelineRuntimeState?.runtimeStatusForGroupId?.(window.audioStudioWorkingPipelineGroupsV44?.currentWorkingGroupsV44?.().find(g => g.nodes?.some(x => x.id === n?.id))?.id) || RUNTIME_STATES.PIPE_UNLOADED;
       return runtimeCssClass(status);
     }
 
@@ -5778,7 +5784,7 @@
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', '3'); dot.setAttribute('class', 'edge-particle');
           const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
         }
-        if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+        if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
       });
     }
     function deleteSelectedEdge() {
@@ -5978,6 +5984,47 @@
       if (t === 'bool' || t === 'boolean' || t.includes('int') || t.includes('float') || t === 'number' || t === 'double') return 'value';
       return t || 'value';
     }
+    function paramDescriptorForNode(n, id) {
+      return nodeDisplayParams(n).find(p => paramId(p) === id) || { param_id: id, param_name: id, value_type: 'number' };
+    }
+    function isDaiFileIoInputSource(n) {
+      return isDaiFileIoNode(n) && debugFileIoDirection(n) === 'input';
+    }
+    function assertValidWavInfo(info, fileName = 'WAV file') {
+      const name = fileName || 'WAV file';
+      if (!info || !Number(info.bytes)) throw new Error(`${name} is not a readable WAV file`);
+      if (info.format_code !== 1) throw new Error(`${name} must be PCM WAV`);
+      if (!Number(info.sample_rate) || Number(info.sample_rate) <= 0) throw new Error(`${name} is missing a valid sample rate`);
+      if (!Number(info.channels) || Number(info.channels) <= 0) throw new Error(`${name} is missing a valid channel count`);
+      if (!Number(info.bits_per_sample) || Number(info.bits_per_sample) <= 0) throw new Error(`${name} is missing a valid sample width`);
+      if (!Number(info.data_bytes) || Number(info.data_bytes) <= 0) throw new Error(`${name} has no PCM data chunk`);
+      return info;
+    }
+    function applyDaiInputAudioInfoToParams(n, info = {}) {
+      if (!isDaiFileIoInputSource(n)) return false;
+      assertValidWavInfo(info, n?.debugFileIo?.file_name || 'DAI input WAV');
+      const values = {
+        sample_rate: Number(info.sample_rate || 48000),
+        channels: Math.max(1, Number(info.channels || 2)),
+        sample_bits: Math.max(8, Number(info.bits_per_sample || 16))
+      };
+      values.tdm_slots = values.channels;
+      values.slot_width = values.sample_bits;
+      Object.entries(values).forEach(([id, value]) => {
+        writeInspectorPresetParam(n, paramDescriptorForNode(n, id), value);
+      });
+      return true;
+    }
+    function renderDaiFileInputControl(n) {
+      if (!isDaiFileIoInputSource(n)) return '';
+      const status = runtimeStatusForNode(n);
+      const enabled = status === RUNTIME_STATES.PIPE_UNLOADED;
+      const disabled = enabled ? '' : ' disabled';
+      const disabledFlag = enabled ? '0' : '1';
+      const record = debugFileIoFiles.get(n.id) || {};
+      const value = n.debugFileIo?.path_hint || record.path_hint || '';
+      return `<div class="param-row param-string"><label>Input WAV</label><input type="text" value="${escapeHtml(value)}" data-dai-file-path="1" data-param-disabled="${disabledFlag}" readonly${disabled}><button class="btn" data-dai-file-param-action="file_open"${disabled}>Choose WAV</button><div class="value-box">${escapeHtml(value || 'No file')}</div><div class="param-meta">build · file_io_dai source</div></div>`;
+    }
     function fileParamAction(n, p) {
       const t = paramType(p);
       const id = paramId(p).toLowerCase();
@@ -6027,12 +6074,11 @@
         list.innerHTML = '<div class="empty-state">No displayable parameters described by this module JSON.</div>';
         return;
       }
-      list.innerHTML = params.map(p => renderParamControl(n, p)).join('');
+      list.innerHTML = params.map(p => renderParamControl(n, p)).join('') + renderDaiFileInputControl(n);
       list.querySelectorAll('[data-param-id]').forEach(ctrl => {
         const id = ctrl.dataset.paramId;
         const p = params.find(x => paramId(x) === id);
         const applyValue = (raw) => {
-          if (!runtimeAllowsBuildAffectingParameterEdit(n, p, 'build_affecting_param_updated')) return;
           if (!isParamEnabledForNode(n, p)) return;
           if (!n.paramValues) n.paramValues = {};
           let value = raw;
@@ -6043,7 +6089,19 @@
           const box = list.querySelector(`[data-param-value="${CSS.escape(id)}"]`);
           if (box) box.textContent = formatParamValue(p, value);
           if (ctrl.classList.contains('param-toggle')) ctrl.classList.toggle('on', !!value);
-          apiPost('/api/param/update', { session_id: API_SESSION_ID, node_id: n.id, node_name: n.name, module_type: n.moduleTypeId, param_id: id, value });
+          apiPost('/api/param/update', {
+            session_id: API_SESSION_ID,
+            workspace_id: currentWorkspaceId || currentProjectConfig?.workspace_id || '',
+            project: currentProjectFile,
+            pipeline_id: n.pipelineId || currentPipelineId || '',
+            node_id: n.id,
+            pipeline_node_id: originalNodeId(n),
+            node_name: n.name,
+            module_type: n.moduleTypeId,
+            param_id: id,
+            value,
+            runtime_state: runtimeStatusForNode(n)
+          });
           backendEdit('runtime_param_updated', { node_id: n.id, node_name: n.name, module_type: n.moduleTypeId, param_id: id, value });
           addLog('info', 'Runtime parameter updated', `${n.name}: ${paramName(p)} = ${formatParamValue(p, value)}`);
         };
@@ -6058,7 +6116,7 @@
         btn.addEventListener('click', async () => {
           const id = btn.dataset.paramId;
           const p = params.find(x => paramId(x) === id);
-          if (!p || !runtimeAllowsBuildAffectingParameterEdit(n, p, 'build_affecting_param_updated') || !isParamEnabledForNode(n, p)) return;
+          if (!p || !isParamEnabledForNode(n, p)) return;
           if (btn.dataset.fileParamAction === 'file_open') {
             const input = document.createElement('input');
             input.type = 'file';
@@ -6066,7 +6124,14 @@
             input.onchange = async () => {
               const file = input.files && input.files[0];
               if (!file) return;
-              const info = await readAudioFileInfo(file);
+              let info = null;
+              try {
+                info = assertValidWavInfo(await readAudioFileInfo(file), file.name);
+              } catch (e) {
+                addLog('warn', 'Invalid WAV file', e?.message || file.name);
+                toast(e?.message || 'Invalid WAV file', 'error');
+                return;
+              }
               const pathHint = file.webkitRelativePath || file.name;
               debugFileIoFiles.set(n.id, { file, info, path_hint: pathHint, selected_at: Date.now() });
               n.debugFileIo = { direction: 'input', file_name: file.name, path_hint: pathHint, audio: info };
@@ -6082,12 +6147,22 @@
               try {
                 const handle = await window.showSaveFilePicker({ suggestedName: `${originalNodeId(n) || 'capture'}.wav`, types: [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }] });
                 pathHint = handle?.name || '';
+                if (!/\.wav$/i.test(pathHint)) {
+                  toast('Output path must be a .wav file', 'error');
+                  addLog('warn', 'Invalid output path', pathHint);
+                  return;
+                }
                 n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint, path_hint: pathHint, save_handle: !!handle };
                 debugFileIoFiles.set(n.id, { handle, file_name: pathHint, path_hint: pathHint, selected_at: Date.now() });
               } catch (e) { return; }
             } else {
               pathHint = prompt('Save WAV path', nodeParamValue(n, p) || `${originalNodeId(n) || 'capture'}.wav`) || '';
               if (!pathHint) return;
+              if (!/\.wav$/i.test(pathHint)) {
+                toast('Output path must be a .wav file', 'error');
+                addLog('warn', 'Invalid output path', pathHint);
+                return;
+              }
               n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'output', file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint };
               debugFileIoFiles.set(n.id, { file_name: pathHint.split(/[\\/]/).pop(), path_hint: pathHint, selected_at: Date.now() });
             }
@@ -6096,6 +6171,34 @@
             backendEdit('debug_file_io_save_path', { node_id: n.id, path_hint: pathHint });
             toast('Save path selected', 'ok');
           }
+        });
+      });
+      list.querySelectorAll('[data-dai-file-param-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!isDaiFileIoInputSource(n) || runtimeStatusForNode(n) !== RUNTIME_STATES.PIPE_UNLOADED) return;
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.wav,audio/wav,audio/x-wav';
+          input.onchange = async () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            let info = null;
+            try {
+              info = assertValidWavInfo(await readAudioFileInfo(file), file.name);
+            } catch (e) {
+              addLog('warn', 'Invalid DAI input WAV', e?.message || file.name);
+              toast(e?.message || 'Invalid WAV file', 'error');
+              return;
+            }
+            const pathHint = file.webkitRelativePath || file.name;
+            n.debugFileIo = { ...(n.debugFileIo || {}), direction: 'input', file_name: file.name, path_hint: pathHint, audio: info };
+            debugFileIoFiles.set(n.id, { file, info, path_hint: pathHint, selected_at: Date.now() });
+            applyDaiInputAudioInfoToParams(n, info);
+            renderInspectorParameters(n);
+            backendEdit('dai_file_io_input_selected', { node_id: n.id, file_name: file.name, path_hint: pathHint, audio: info });
+            toast(`Loaded ${file.name}`, 'ok');
+          };
+          input.click();
         });
       });
     }
@@ -6143,6 +6246,55 @@
       const stored = debugFileIoFiles.get(n.id);
       if (stored?.file) return stored;
       return null;
+    }
+    function uniqueRuntimeNodesForGroups(groups = []) {
+      const seen = new Set();
+      return groups.flatMap(g => g?.nodes || []).filter(n => n && !seen.has(n.id) && seen.add(n.id));
+    }
+    function validateRuntimeFileIoForGroup(groupId = targetRuntimeGroupId()) {
+      const groups = groupsForRuntimeId(groupId);
+      const nodes = uniqueRuntimeNodesForGroups(groups);
+      const failures = [];
+      const fail = (node, message) => failures.push({ node, message });
+      nodes.forEach(n => {
+        if (isDebugFileIoNode(n) && debugFileIoDirection(n) === 'input') {
+          const record = playbackFileRecordForNode(n);
+          try {
+            if (!record?.file) throw new Error(`${n.name || n.id}: choose a WAV file before RUN`);
+            assertValidWavInfo(record.info || n.debugFileIo?.audio, record.file.name);
+          } catch (e) {
+            fail(n, e?.message || `${n.name || n.id}: invalid WAV input`);
+          }
+        }
+        if (isDaiFileIoInputSource(n)) {
+          const record = playbackFileRecordForNode(n);
+          try {
+            if (!record?.file) throw new Error(`${n.name || n.id}: choose a DAI input WAV before RUN`);
+            const info = assertValidWavInfo(record.info || n.debugFileIo?.audio, record.file.name);
+            applyDaiInputAudioInfoToParams(n, info);
+          } catch (e) {
+            fail(n, e?.message || `${n.name || n.id}: invalid DAI input WAV`);
+          }
+        }
+        if (isDebugFileIoNode(n) && debugFileIoDirection(n) === 'output') {
+          const record = captureFileRecordForNode(n);
+          const name = String(record?.file_name || record?.path_hint || n.debugFileIo?.file_name || n.debugFileIo?.path_hint || '');
+          if (!record || (!record.handle && !name)) {
+            fail(n, `${n.name || n.id}: choose an output WAV path before RUN`);
+          } else if (name && !/\.wav$/i.test(name)) {
+            fail(n, `${n.name || n.id}: output path must be a .wav file`);
+          }
+        }
+      });
+      if (failures.length) {
+        const first = failures[0];
+        addLog('warn', 'RUN rejected by File I/O validation', first.message);
+        toast(first.message, 'error');
+        selectedNodeId = first.node?.id || selectedNodeId;
+        renderInspector();
+        return false;
+      }
+      return true;
     }
     function playbackEdgeForNode(n, groups) {
       const edges = groups.flatMap(g => g?.edges || []);
@@ -6378,7 +6530,7 @@
       const edgeFmt = ep ? inferredEdgeFormat(ep) : null;
       const fmt = normalizeRuntimeFormat({
         channels: record.audio?.channels || sink.debugFileIo?.audio?.channels || 1,
-        sampleRate: edgeFmt?.sampleRate || target.sampleRate || 48000,
+        sampleRate: edgeFmt?.sampleRate || 48000,
         bits: edgeFmt?.bits || 16,
         frameSamples: edgeFmt?.frameSamples || 480
       }, edgeFmt);
@@ -7978,11 +8130,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) {
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING) {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -8591,11 +8743,11 @@
           bindEdgeSelect(hit);
           svg.appendChild(p);
           svg.appendChild(hit);
-          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) {
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING) {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle'); dot.setAttribute('r', dumping ? '4' : '3'); dot.setAttribute('class', 'edge-particle');
             const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion'); anim.setAttribute('dur', `${2.1 + rnd(0, .7)}s`); anim.setAttribute('repeatCount', 'indefinite'); anim.setAttribute('path', d); anim.setAttribute('begin', `${idx * .12}s`); dot.appendChild(anim); svg.appendChild(dot);
           }
-          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
+          if (edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING) { const label = edgeSampleRateLabelForEdge(ep, key); if (label) { const pa = portPoint(a, 'out', ep.fromPort), pb = portPoint(b, 'in', ep.toPort); const tx = (pa.x + pb.x) / 2, ty = (pa.y + pb.y) / 2 - 8; const text = document.createElementNS('http://www.w3.org/2000/svg', 'text'); text.setAttribute('x', tx); text.setAttribute('y', ty); text.setAttribute('class', 'edge-label'); text.textContent = label; svg.appendChild(text); } }
         });
       };
 
@@ -12517,7 +12669,7 @@
       $$('[data-hide]').forEach(b => b.addEventListener('click', () => setPanelVisible(b.dataset.hide, false)));
       $('#validateBtn').addEventListener('click', async () => { const res = await apiPost('/api/pipeline/validate', pipelineSnapshot()); const warnings = res?.warnings || []; const errors = res?.errors || []; $('#warnCount').textContent = String(warnings.length); $('#errCount').textContent = String(errors.length); addLog(errors.length ? 'warn' : 'ok', 'Pipeline validated', 'Backend callback: /api/pipeline/validate'); toast(errors.length ? 'Validate failed' : 'Validate success'); });
       $('#buildBtn').addEventListener('click', async () => {
-        const groupId = targetRuntimeGroupId();
+        const groupId = 'ALL';
         const status = runtimeStatusForGroupId(groupId);
         if (status === RUNTIME_STATES.PIPE_LOADED) await unloadRuntimeGroup(groupId);
         else await buildRuntimeGroup(groupId);
@@ -12531,8 +12683,8 @@
       $('#redoTool')?.addEventListener('click', redoEdit);
       window.addEventListener('keydown', e => { const tag = e.target?.tagName?.toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return; if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); return; } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); } if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redoEdit(); } });
       $('#saveBtn').addEventListener('click', async () => {
-        const status = runtimeStatusForGroupId(targetRuntimeGroupId());
-        if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.RUNNING) { toast('Build must succeed before Save', 'error'); return; }
+        const status = runtimeStatusForGroupId('ALL');
+        if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.PIPE_RUNNING) { toast('Build must succeed before Save', 'error'); return; }
         saveCurrentLayout('save_button');
         localStorage.setItem('audioStudioDemoState', JSON.stringify({ nodes: state.nodes, edges: state.edges, layouts: pipelineLayoutCache }));
         const res = await apiPost('/api/project/save', pipelineSnapshot());
@@ -12624,14 +12776,14 @@
       'selection_pasted',
       'swap_ports',
       'pipeline_rename',
-      'build_affecting_param_updated',
       'undo',
       'redo'
     ]);
     const RUNTIME_STATUS_META = {
       [RUNTIME_STATES.NOT_READY]: { label: 'Not Ready', log: 'warn', css: 'not-ready' },
+      [RUNTIME_STATES.PIPE_UNLOADED]: { label: 'Pipe Unloaded', log: 'info', css: 'pipe-unloaded' },
       [RUNTIME_STATES.PIPE_LOADED]: { label: 'Pipe Loaded', log: 'ok', css: 'pipe-loaded' },
-      [RUNTIME_STATES.RUNNING]: { label: 'Running', log: 'ok', css: 'running' },
+      [RUNTIME_STATES.PIPE_RUNNING]: { label: 'Running', log: 'ok', css: 'running' },
       [RUNTIME_STATES.ERROR]: { label: 'Error', log: 'err', css: 'error' }
     };
 
@@ -12650,13 +12802,14 @@
       return runtimeGroups().find(g => g.edges?.some(e => edgeKeyForEdge(e) === key)) || null;
     }
     function runtimeStatusStoredForGroupId(groupId) {
-      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || RUNTIME_STATES.NOT_READY);
+      return normalizeRuntimeStatus(pipelineRuntimeStates.get(groupId)?.status || RUNTIME_STATES.PIPE_UNLOADED);
     }
     function runtimeStatusForAllGroups() {
       const statuses = runtimeGroups().map(g => runtimeStatusStoredForGroupId(g.id));
-      if (statuses.includes(RUNTIME_STATES.RUNNING)) return RUNTIME_STATES.RUNNING;
+      if (statuses.includes(RUNTIME_STATES.PIPE_RUNNING)) return RUNTIME_STATES.PIPE_RUNNING;
       if (statuses.includes(RUNTIME_STATES.PIPE_LOADED)) return RUNTIME_STATES.PIPE_LOADED;
       if (statuses.includes(RUNTIME_STATES.ERROR)) return RUNTIME_STATES.ERROR;
+      if (statuses.includes(RUNTIME_STATES.PIPE_UNLOADED) || statuses.length) return RUNTIME_STATES.PIPE_UNLOADED;
       return RUNTIME_STATES.NOT_READY;
     }
     // Pipeline runtime visibility hotfix: runtime state must not own canvas
@@ -12671,8 +12824,9 @@
       const s = raw.toUpperCase().replace(/[-\s]+/g, '_');
       const legacy = raw.toLowerCase().replace(/_/g, '-');
       if (RUNTIME_STATUS_META[s]) return s;
+      if (legacy === 'unloaded' || legacy === 'pipe-unloaded' || legacy === 'ready') return RUNTIME_STATES.PIPE_UNLOADED;
       if (legacy === 'built' || legacy === 'pipe-loaded') return RUNTIME_STATES.PIPE_LOADED;
-      if (legacy === 'running' || legacy === 'active') return RUNTIME_STATES.RUNNING;
+      if (legacy === 'running' || legacy === 'pipe-running' || legacy === 'active') return RUNTIME_STATES.PIPE_RUNNING;
       if (legacy === 'error' || legacy === 'failed') return RUNTIME_STATES.ERROR;
       return RUNTIME_STATES.NOT_READY;
     }
@@ -12691,7 +12845,7 @@
       return runtimeStatusForGroupId(g?.id);
     }
     function anyRuntimeGroupRunning() {
-      return [...pipelineRuntimeStates.values()].some(s => normalizeRuntimeStatus(s?.status) === RUNTIME_STATES.RUNNING);
+      return [...pipelineRuntimeStates.values()].some(s => normalizeRuntimeStatus(s?.status) === RUNTIME_STATES.PIPE_RUNNING);
     }
     function setGlobalRunningFromGroups() {
       running = anyRuntimeGroupRunning();
@@ -12726,13 +12880,13 @@
     }
     function runtimeHasStructuralEditLock() {
       const status = runtimeStatusForGroupId('ALL');
-      return status === RUNTIME_STATES.PIPE_LOADED || status === RUNTIME_STATES.RUNNING;
+      return status === RUNTIME_STATES.PIPE_LOADED || status === RUNTIME_STATES.PIPE_RUNNING;
     }
     function runtimeAllowsStructuralEdit(kind = '') {
       if (!STRUCTURAL_EDIT_KINDS.has(kind)) return true;
       const status = runtimeStatusForGroupId('ALL');
-      if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.RUNNING) return true;
-      const action = status === RUNTIME_STATES.RUNNING ? 'Stop' : 'Unload';
+      if (status !== RUNTIME_STATES.PIPE_LOADED && status !== RUNTIME_STATES.PIPE_RUNNING) return true;
+      const action = status === RUNTIME_STATES.PIPE_RUNNING ? 'Stop' : 'Unload';
       const label = RUNTIME_STATUS_META[status].label;
       toast(`Pipeline is ${label}; ${action} before editing`, 'warn');
       addLog('warn', 'Structural edit blocked', `Pipeline is ${label}; ${action} before ${kind || 'editing'}`);
@@ -12774,7 +12928,7 @@
       ids.forEach(id => {
         const st = runtimeStatusForGroupId(id);
         if (!runtimeGroupAllowsGraphMutation(id, kind)) return;
-        if (st === RUNTIME_STATES.ERROR) setRuntimeStatusForGroup(id, RUNTIME_STATES.NOT_READY, kind);
+        if (st === RUNTIME_STATES.ERROR) setRuntimeStatusForGroup(id, RUNTIME_STATES.PIPE_UNLOADED, kind);
       });
     }
     function runtimeStatusText(status) {
@@ -12810,7 +12964,7 @@
       if (!label) return;
       const g = selectedRuntimeGroupForInspector();
       const status = runtimeStatusForGroupId(g?.id);
-      label.classList.remove('runtime-not-ready', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
+      label.classList.remove('runtime-not-ready', 'runtime-pipe-unloaded', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
       label.classList.add(`runtime-${runtimeCssClass(status)}`);
       label.textContent = runtimeStatusText(status);
       label.title = g ? `${g.displayName || g.name || g.id} · ${RUNTIME_STATUS_META[status].label}` : RUNTIME_STATUS_META[status].label;
@@ -12819,7 +12973,7 @@
       document.querySelectorAll('.pipeline-node').forEach(el => {
         const n = nodeById(el.dataset.id);
         const status = runtimeStatusForNode(n);
-        el.classList.remove('runtime-not-ready', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
+        el.classList.remove('runtime-not-ready', 'runtime-pipe-unloaded', 'runtime-pipe-loaded', 'runtime-running', 'runtime-error');
         el.classList.add(`runtime-${runtimeCssClass(status)}`);
         el.dataset.runtimeStatus = status;
         el.title = `${n?.name || el.dataset.id || 'Node'} · ${RUNTIME_STATUS_META[status].label}`;
@@ -12847,7 +13001,7 @@
         buildBtn.disabled = false;
         buildBtn.textContent = '▣ Unload';
         buildBtn.classList.add('btnRuntimeUnload');
-      } else if (status === RUNTIME_STATES.RUNNING) {
+      } else if (status === RUNTIME_STATES.PIPE_RUNNING) {
         buildBtn.disabled = true;
         buildBtn.textContent = '▣ Running';
       } else {
@@ -12865,7 +13019,7 @@
         group_id: groupId,
         scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
         runtime_state: normalizeRuntimeStatus(status),
-        running_groups: groups.filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.RUNNING).map(g => g.id),
+        running_groups: groups.filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.PIPE_RUNNING).map(g => g.id),
         nodes: selectedGroups.flatMap(g => g.nodes.map(n => n.id)),
         edges: selectedGroups.flatMap(g => g.edges.map(edgeKeyForEdge))
       };
@@ -12903,7 +13057,7 @@
       return true;
     }
     async function buildRuntimeGroup(groupId = 'ALL') {
-      if (runtimeStatusForGroupId('ALL') === RUNTIME_STATES.RUNNING) {
+      if (runtimeStatusForGroupId('ALL') === RUNTIME_STATES.PIPE_RUNNING) {
         toast('Pipeline is Running; Stop before Build', 'warn');
         addLog('warn', 'Build blocked', 'Pipeline is Running; Stop before Build');
         return false;
@@ -12973,9 +13127,9 @@
       };
       addLog('info', 'Unload started', 'Calling /api/pipeline/unload');
       const res = await apiPost('/api/pipeline/unload', payload);
-      const ok = res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.NOT_READY;
+      const ok = res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_UNLOADED;
       if (ok) {
-        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.NOT_READY, 'unload_success');
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_UNLOADED, 'unload_success');
       } else {
         setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'unload_failed');
       }
@@ -12986,7 +13140,7 @@
     }
     async function startRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const current = runtimeStatusForGroupId(groupId);
-      if (current === RUNTIME_STATES.RUNNING) {
+      if (current === RUNTIME_STATES.PIPE_RUNNING) {
         toast('Pipeline is already running', 'warn');
         addLog('warn', 'Run ignored', 'Pipeline is already running');
         return true;
@@ -12995,9 +13149,10 @@
         toast('Please Build first', 'warn');
         return false;
       }
-      const res = await postRuntimeGroupState('run', groupId, RUNTIME_STATES.RUNNING);
+      if (!validateRuntimeFileIoForGroup(groupId)) return false;
+      const res = await postRuntimeGroupState('run', groupId, RUNTIME_STATES.PIPE_RUNNING);
       const ok = res?.ok !== false;
-      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
+      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
       if (ok && res?.playback_request) startPlaybackFramePump(res.playback_request, groupId);
       if (ok && res?.capture_request) await startCaptureFramePump(res.capture_request, groupId);
       if (!ok) stopPlaybackFramePump('run_rejected');
@@ -13018,7 +13173,7 @@
     }
     async function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const stopId = groupId === 'ALL' ? 'ALL' : groupId;
-      await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.NOT_READY);
+      await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.PIPE_LOADED);
       stopPlaybackFramePump('pipeline_stopped');
       await finalizeCaptureFramePump('pipeline_stopped');
       setRuntimeStatusForGroup(stopId, RUNTIME_STATES.PIPE_LOADED, 'stop_button');
@@ -13065,7 +13220,7 @@
     function installPipelineScopedRuntimeControls() {
       const select = $('#pipelineSelect');
       select?.addEventListener('change', () => { activeRuntimeGroupId = select.value || 'ALL'; renderRuntimeStateVisuals(); });
-      setRuntimeStatusForGroup('ALL', RUNTIME_STATES.NOT_READY, 'initial');
+      setRuntimeStatusForGroup('ALL', RUNTIME_STATES.PIPE_UNLOADED, 'initial');
     }
     const __renderNodesBeforePipelineRuntimeState = renderNodes;
     renderNodes = function () {
@@ -13119,7 +13274,7 @@
       targetRuntimeGroupId,
       setRuntimeGroupFilter,
       edgePipelineRuntimeState,
-      runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.RUNNING)
+      runningGroups: () => runtimeGroups().filter(g => runtimeStatusForGroupId(g.id) === RUNTIME_STATES.PIPE_RUNNING)
     };
 
     window.addEventListener('resize', () => { updateWorldBounds(); if (!defaultViewportZoomApplied) applyInitialViewportZoomIfNeeded('resize_before_first_view'); renderAll(true); });
@@ -13453,7 +13608,7 @@
       };
       function isRuntimeEdgeRunningV101(ep) {
         try {
-          if (typeof edgePipelineRuntimeState === 'function') return edgePipelineRuntimeState(ep) === RUNTIME_STATES.RUNNING;
+          if (typeof edgePipelineRuntimeState === 'function') return edgePipelineRuntimeState(ep) === RUNTIME_STATES.PIPE_RUNNING;
         } catch (e) { }
         return !!running;
       }

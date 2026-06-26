@@ -16,8 +16,8 @@ function functionBlock(name) {
 
 assertIncludes('function runtimeStatusForAllGroups', 'ALL runtime status should aggregate working-group state');
 assert.ok(
-  /runtimeStatusForAllGroups[\s\S]*RUNTIME_STATES\.RUNNING[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*RUNTIME_STATES\.ERROR[\s\S]*RUNTIME_STATES\.NOT_READY/.test(html),
-  'ALL runtime status should prefer RUNNING, then PIPE_LOADED, then ERROR, then NOT_READY'
+  /runtimeStatusForAllGroups[\s\S]*RUNTIME_STATES\.PIPE_RUNNING[\s\S]*RUNTIME_STATES\.PIPE_LOADED[\s\S]*RUNTIME_STATES\.ERROR[\s\S]*RUNTIME_STATES\.PIPE_UNLOADED[\s\S]*RUNTIME_STATES\.NOT_READY/.test(html),
+  'ALL runtime status should prefer PIPE_RUNNING, then PIPE_LOADED, then ERROR, then PIPE_UNLOADED, then NOT_READY'
 );
 
 assertIncludes('const STRUCTURAL_EDIT_KINDS', 'structural edit kinds should be named explicitly');
@@ -32,10 +32,10 @@ for (const kind of [
   'selection_pasted',
   'swap_ports',
   'pipeline_rename',
-  'build_affecting_param_updated',
 ]) {
   assert.ok(structuralKinds.includes(`'${kind}'`), `structural lock should include ${kind}`);
 }
+assert.ok(!structuralKinds.includes("'build_affecting_param_updated'"), 'parameter editability should be controlled by JSON settable_states, not the structural edit lock');
 for (const layoutKind of ['node_moved', 'nodes_moved', 'auto_arrange', 'manual_zoom_button', 'pinch_zoom']) {
   assert.ok(!structuralKinds.includes(`'${layoutKind}'`), `${layoutKind} should remain a layout/view edit`);
 }
@@ -49,12 +49,8 @@ assert.ok(
   'pipeline rename should be blocked by the structural lock'
 );
 assert.ok(
-  /function isBuildAffectingParam[\s\S]*function runtimeAllowsBuildAffectingParameterEdit/.test(html),
-  'build-affecting parameter edits should have an explicit runtime lock guard'
-);
-assert.ok(
-  /applyValue[\s\S]*runtimeAllowsBuildAffectingParameterEdit\(n,\s*p,\s*['"]build_affecting_param_updated['"]\)/.test(html),
-  'inspector parameter writes should check the build-affecting edit lock before writing'
+  /function isParamEnabledForNode[\s\S]*normalizeSettableStates\(p\)[\s\S]*return states\.includes\(status\)/.test(html),
+  'inspector parameter writes should be gated by JSON settable_states'
 );
 
 const dragBlock = functionBlock('makeDraggable');
