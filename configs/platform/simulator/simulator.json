@@ -329,31 +329,6 @@
           "to": "FILE_OUT:in"
         }
       ]
-    },
-    {
-      "pipeline_id": "DSP_FILTER_COVERAGE",
-      "nodes": [
-        {
-          "node_id": "FILE_IN",
-          "name": "File Input DSP Filter",
-          "module_type": "builtin.file_input",
-          "params": {
-            "enable": true,
-            "file_path": "",
-            "loop": true
-          },
-          "ui": {
-            "dx": -185,
-            "dy": 0
-          }
-        }
-      ],
-      "edges": [
-        {
-          "from": "FILE_IN:out",
-          "to": "HOST_IN:in"
-        }
-      ]
     }
   ],
   "presets": [

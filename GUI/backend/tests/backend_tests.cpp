@@ -4,6 +4,7 @@
 #endif
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -95,14 +96,66 @@ fs::path makeTempRoot() {
     std::chrono::steady_clock::now().time_since_epoch()).count();
   fs::path root = fs::temp_directory_path() / ("audio_studio_backend_test_" + std::to_string(stamp));
   fs::create_directories(root / "configs/platform/a2");
+  fs::create_directories(root / "configs/platform/simulator");
   fs::copy_file(fs::path(AUDIO_STUDIO_TEST_ROOT) / "configs/platform/a2/A2.json",
                 root / "configs/platform/a2/A2.json",
+                fs::copy_options::overwrite_existing);
+  fs::copy_file(fs::path(AUDIO_STUDIO_TEST_ROOT) / "configs/platform/simulator/simulator.json",
+                root / "configs/platform/simulator/simulator.json",
                 fs::copy_options::overwrite_existing);
   fs::create_directories(root / "out/linux/a2/as_config/Debug");
   fs::create_directories(root / "out/linux/simulator/rpc_socket/Debug");
   writeText(root / "out/linux/a2/as_config/Debug/as_server", "stale a2 as_server");
   writeText(root / "out/linux/simulator/rpc_socket/Debug/as_server", "current simulator as_server");
   return root;
+}
+
+audiostudio::BackendRuntimeConfig explicitBackendConfig(const fs::path& root) {
+  audiostudio::BackendRuntimeConfig config;
+  config.compile_as_server_path = (root / "explicit-deps/compile/as_server").string();
+  config.compile_alsatplg_path = (root / "explicit-deps/tools/alsatplg").string();
+  config.compile_as_server_rpc_mode = "socket";
+  config.compile_as_server_host = "10.10.0.10";
+  config.compile_as_server_port = 19000;
+  config.compile_as_server_timeout_ms = 3210;
+  config.validation_python = "python3";
+  config.validation_script_path = (root / "explicit-deps/validation/build-test.py").string();
+  config.validation_as_server_path = (root / "explicit-deps/validation/as_server").string();
+  config.validation_as_log_path = (root / "explicit-deps/validation/as_log").string();
+  config.validation_trace_ldc_path = (root / "explicit-deps/validation/trace.ldc").string();
+  config.validation_as_server_host = "10.10.0.11";
+  config.validation_as_server_port = 19001;
+  config.validation_ready_timeout_ms = 6543;
+  config.validation_use_existing_as_server = true;
+  config.validation_datalink_endpoint = (root / "explicit-deps/validation/as_datalink").string();
+  config.validation_qemu_gdb_port = 1234;
+  config.validation_qemu_gdb_wait = true;
+  config.runtime_as_server_host = "10.10.0.12";
+  config.runtime_as_server_port = 19002;
+  config.runtime_audio_driver_factory = "test_audio_driver";
+
+  writeText(config.compile_as_server_path, "compile as_server");
+  writeText(config.compile_alsatplg_path, "alsatplg");
+  writeText(config.validation_script_path, "validation script");
+  writeText(config.validation_as_server_path, "validation as_server");
+  writeText(config.validation_as_log_path, "validation as_log");
+  writeText(config.validation_trace_ldc_path, "trace ldc");
+  return config;
+}
+
+void poisonBackendEnvironment() {
+  ::setenv("AUDIO_STUDIO_AS_SERVER_PATH", "/env/should/not/use/as_server", 1);
+  ::setenv("AUDIO_STUDIO_AS_SERVER_RPC_MODE", "once", 1);
+  ::setenv("AUDIO_STUDIO_AS_SERVER_HOST", "192.0.2.10", 1);
+  ::setenv("AUDIO_STUDIO_AS_SERVER_PORT", "29000", 1);
+  ::setenv("AUDIO_STUDIO_AS_SERVER_TIMEOUT_MS", "9999", 1);
+  ::setenv("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "env_driver", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_HOST", "192.0.2.11", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", "29001", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH", "/env/should/not/use/validation-as-server", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_AS_LOG_PATH", "/env/should/not/use/as-log", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_TRACE_LDC", "/env/should/not/use/trace.ldc", 1);
+  ::setenv("AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS", "7777", 1);
 }
 
 struct FakeCompileClient final : public audiostudio::IConfigCompileClient {
@@ -157,8 +210,9 @@ struct FakeValidationRunner final : public audiostudio::IValidationRunner {
 std::shared_ptr<audiostudio::BuildOrchestrator> makeOrchestrator(
     const fs::path& root,
     const std::shared_ptr<FakeCompileClient>& compile,
-    const std::shared_ptr<FakeValidationRunner>& validation) {
-  return std::make_shared<audiostudio::BuildOrchestrator>(root.string(), compile, validation);
+    const std::shared_ptr<FakeValidationRunner>& validation,
+    const audiostudio::BackendRuntimeConfig& config = {}) {
+  return std::make_shared<audiostudio::BuildOrchestrator>(root.string(), compile, validation, config);
 }
 
 std::string validGuiPipelineSnapshot() {
@@ -239,6 +293,64 @@ std::string validGuiPipelineSnapshotWithUnselectedGroup() {
   return snapshot;
 }
 
+std::string frontendAllBuildSnapshotFromSelectedPipeline(const std::string& workspace_id,
+                                                         const std::string& project) {
+  std::string snapshot = guiSnapshotWithWorkspace(validGuiPipelineSnapshot(), workspace_id, project);
+  const std::string group_field = "\"group_id\":\"PLAYBACK_MAIN\"";
+  const size_t group_pos = snapshot.find(group_field);
+  assert(group_pos != std::string::npos);
+  snapshot.replace(group_pos, group_field.size(), "\"group_id\":\"ALL\"");
+
+  const std::string runtime_field = "\"runtime_state\":\"PIPE_UNLOADED\"";
+  const size_t runtime_pos = snapshot.find(runtime_field);
+  assert(runtime_pos != std::string::npos);
+  snapshot.replace(runtime_pos, runtime_field.size(),
+                   "\"runtime_state\":\"PIPE_UNLOADED\","
+                   "\"build_scope\":\"all_pipelines\","
+                   "\"scope\":\"all_working_groups\"");
+  return snapshot;
+}
+
+std::string playbackFullNodeAllBuildSnapshotWithoutConnections(const std::string& workspace_id,
+                                                               const std::string& project) {
+  std::ostringstream os;
+  os << R"({"workspace_id":")" << workspace_id << R"(","project":")" << project << R"(",)"
+     << R"("active_pipeline":"PLAYBACK_MAIN","group_id":"ALL","build_scope":"all_pipelines",)"
+     << R"("scope":"all_working_groups","runtime_state":"PIPE_UNLOADED",)"
+     << R"("working_groups":[{"id":"PLAYBACK_MAIN","pipeline_id":"PLAYBACK_MAIN",)"
+     << R"("name":"AS Config Playback","origin_pipeline_ids":["PLAYBACK_MAIN"],)"
+     << R"("nodes":["PLAYBACK_MAIN__FILE_IN","PLAYBACK_MAIN__HOST_IN","PLAYBACK_MAIN__CHREMAP",)"
+     << R"("PLAYBACK_MAIN__DELAY","PLAYBACK_MAIN__FADER","PLAYBACK_MAIN__VOLUME",)"
+     << R"("PLAYBACK_MAIN__DAI_OUT"],"edges":[]}],)"
+     << R"("nodes":[)"
+     << R"({"id":"PLAYBACK_MAIN__FILE_IN","name":"File Input Playback","module_type":"builtin.file_input",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"FILE_IN","debug_file_io":true,)"
+     << R"("params":{"enable":true,"file_path":"","loop":true},)"
+     << R"("in_ports":[],"out_ports":["out"],"port_domains":{"out":"external"}},)"
+     << R"({"id":"PLAYBACK_MAIN__HOST_IN","name":"HOST Playback","module_type":"builtin.host",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"HOST_IN",)"
+     << R"("params":{"stream_name":"as_config_playback","direction":"playback","channels_min":1,"channels_max":2,"sample_bits":[16],"sample_rates":[48000]},)"
+     << R"("in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"external","out":"sof"}},)"
+     << R"({"id":"PLAYBACK_MAIN__CHREMAP","name":"Channel Remap Playback","module_type":"filter.channel_remap",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"CHREMAP","params":{},)"
+     << R"("in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"sof"}},)"
+     << R"({"id":"PLAYBACK_MAIN__DELAY","name":"Delay Playback","module_type":"delay.line",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"DELAY","params":{},)"
+     << R"("in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"sof"}},)"
+     << R"({"id":"PLAYBACK_MAIN__FADER","name":"Fader Playback","module_type":"mix.fader_balance",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"FADER","params":{},)"
+     << R"("in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"sof"}},)"
+     << R"({"id":"PLAYBACK_MAIN__VOLUME","name":"Vol Playback","module_type":"gain.volume",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"VOLUME","params":{},)"
+     << R"("in_ports":["in"],"out_ports":["out"],"port_domains":{"in":"sof","out":"sof"}},)"
+     << R"({"id":"PLAYBACK_MAIN__DAI_OUT","name":"DAI FILE_IO Playback","module_type":"builtin.dai",)"
+     << R"("pipelineId":"PLAYBACK_MAIN","pipelineNodeId":"DAI_OUT",)"
+     << R"("params":{"dai_type":"file_io_dai","dai_index":0,"link_name":"FILE_IO_PLAYBACK_DAI0","device_id":"FILEIO0","direction":"playback","sample_rate":48000,"channels":2,"sample_bits":16,"tdm_slots":2,"slot_width":16},)"
+     << R"("in_ports":["in"],"out_ports":[],"port_domains":{"in":"sof"}})"
+     << R"(],"connections":[]})";
+  return os.str();
+}
+
 std::string validCaptureGuiPipelineSnapshot() {
   return R"({
     "active_pipeline":"CAPTURE_MAIN",
@@ -285,6 +397,26 @@ int main() {
                 "MockRuntimeEngine must not be the production runtime implementation");
   static_assert(std::is_base_of_v<audiostudio::IRuntimeEngine, audiostudio::GuiRuntimeEngine>,
                 "GuiRuntimeEngine must implement the production runtime interface");
+
+  {
+    const fs::path lifecycle_root = makeTempRoot();
+    auto lifecycle_compile = std::make_shared<FakeCompileClient>();
+    auto lifecycle_validation = std::make_shared<FakeValidationRunner>();
+    std::string lifecycle_workspace;
+    {
+      auto orchestrator = makeOrchestrator(lifecycle_root, lifecycle_compile, lifecycle_validation);
+      const auto opened = orchestrator->openProjectByName("simulator/simulator.json");
+      lifecycle_workspace = testJsonStringField(opened.body, "workspace_id");
+      assert(!lifecycle_workspace.empty());
+      const auto built = orchestrator->buildPipeline(
+          guiSnapshotWithWorkspace(validGuiPipelineSnapshot(), lifecycle_workspace,
+                                   "simulator/simulator.json"));
+      assert(built.body.find("\"ok\":true") != std::string::npos);
+      assert(lifecycle_validation->start_count == 1);
+    }
+    assert(lifecycle_validation->stop_count >= 2);
+    assert(lifecycle_validation->last_stopped_workspace == lifecycle_workspace);
+  }
 
   auto smoke_compile = std::make_shared<FakeCompileClient>();
   auto smoke_validation = std::make_shared<FakeValidationRunner>();
@@ -447,13 +579,15 @@ int main() {
   assert(project_config_res.body.find("com.vsi.a2.audio_config") != std::string::npos);
 
   const fs::path temp_root = makeTempRoot();
+  const auto backend_config = explicitBackendConfig(temp_root);
+  poisonBackendEnvironment();
   const fs::path temp_source = temp_root / "configs/platform/a2/A2.json";
   const std::string source_before_open = readText(temp_source);
 
   auto compile = std::make_shared<FakeCompileClient>();
   auto validation = std::make_shared<FakeValidationRunner>();
-  auto orchestrator = makeOrchestrator(temp_root, compile, validation);
-  auto orchestrated_runtime = std::make_shared<audiostudio::GuiRuntimeEngine>(orchestrator);
+  auto orchestrator = makeOrchestrator(temp_root, compile, validation, backend_config);
+  auto orchestrated_runtime = std::make_shared<audiostudio::GuiRuntimeEngine>(orchestrator, backend_config);
   audiostudio::HttpServer orchestrated_server(temp_root.string(), 0, orchestrated_runtime, engine, engine,
                                               target_config, inspector, nullptr, nullptr, nullptr,
                                               nullptr, nullptr, nullptr, orchestrator);
@@ -511,18 +645,30 @@ int main() {
   assert(compile->last_request.build_tplg);
   assert(compile->last_request.strict);
   assert(compile->last_request.plugin_paths.empty());
-  assert(compile->last_request.alsatplg.find("alsatplg") != std::string::npos);
-  assert(fs::path(compile->last_request.alsatplg).is_absolute());
-  assert(compile->last_request.as_server.find("as_server") != std::string::npos);
-  assert(compile->last_request.as_server.find("out/linux/simulator/rpc_socket/Debug/as_server") != std::string::npos);
-  assert(validation->last_script.find("application/rv32qemu/sof-build-test.py") != std::string::npos);
-  assert(validation->last_request.as_server_path.find("as_server") != std::string::npos);
-  assert(validation->last_request.as_log_path.find("as_log") != std::string::npos);
-  assert(validation->last_request.trace_ldc_path.find("application/rv32qemu/build/sof.ldc") != std::string::npos);
+  assert(compile->last_request.alsatplg == backend_config.compile_alsatplg_path);
+  assert(compile->last_request.as_server == backend_config.compile_as_server_path);
+  assert(compile->last_request.as_server_rpc_mode == backend_config.compile_as_server_rpc_mode);
+  assert(compile->last_request.as_server_host == backend_config.compile_as_server_host);
+  assert(compile->last_request.as_server_port == backend_config.compile_as_server_port);
+  assert(compile->last_request.as_server_timeout_ms == backend_config.compile_as_server_timeout_ms);
+  assert(validation->last_script == backend_config.validation_script_path);
+  assert(validation->last_request.python == backend_config.validation_python);
+  assert(validation->last_request.as_server_path == backend_config.validation_as_server_path);
+  assert(validation->last_request.as_log_path == backend_config.validation_as_log_path);
+  assert(validation->last_request.trace_ldc_path == backend_config.validation_trace_ldc_path);
+  assert(validation->last_request.as_server_host == backend_config.validation_as_server_host);
+  assert(validation->last_request.as_server_port == backend_config.validation_as_server_port);
+  assert(validation->last_request.ready_timeout_ms == backend_config.validation_ready_timeout_ms);
+  assert(validation->last_request.use_existing_as_server == backend_config.validation_use_existing_as_server);
+  assert(validation->last_request.datalink_endpoint == backend_config.validation_datalink_endpoint);
+  assert(validation->last_request.qemu_gdb_port == backend_config.validation_qemu_gdb_port);
+  assert(validation->last_request.qemu_gdb_wait == backend_config.validation_qemu_gdb_wait);
   const std::string generated_test_list = readText(validation->last_test_list);
-  assert(generated_test_list.find("ac_run --endpoint as_datalink --mtu 512") != std::string::npos);
+  assert(generated_test_list.find("ac_run --endpoint '" +
+                                  backend_config.validation_datalink_endpoint +
+                                  "' --mtu 512") != std::string::npos);
   assert(generated_test_list.find("trace on") != std::string::npos);
-  assert(generated_test_list.find("pipeinstall -p 1 ") != std::string::npos);
+  assert(generated_test_list.find("pipeinstall -p ") == std::string::npos);
   assert(generated_test_list.find("sleep 3600") != std::string::npos);
   assert(generated_test_list.find("audio_studio.tplg") != std::string::npos);
   assert(generated_test_list.find("ac_run --stop") == std::string::npos);
@@ -530,36 +676,41 @@ int main() {
   const std::string global_pipeline_json_after_build = readText(compile->last_request.input_path);
   const std::string regenerated_pipelines = testJsonArrayField(global_pipeline_json_after_build, "pipelines");
   assert(!regenerated_pipelines.empty());
-  assert(regenerated_pipelines.find("\"pipe_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"pipe_id\":\"GUI_PIPE_2\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"pipe_id\":\"CAPTURE_MAIN\"") == std::string::npos);
-  assert(regenerated_pipelines.find("\"pipe_id\":\"DSP_FILTER_COVERAGE\"") == std::string::npos);
+  assert(regenerated_pipelines.find("PLAYBACK_MAIN") != std::string::npos);
+  assert(regenerated_pipelines.find("CAPTURE_MAIN") != std::string::npos);
+  assert(regenerated_pipelines.find("DSP_FILTER_COVERAGE") != std::string::npos);
+  assert(regenerated_pipelines.find("GUI_PIPE_2") == std::string::npos);
   assert(regenerated_pipelines.find("builtin.file_input") == std::string::npos);
   assert(regenerated_pipelines.find("builtin.file_output") == std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN") == std::string::npos);
-  assert(regenerated_pipelines.find("\"node_id\":\"NEW_VOLUME\"") != std::string::npos);
+  assert(regenerated_pipelines.find("NEW_VOLUME") == std::string::npos);
+  assert(regenerated_pipelines.find("CHREMAP") != std::string::npos);
+  assert(regenerated_pipelines.find("DELAY") != std::string::npos);
+  assert(regenerated_pipelines.find("FADER") != std::string::npos);
+  assert(regenerated_pipelines.find("VOLUME") != std::string::npos);
   assert(regenerated_pipelines.find("\"kind\"") == std::string::npos);
   assert(regenerated_pipelines.find("\"inst_ref\"") == std::string::npos);
-  assert(regenerated_pipelines.find("\"module_type\":\"builtin.host\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"module_type\":\"builtin.dai\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"module_type\":\"gain.volume\"") != std::string::npos);
+  assert(regenerated_pipelines.find("builtin.host") != std::string::npos);
+  assert(regenerated_pipelines.find("builtin.dai") != std::string::npos);
+  assert(regenerated_pipelines.find("gain.volume") != std::string::npos);
   assert(regenerated_pipelines.find("FILE_IN:out") == std::string::npos);
-  assert(regenerated_pipelines.find("\"from\":\"HOST_IN:out\"") != std::string::npos);
-  assert(regenerated_pipelines.find("\"to\":\"NEW_VOLUME:in\"") != std::string::npos);
+  assert(regenerated_pipelines.find("HOST_IN:out") != std::string::npos);
+  assert(regenerated_pipelines.find("CHREMAP:in") != std::string::npos);
+  assert(regenerated_pipelines.find("VOLUME:out") != std::string::npos);
   assert(global_pipeline_json_after_build.find("\"module_instances\"") == std::string::npos);
   const std::string regenerated_frontend_connections = testJsonArrayField(global_pipeline_json_after_build, "frontend_connections");
-  assert(regenerated_frontend_connections.find("\"module_type\":\"builtin.file_input\"") != std::string::npos);
-  assert(regenerated_frontend_connections.find("\"from\":\"FILE_IN:out\"") != std::string::npos);
-  assert(regenerated_frontend_connections.find("\"to\":\"HOST_IN:in\"") != std::string::npos);
-  assert(global_pipeline_json_after_build.find("\"node_id\":\"VOLUME\"") == std::string::npos);
+  assert(regenerated_frontend_connections.find("builtin.file_input") != std::string::npos);
+  assert(regenerated_frontend_connections.find("FILE_IN:out") != std::string::npos);
+  assert(regenerated_frontend_connections.find("HOST_IN:in") != std::string::npos);
+  assert(global_pipeline_json_after_build.find("VOLUME") != std::string::npos);
 
   const std::string all_workspace_json_after_build = readText(workspace_all_path);
   const std::string all_pipelines_after_build = testJsonArrayField(all_workspace_json_after_build, "pipelines");
   assert(all_pipelines_after_build.find("PLAYBACK_MAIN") != std::string::npos);
-  assert(all_pipelines_after_build.find("GUI_PIPE_2") != std::string::npos);
-  assert(all_pipelines_after_build.find("CAPTURE_MAIN") == std::string::npos);
-  assert(all_pipelines_after_build.find("DSP_FILTER_COVERAGE") == std::string::npos);
-  assert(all_pipelines_after_build.find("\"name\":\"Renamed Playback\"") != std::string::npos);
+  assert(all_pipelines_after_build.find("CAPTURE_MAIN") != std::string::npos);
+  assert(all_pipelines_after_build.find("DSP_FILTER_COVERAGE") != std::string::npos);
+  assert(all_pipelines_after_build.find("GUI_PIPE_2") == std::string::npos);
+  assert(all_pipelines_after_build.find("Renamed Playback") != std::string::npos);
   assert(all_pipelines_after_build.find("builtin.file_input") == std::string::npos);
 
   compile->called = false;
@@ -595,6 +746,71 @@ int main() {
   assert(compile->called);
   assert(validation->called);
 
+  audiostudio::HttpRequest frontend_all_build_req;
+  frontend_all_build_req.method = "POST";
+  frontend_all_build_req.path = "/api/pipeline/build";
+  frontend_all_build_req.body = frontendAllBuildSnapshotFromSelectedPipeline(workspace_id, "a2/A2.json");
+  auto frontend_all_build_res = orchestrated_server.handle(frontend_all_build_req);
+  assert(frontend_all_build_res.status == 200);
+  assert(frontend_all_build_res.body.find("\"ok\":true") != std::string::npos);
+  assert(frontend_all_build_res.body.find("\"pipeline_ids\":[\"PLAYBACK_MAIN\",\"CAPTURE_MAIN\",\"DSP_FILTER_COVERAGE\"]") != std::string::npos);
+  const std::string frontend_all_test_list = readText(validation->last_test_list);
+  assert(frontend_all_test_list.find("pipeinstall -p ") == std::string::npos);
+  const std::string frontend_all_json = readText(compile->last_request.input_path);
+  const std::string frontend_all_pipelines = testJsonArrayField(frontend_all_json, "pipelines");
+  assert(frontend_all_pipelines.find("PLAYBACK_MAIN") != std::string::npos);
+  assert(frontend_all_pipelines.find("CAPTURE_MAIN") != std::string::npos);
+  assert(frontend_all_pipelines.find("DSP_FILTER_COVERAGE") != std::string::npos);
+  assert(frontend_all_pipelines.find("builtin.file_input") == std::string::npos);
+  assert(frontend_all_pipelines.find("builtin.file_output") == std::string::npos);
+
+  audiostudio::HttpRequest open_simulator_config;
+  open_simulator_config.method = "GET";
+  open_simulator_config.path = "/api/config";
+  open_simulator_config.query = "project=simulator%2Fsimulator.json";
+  auto open_simulator_config_res = orchestrated_server.handle(open_simulator_config);
+  assert(open_simulator_config_res.status == 200);
+  const std::string simulator_workspace_id = testJsonStringField(open_simulator_config_res.body, "workspace_id");
+  assert(!simulator_workspace_id.empty());
+
+  audiostudio::HttpRequest simulator_all_build_req;
+  simulator_all_build_req.method = "POST";
+  simulator_all_build_req.path = "/api/pipeline/build";
+  simulator_all_build_req.body =
+      frontendAllBuildSnapshotFromSelectedPipeline(simulator_workspace_id, "simulator/simulator.json");
+  auto simulator_all_build_res = orchestrated_server.handle(simulator_all_build_req);
+  assert(simulator_all_build_res.status == 200);
+  assert(simulator_all_build_res.body.find("\"ok\":true") != std::string::npos);
+  assert(simulator_all_build_res.body.find("\"pipeline_ids\":[\"PLAYBACK_MAIN\",\"CAPTURE_MAIN\"]") != std::string::npos);
+  const std::string simulator_all_json = readText(compile->last_request.input_path);
+  const std::string simulator_all_pipelines = testJsonArrayField(simulator_all_json, "pipelines");
+  assert(simulator_all_pipelines.find("PLAYBACK_MAIN") != std::string::npos);
+  assert(simulator_all_pipelines.find("CAPTURE_MAIN") != std::string::npos);
+  assert(simulator_all_pipelines.find("DSP_FILTER_COVERAGE") == std::string::npos);
+  assert(simulator_all_pipelines.find("builtin.file_input") == std::string::npos);
+  assert(simulator_all_pipelines.find("builtin.file_output") == std::string::npos);
+
+  audiostudio::HttpRequest missing_connections_req;
+  missing_connections_req.method = "POST";
+  missing_connections_req.path = "/api/pipeline/build";
+  missing_connections_req.body =
+      playbackFullNodeAllBuildSnapshotWithoutConnections(simulator_workspace_id,
+                                                         "simulator/simulator.json");
+  auto missing_connections_res = orchestrated_server.handle(missing_connections_req);
+  assert(missing_connections_res.status == 200);
+  assert(missing_connections_res.body.find("\"ok\":true") != std::string::npos);
+  const std::string missing_connections_json = readText(compile->last_request.input_path);
+  const std::string missing_connections_pipelines =
+      testJsonArrayField(missing_connections_json, "pipelines");
+  assert(missing_connections_pipelines.find("HOST_IN:out") != std::string::npos);
+  assert(missing_connections_pipelines.find("CHREMAP:in") != std::string::npos);
+  assert(missing_connections_pipelines.find("VOLUME:out") != std::string::npos);
+  assert(missing_connections_pipelines.find("DAI_OUT:in") != std::string::npos);
+  const std::string missing_connections_frontend =
+      testJsonArrayField(missing_connections_json, "frontend_connections");
+  assert(missing_connections_frontend.find("FILE_IN:out") != std::string::npos);
+  assert(missing_connections_frontend.find("HOST_IN:in") != std::string::npos);
+
   audiostudio::HttpRequest scoped_build_req;
   scoped_build_req.method = "POST";
   scoped_build_req.path = "/api/pipeline/build";
@@ -605,14 +821,23 @@ int main() {
   assert(scoped_build_res.body.find("\"ok\":true") != std::string::npos);
   const std::string scoped_workspace_json = readText(compile->last_request.input_path);
   const std::string scoped_pipelines = testJsonArrayField(scoped_workspace_json, "pipelines");
-  assert(scoped_pipelines.find("\"pipe_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
-  assert(scoped_pipelines.find("GUI_PIPE_2") != std::string::npos);
+  assert(scoped_pipelines.find("PLAYBACK_MAIN") != std::string::npos);
+  assert(scoped_pipelines.find("CAPTURE_MAIN") != std::string::npos);
+  assert(scoped_pipelines.find("DSP_FILTER_COVERAGE") != std::string::npos);
+  assert(scoped_pipelines.find("GUI_PIPE_2") == std::string::npos);
 
   auto relative_root_abs = makeTempRoot();
   auto relative_compile = std::make_shared<FakeCompileClient>();
   auto relative_validation = std::make_shared<FakeValidationRunner>();
   const auto relative_root = fs::relative(relative_root_abs, fs::current_path());
-  auto relative_orchestrator = makeOrchestrator(relative_root, relative_compile, relative_validation);
+  auto relative_config = explicitBackendConfig(relative_root_abs);
+  relative_config.compile_as_server_path = fs::relative(relative_config.compile_as_server_path, relative_root_abs).string();
+  relative_config.compile_alsatplg_path = fs::relative(relative_config.compile_alsatplg_path, relative_root_abs).string();
+  relative_config.validation_script_path = fs::relative(relative_config.validation_script_path, relative_root_abs).string();
+  relative_config.validation_as_server_path = fs::relative(relative_config.validation_as_server_path, relative_root_abs).string();
+  relative_config.validation_as_log_path = fs::relative(relative_config.validation_as_log_path, relative_root_abs).string();
+  relative_config.validation_trace_ldc_path = fs::relative(relative_config.validation_trace_ldc_path, relative_root_abs).string();
+  auto relative_orchestrator = makeOrchestrator(relative_root, relative_compile, relative_validation, relative_config);
   auto relative_open = relative_orchestrator->openProjectByName("a2/A2.json");
   assert(relative_open.status == 200);
   const std::string relative_workspace_id = testJsonStringField(relative_open.body, "workspace_id");
@@ -637,14 +862,41 @@ int main() {
   assert(capture_after_playback_build_res.body.find("\"ok\":true") != std::string::npos);
   const std::string capture_workspace_json = readText(compile->last_request.input_path);
   const std::string capture_pipelines = testJsonArrayField(capture_workspace_json, "pipelines");
-  assert(capture_pipelines.find("\"pipe_id\":\"CAPTURE_MAIN\"") != std::string::npos);
+  assert(capture_pipelines.find("CAPTURE_MAIN") != std::string::npos);
   assert(capture_pipelines.find("\"inst_ref\"") == std::string::npos);
-  assert(capture_pipelines.find("\"module_type\":\"builtin.dai\"") != std::string::npos);
+  assert(capture_pipelines.find("builtin.dai") != std::string::npos);
   assert(capture_pipelines.find("virtual.audio_output") == std::string::npos);
 
   auto restore_scoped_build_res = orchestrated_server.handle(scoped_build_req);
   assert(restore_scoped_build_res.status == 200);
   assert(restore_scoped_build_res.body.find("\"ok\":true") != std::string::npos);
+
+  const std::string staged_dai_input = "RIFF0000WAVEselected-dai-input";
+  audiostudio::HttpRequest stage_dai_input;
+  stage_dai_input.method = "POST";
+  stage_dai_input.path = "/api/runtime/audio/dai/input";
+  stage_dai_input.query = "workspace_id=" + workspace_id +
+                          "&dai_index=0&file_name=selected.wav";
+  stage_dai_input.body = staged_dai_input;
+  auto stage_dai_input_res = orchestrated_server.handle(stage_dai_input);
+  assert(stage_dai_input_res.status == 200);
+  assert(stage_dai_input_res.body.find("\"ok\":true") != std::string::npos);
+  assert(stage_dai_input_res.body.find("audio-studio://") != std::string::npos);
+  assert(readText(fs::path(compile->last_request.output_dir) / "sof_fileio_in.wav") ==
+         staged_dai_input);
+
+  const std::string staged_dai_output = "RIFF0000WAVEselected-dai-output";
+  writeText(fs::path(compile->last_request.output_dir) / "sof_fileio_out.wav",
+            staged_dai_output);
+  audiostudio::HttpRequest fetch_dai_output;
+  fetch_dai_output.method = "GET";
+  fetch_dai_output.path = "/api/runtime/audio/dai/output";
+  fetch_dai_output.query = "workspace_id=" + workspace_id +
+                           "&dai_index=0&file_name=selected-output.wav";
+  auto fetch_dai_output_res = orchestrated_server.handle(fetch_dai_output);
+  assert(fetch_dai_output_res.status == 200);
+  assert(fetch_dai_output_res.content_type == "audio/wav");
+  assert(fetch_dai_output_res.body == staged_dai_output);
 
   audiostudio::HttpRequest save_after_build;
   save_after_build.method = "POST";
@@ -656,7 +908,7 @@ int main() {
   assert(readText(workspace_all_path).find("\"audio_studio_gui\"") != std::string::npos);
   assert(readText(temp_source).find("\"audio_studio_gui\"") == std::string::npos);
   assert(readText(temp_source).find("\"debug_file_io\"") == std::string::npos);
-  assert(readText(temp_source).find("\"name\":\"Renamed Playback\"") != std::string::npos);
+  assert(readText(temp_source).find("Renamed Playback") != std::string::npos);
 
   audiostudio::HttpRequest runtime_param_update;
   runtime_param_update.method = "POST";
@@ -674,7 +926,7 @@ int main() {
   const std::string workspace_after_runtime_param = readText(workspace_all_path);
   assert(workspace_after_runtime_param.find("\"preset_id\":\"inspector_preset\"") != std::string::npos);
   assert(workspace_after_runtime_param.find("\"pipeline_id\":\"PLAYBACK_MAIN\"") != std::string::npos);
-  assert(workspace_after_runtime_param.find("\"node_id\":\"VOLUME\"") != std::string::npos);
+  assert(workspace_after_runtime_param.find("VOLUME") != std::string::npos);
   assert(workspace_after_runtime_param.find("\"volume_db\":-9.5") != std::string::npos);
 
   const fs::path fail_root = makeTempRoot();

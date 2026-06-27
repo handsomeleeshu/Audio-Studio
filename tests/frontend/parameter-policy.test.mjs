@@ -30,6 +30,10 @@ assert.equal(indexHtml.includes('stopped: { label:'), false, 'stopped must not r
 assert.equal(/['"]RUNTIME['"]/.test(indexHtml), false, 'runtime gating must not use the legacy RUNTIME state token');
 assert.ok(indexHtml.includes('ensureInspectorPreset'), 'Inspector should find/create inspector_preset');
 assert.ok(indexHtml.includes("preset_id: 'inspector_preset'"), 'Inspector preset id should be stable');
+assert.equal(indexHtml.includes('if (states.includes(RUNTIME_STATES.PIPE_LOADED)) return status === RUNTIME_STATES.PIPE_LOADED;'), false,
+  'PIPE_LOADED must not disable params that explicitly allow PIPE_UNLOADED');
+assert.ok(indexHtml.includes('return states.includes(status);'),
+  'parameter enablement should use the settable_states runtime-state set directly');
 assert.ok(indexHtml.includes('debug_file_io'), 'snapshot should carry debug file I/O outside as_config payload');
 assert.ok(indexHtml.includes('applyBuildDiagnostics'), 'build diagnostics should mark nodes and ports');
 assert.ok(indexHtml.includes("id === 'builtin.host'"), 'debug file I/O connection policy should recognize host modules');
@@ -53,6 +57,7 @@ assert.ok(daiType.parameters.some(p => p.param_id === 'dai_type' && p.value_type
 assert.ok(daiType.parameters.some(p => p.param_id === 'dai_index' && p.value_type === 'uint8'));
 assert.ok(daiType.parameters.some(p => p.param_id === 'link_name' && p.value_type === 'string'));
 assert.ok(daiType.parameters.some(p => p.param_id === 'tdm_slots' && p.value_type === 'uint8'));
+assert.ok(daiType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_io'));
 const fileInputType = builtin.module_types.find(mt => mt.type_id === 'builtin.file_input');
 const fileOutputType = builtin.module_types.find(mt => mt.type_id === 'builtin.file_output');
 assert.ok(fileInputType.parameters.some(p => p.param_id === 'file_path' && p.value_type === 'file_io'));

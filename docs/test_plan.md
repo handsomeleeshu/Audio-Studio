@@ -1,36 +1,118 @@
 # Test Plan
 
-## 已包含测试
+本文列出当前 Audio Studio 必须保持通过的测试面。新增功能优先补 contract，再接入 E2E。
 
-### Frontend Logic Tests
+## Frontend Logic
 
 ```bash
+node tests/frontend/gui-runtime-contract.test.mjs
+node tests/frontend/parameter-policy.test.mjs
+node tests/frontend/pipeline-runtime-build-button.test.mjs
 ./scripts/run_tests.sh
 ```
 
 覆盖：
 
-- 产品 JSON module registry 构建。
-- Pipeline 预加载。
-- 多 input/output 端口解析。
-- Auto Arrange 最小距离。
-- 静态/动态参数分类。
-- 新版统一 `parameters` 模型根据 `apply.settable_states` 映射为 static/runtime 默认值。
-- 参数类型和 UI 策略基础校验。
+- `pipelines[] + frontend_connections[]` layout 渲染。
+- Build 全量 pipeline 语义。
+- RUN/STOP 独立 pipeline 语义。
+- File Input/Output 的前端状态机。
+- `PIPE_UNLOADED/PIPE_LOADED/PIPE_RUNNING` 参数置灰。
+- 运行中参数更新调用 `/api/param/update`。
+- Dashboard 不在前端伪造 runtime 数据。
 
-前端逻辑测试运行在当前 host Node 环境，测试入口和被直接 import 的 `GUI/frontend/assets/js` 逻辑模块保持 Node 12 可解析语法，避免 `node:` builtin import、optional chaining 和 nullish coalescing 导致 `run_tests.sh` 在旧 Node 上失败。
-
-### Backend Tests
+## Backend Contracts
 
 ```bash
-ctest --test-dir build --output-on-failure
+python3 tests/system-info-runtime-contract.test.py
+python3 tests/backend-process-lifecycle-contract.test.py
+python3 tests/vscode-qemu-debug-contract.test.py
+ctest --test-dir out/linux/simulator/gui_backend/Debug --output-on-failure
 ```
 
 覆盖：
 
-- validate/build/run/stop/telemetry mock runtime。
+- System Info 驱动 PER-ALGORITHM COST、DSP CORE LOADING、SYSTEM HEALTH。
+- heap rows 展开到 category/index/block size/free_count/total_count。
+- queue/backpressure/blocked edge 语义。
+- 100ms 无 buffer consumed 的 stall 判定。
+- backend 子进程 SIGINT/SIGTERM、FD_CLOEXEC、process group cleanup。
+- backend startup 从 argv/config 注入，不依赖环境变量。
+- VSCode full-stack debug 配置字段和 QEMU gdbstub 参数。
 
-### Build System Tests
+## Server / CLI / Framework
+
+```bash
+ctest --test-dir out/linux/simulator/driver_interface_tests/Debug --output-on-failure
+ctest --test-dir out/linux/simulator/rpc_socket/Debug --output-on-failure
+```
+
+覆盖：
+
+- `config.compile` strict compile。
+- product JSON -> tplg name shortening and decode validation。
+- log session / mirror session。
+- `ASINFO|` 被 System Info 拦截，不进入 as_log。
+- System Info heartbeat、module、buffer、heap parsing。
+- as_play/as_record/as_log CLI common behavior。
+
+## Audio Controller
+
+```bash
+ctest --test-dir out/linux/simulator/audio_controller/Debug --output-on-failure
+```
+
+覆盖：
+
+- slot 初始化传入 ops。
+- HOST PTABLE 两个 4K page。
+- 非 HOST PTABLE 保留 period/period_bytes sizing。
+- playback EOS tail drain/flush。
+- transport read/write framing。
+
+## GUI Simulator E2E
+
+```bash
+python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e2e-artifacts
+python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e2e-artifacts --no-stall-check
+```
+
+覆盖：
+
+- 使用 `configs/platform/simulator/simulator.json`。
+- frontend snapshot -> backend workspace -> as_server config.compile。
+- all pipeline build/load。
+- System Info connected and dashboard APIs。
+- as_log 可以读普通 decoded log 且不泄漏 ASINFO。
+- playback pipeline 连续 RUN 两次。
+- File Input -> GUI backend queue -> as_server -> audio_controller -> SOF FILE_IO_DAI output WAV。
+- QEMU SIGSTOP 触发 stall，恢复后继续。
+- capture pipeline File_IO_DAI input WAV -> as_server capture -> GUI File Output WAV。
+- unload cleanup。
+
+## VASS / SOF Side
+
+从 vass 根目录运行：
+
+```bash
+python3 Misc/sof_test/tests/test_audio_studio_info_contract.py
+python3 Misc/sof_test/tests/test_splay_host_buffer_contract.py
+python3 Misc/sof_test/tests/test_rv32qemu_file_io_capacity_contract.py
+python3 application/rv32qemu/sof-build-test.py -t Misc/sof_test/simple_test/tplg-splay-test-lists.txt
+python3 application/rv32qemu/sof-build-test.py -t Misc/sof_test/simple_test/rv32qemu-as-audio-controller-test-lists.txt --audio-controller-log --as-server Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server --as-log Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log --trace-ldc application/rv32qemu/build/sof.ldc
+python3 application/rv32qemu/sof-build-test.py -t Misc/sof_test/simple_test/rv32qemu-as-log-test-lists.txt --audio-controller-log --as-server Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server --as-log Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log --trace-ldc application/rv32qemu/build/sof.ldc
+```
+
+覆盖：
+
+- SOF `audio_studio` ASINFO trace contract。
+- splay HOST page sizing and tail drain。
+- rv32qemu FILE_IO DMA channel capacity for multi-pipeline simulator JSON。
+- baseline tplg pipeinstall + splay。
+- audio_controller log path。
+- long-running as_log trace path。
+
+## Build System
 
 ```bash
 python3 tests/build-system.test.py
@@ -38,55 +120,13 @@ python3 tests/build-system.test.py
 
 覆盖：
 
-- `scripts/build_all.sh` shell 入口用 OS 选择 toolchain，用 platform 选择 defconfig。
-- SOF-style `scripts/kconfig` 生成 `generated/.config` 与 `generated/include/autoconfig.h`。
-- Root `Kconfig` 通过 `source` 延伸到 `GUI/`、`server/`、`drivers/<module>/`、`rpc/`、`server/platform/`、`cli/`、`tests/` 等子目录。
-- Driver CMake 和 Kconfig 一样以模块目录为入口，例如 `drivers/audio/CMakeLists.txt` 与 `drivers/audio/Kconfig`；`src/` 目录只放实现源码。
-- Kconfig non-interactive targets：`olddefconfig`、`savedefconfig`、`alldefconfig`、`overrideconfig`、`*_defconfig`、`genconfig`。
-- `menuconfig` target 可由 CMake 暴露，自动测试只验证 target 存在，不打开 curses 交互界面。
-- Linux/GCC host `as_server` 最小程序 CMake configure/build。
-- `as_server --version` 与 `as_server --health` 输出 tool OS 和 target platform。
-- `--profile gui_backend -r` 构建 GUI/backend mock server，确认 `audio_studio_server` 与 `audio_studio_backend_tests` 产物存在，并运行 backend CTest。
-- `--profile driver_interface_tests` 构建全部 Linux host driver 测试实现，并运行 `driver_interface_tests` CTest。
-- `driver_interface_tests` 只 include `driver_manager.hpp`，通过 `DriverManager`、各 driver singleton Registry 和 public `I*` interface 覆盖 OS/socket/filesystem/pipe/dynlib/transport/audio/control/log/dump；不直接 include 或实例化 `linux_host_*` 实现类。
-- `--profile rpc_socket` 构建同一 platform 下的 `as_server` 与 CLI，启动 `as_server --rpc socket`，通过 `as_control --rpc socket` 调用 `server.health`。
-- `--profile rpc_pipe` 构建同一 platform 下的 `as_server` 与 CLI，启动 `as_server --rpc pipe`，通过 `as_control --rpc pipe` 调用 `server.health`。
-- `rpc_socket` 和 `rpc_pipe` build dir 都运行 CTest，覆盖对应 profile 下的 CLI common 单元测试。
-- Windows/MinGW 平台映射 dry-run；如果当前 host 安装了 `x86_64-w64-mingw32-g++`，同时编译 `out/windows/a2/as_server_minimal/Debug/as_server.exe`。
+- Kconfig/CMake profile wiring。
+- driver registry boundaries。
+- rpc_socket/rpc_pipe build profiles。
+- Windows/MinGW dry-run where available。
 
-### Server Host-Alone Tests
+## Future Additions
 
-```bash
-out/linux/a2/as_server_minimal/Debug/as_server --version
-out/linux/a2/as_server_minimal/Debug/as_server --health
-```
-
-覆盖：
-
-- 当前阶段验证独立 `server/as_server/main.cpp` 可按 OS/toolchain 与 Kconfig target platform 编译。
-- driver 层通过 `server/tests/driver_interface_tests.cpp` 覆盖 `DriverManager` 初始化、driver metadata、各模块 Registry，以及每个 `I*` interface 的 Linux host 测试实现。
-
-### CLI Host-Alone Tests
-
-```bash
-out/linux/a2/as_server_minimal/Debug/as_control --target dummy --action get-health
-out/linux/a2/as_server_minimal/Debug/as_play --target dummy --file demo.wav
-
-out/linux/a2/rpc_socket/Debug/as_server --rpc socket 127.0.0.1 18765 --max-requests 1
-out/linux/a2/rpc_socket/Debug/as_control --rpc socket --host 127.0.0.1 --port 18765 --action get-health
-
-out/linux/a2/rpc_pipe/Debug/as_server --rpc pipe /tmp/audio-studio.req /tmp/audio-studio.rsp --max-requests 1
-out/linux/a2/rpc_pipe/Debug/as_control --rpc pipe --request-pipe /tmp/audio-studio.req --response-pipe /tmp/audio-studio.rsp --action get-health
-```
-
-覆盖：
-
-- dummy mode 验证 CLI 参数解析和本地输出不依赖 server。
-- RPC mode 验证 CLI 通过 socket/pipe transport 与 as_server 进行 JSON-RPC 通信。
-
-## 建议后续增加
-
-- 浏览器 E2E：Playwright 检查拖拽、连线、参数修改。
-- JSON Schema 校验：module_types/pipelines/frontend_connections/presets。
-- DSP runtime contract test：验证 TLV 编码和算法参数下发。
-- Telemetry 压测：多节点、多 session、长时间运行。
+- Browser Playwright coverage for real file picker events when CI can expose browser file dialogs.
+- Long-run telemetry soak with repeated play/record cycles.
+- as_control real parameter apply once SOF control path is ready.

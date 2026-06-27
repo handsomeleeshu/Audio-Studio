@@ -732,6 +732,11 @@ int main() {
     assert(snapshot.buffers.size() == 1);
     assert(snapshot.buffers.front().consumed_bytes == 4700);
     assert(snapshot.buffers.front().stalled);
+    assert(system_info.consumeLogEntry({13, "info", "SOF",
+      "Suppressed 7 similar messages: ASINFO|module|id=%u|pipeline=%u|state=%d|core=%u", ""}));
+    snapshot = system_info.snapshot();
+    assert(snapshot.modules.size() == 1);
+    assert(snapshot.modules.front().node_id == "eq_1");
 
     system_info.setHeartbeatTimeoutForTesting(std::chrono::milliseconds(1));
     std::this_thread::sleep_for(std::chrono::milliseconds(3));
@@ -803,6 +808,32 @@ int main() {
     assert(pump_log_service.closeSession(mirror_session.session_id).ok());
     assert(pump_system_info.stopLogPump().ok());
     assert(!pump_system_info.logPumpRunning());
+
+    audio_studio::framework::log::LogService intercepted_log_service;
+    audio_studio::drivers::log::LogDeviceRegistry intercepted_registry;
+    assert(intercepted_registry.registerFactory(std::make_unique<ScriptedLogDeviceFactory>(
+      std::vector<std::vector<uint8_t>>{
+        std::vector<uint8_t>{'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','h','e','a','r','t','b','e','a','t','|','s','e','q','=','3','1','\n'},
+        std::vector<uint8_t>{'i','n','f','o','|','S','O','F','|','A','S','I','N','F','O','|','h','e','a','r','t','b','e','a','t','|','s','e','q','=','3','2','\n'}
+      })).ok());
+    intercepted_log_service.configureDeviceRegistry(&intercepted_registry);
+    intercepted_log_service.setEntryInterceptor([](const framework::log::LogEntry& entry) {
+      return entry.message.find("ASINFO|") == 0;
+    });
+    framework::log::LogSessionConfig intercepted_config;
+    intercepted_config.session_id = "intercepted-log";
+    intercepted_config.driver_factory = "scripted-log";
+    intercepted_config.source = "firmware";
+    framework::log::LogSessionInfo intercepted_session;
+    assert(intercepted_log_service.createSession(intercepted_config, intercepted_session).ok());
+    assert(intercepted_log_service.start(intercepted_session.session_id).ok());
+    std::vector<framework::log::LogEntry> intercepted_entries;
+    assert(intercepted_log_service.readEntries(intercepted_session.session_id, 64, intercepted_entries).ok());
+    assert(intercepted_entries.empty());
+    framework::log::LogSessionStats intercepted_stats;
+    assert(intercepted_log_service.getStats(intercepted_session.session_id, intercepted_stats).ok());
+    assert(intercepted_stats.raw_chunks_read == 1);
+    assert(intercepted_log_service.closeSession(intercepted_session.session_id).ok());
 
     audio_context->setSystemInfoService(&system_info);
     auto sys_snapshot = audio_client.call("systemInfo.snapshot");
@@ -1002,7 +1033,9 @@ int main() {
     assert(a2_conf.find("\"CAPTURE_MAIN VOLUME Mute\"") != std::string::npos);
     assert(a2_conf.find("\"CAPTURE_MAIN SRC Enable\"") != std::string::npos);
     assert(a2_conf.find("\"CAPTURE_MAIN SRC Dither\"") != std::string::npos);
-    assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Remap\"") == std::string::npos);
+    assert(a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN CHREMAP Channel Remap\"") != std::string::npos);
+    assert(a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN DELAY Delay Line\"") != std::string::npos);
+    assert(a2_conf.find("SectionControlBytes.\"PLAYBACK_MAIN FADER Fader Balance\"") != std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN CHREMAP Channel Layout\"") == std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN DELAY Max Delay\"") == std::string::npos);
     assert(a2_conf.find("\"PLAYBACK_MAIN FADER Balance\"") == std::string::npos);
@@ -1052,6 +1085,8 @@ int main() {
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"DELAY_LINE\"") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"FADER_BALANCE\"") != std::string::npos);
     assert(conf.find("SOF_TKN_PROCESS_TYPE \"DSP_FILTER\"") != std::string::npos);
+    assert(conf.find("\"PLAYBACK_MAIN DELAY Delay Line\"") != std::string::npos);
+    assert(conf.find("\"PLAYBACK_MAIN FADER Fader Balance\"") != std::string::npos);
     assert(conf.find("data [") != std::string::npos);
     const std::string private_payload = readFileText(output.private_bin_path);
     assert(private_payload.find("as-builtin-gain-volume-runtime-json-v1") != std::string::npos);
@@ -1067,6 +1102,10 @@ int main() {
     if (audio_studio::framework::config::kHostSupportsAlsaTplg) {
       const std::string alsatplg_log = readFileText(output.alsatplg_log_path);
       assert(alsatplg_log.find("ALSA lib") == std::string::npos);
+      if (output.tplg_decoded) {
+        const std::string decoded_conf = readFileText(output.tplg_decode_conf_path);
+        assert(decoded_conf.find("'FILE_IO_DSP_FILTER_DAI1' {\n\t\ttoken154 154\n\t\ttoken155 155") != std::string::npos);
+      }
     }
   }
 #endif

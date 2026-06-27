@@ -142,6 +142,7 @@ bool SystemInfoService::logPumpRunning() const {
 bool SystemInfoService::applyRecordLocked(const std::string& record) {
   if (!startsWith(record, kAudioStudioInfoPrefix)) return false;
   const std::string payload = record.substr(std::string(kAudioStudioInfoPrefix).size());
+  if (payload.find('%') != std::string::npos) return true;
   const auto parts = splitPipe(payload);
   if (parts.empty() || parts.front().empty()) return false;
 

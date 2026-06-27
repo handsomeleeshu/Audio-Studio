@@ -147,7 +147,10 @@ public:
   drivers::audio::AudioResult prepare(const drivers::audio::AudioStreamParams& params) {
     if (!open_ || !manager_) return drivers::audio::AudioResult::unavailable("simulator audio device is not open");
     auto status = validateStreamParams(params);
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      close();
+      return status;
+    }
     params_ = params;
     frame_bytes_ = static_cast<size_t>(params.channels) * static_cast<size_t>(params.bytes_per_sample);
 
@@ -159,9 +162,15 @@ public:
     framework::transport::TransportFrame response;
     status = manager_->sendSync(AC_TRANSPORT_CHANNEL_AUDIO_CONTROL, AC_TRANSPORT_AUDIO_CONFIG,
                                 payload, response, kAudioControlTimeoutMs);
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      close();
+      return status;
+    }
     status = transportPayloadStatus(response, "audio config failed");
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+      close();
+      return status;
+    }
     prepared_ = true;
     return drivers::audio::AudioResult::success();
   }

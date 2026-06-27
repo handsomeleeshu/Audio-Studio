@@ -312,18 +312,23 @@ framework::Status LogService::readEntries(const std::string& id, size_t max_entr
       break;
     }
     if (chunks.empty()) break;
+    const auto entries_before = entries.size();
+    bool stop_after_chunk = false;
     for (const auto& chunk : chunks) {
       if (sofLoggerEnabled(*session)) {
         status = appendRawTrace(*session, chunks);
         if (!status.ok()) return status;
         status = decodeSofTrace(*session, max_entries, entries);
         if (!status.ok()) return status;
+        if (entries.size() == entries_before && session->sof_decoded_pending.empty()) stop_after_chunk = true;
         break;
       } else {
         const std::string text(chunk.bytes.begin(), chunk.bytes.end());
         parseTextLines(*session, text, max_entries, entries);
+        if (entries.size() == entries_before && session->text_pending.empty()) stop_after_chunk = true;
       }
     }
+    if (stop_after_chunk) break;
   }
   return framework::Status::success();
 }

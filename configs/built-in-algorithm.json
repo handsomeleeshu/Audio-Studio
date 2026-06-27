@@ -474,6 +474,19 @@
             ],
             "mode": "build"
           }
+        },
+        {
+          "param_id": "file_path",
+          "param_name": "File Path",
+          "value_type": "file_io",
+          "default": "",
+          "description": "Frontend-selected WAV path for FILE_IO DAI input or output. Empty keeps the simulator default sof_fileio_in.wav/sof_fileio_out.wav.",
+          "apply": {
+            "settable_states": [
+              "PIPE_UNLOADED"
+            ],
+            "mode": "build"
+          }
         }
       ],
       "description": "Digital Audio Interface endpoint."

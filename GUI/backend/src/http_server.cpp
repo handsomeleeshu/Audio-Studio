@@ -1,7 +1,11 @@
 #include "audio_studio.hpp"
 #include <algorithm>
+#include <cerrno>
+#include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <netinet/in.h>
@@ -15,6 +19,36 @@
 #endif
 
 namespace audiostudio {
+namespace {
+
+volatile std::sig_atomic_t http_stop_requested = 0;
+
+void requestHttpStop(int) {
+  http_stop_requested = 1;
+}
+
+bool setCloseOnExec(int fd) {
+  const int flags = fcntl(fd, F_GETFD);
+  return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
+bool sendAll(int fd, const std::string& data) {
+  size_t written = 0;
+  while (written < data.size()) {
+    const ssize_t count = send(fd, data.data() + written, data.size() - written,
+#ifdef MSG_NOSIGNAL
+                               MSG_NOSIGNAL
+#else
+                               0
+#endif
+    );
+    if (count <= 0) return false;
+    written += static_cast<size_t>(count);
+  }
+  return true;
+}
+
+} // namespace
 
 std::string readFile(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
@@ -235,7 +269,8 @@ static void logApiRequest(const HttpRequest& req) {
   if (req.path.rfind("/api/", 0) != 0) return;
   std::cout << "\n[AudioStudio HTTP API] " << req.method << " " << req.path;
   if (!req.query.empty()) std::cout << "?" << req.query;
-  if (req.path == "/api/runtime/audio/playback/stream") {
+  if (req.path == "/api/runtime/audio/playback/stream" ||
+      req.path == "/api/runtime/audio/dai/input") {
     std::cout << "\n  Binary body bytes: " << req.body.size() << "\n" << std::flush;
     return;
   }
@@ -491,6 +526,21 @@ HttpResponse HttpServer::handle(const HttpRequest& req) {
   if (req.method == "POST" && req.path == "/api/runtime/audio/playback/frame") return {200, "application/json", runtime_->pushAudioFrame(req.query, req.body)};
   if (req.method == "POST" && req.path == "/api/runtime/audio/playback/eos") return {200, "application/json", runtime_->finishAudioInput(req.body)};
   if (req.method == "GET" && req.path == "/api/runtime/audio/capture/frame") return {200, "application/json", runtime_->captureAudioFrame(req.query)};
+  if (req.method == "POST" && req.path == "/api/runtime/audio/dai/input") {
+    const auto q = parseQuery(req.query);
+    const uint32_t dai_index = static_cast<uint32_t>(std::max(0, std::atoi(q.count("dai_index") ? q.at("dai_index").c_str() : "0")));
+    return build_orchestrator_->stageDaiInput(q.count("workspace_id") ? q.at("workspace_id") : "",
+                                               dai_index,
+                                               q.count("file_name") ? q.at("file_name") : "input.wav",
+                                               req.body);
+  }
+  if (req.method == "GET" && req.path == "/api/runtime/audio/dai/output") {
+    const auto q = parseQuery(req.query);
+    const uint32_t dai_index = static_cast<uint32_t>(std::max(0, std::atoi(q.count("dai_index") ? q.at("dai_index").c_str() : "0")));
+    return build_orchestrator_->fetchDaiOutput(q.count("workspace_id") ? q.at("workspace_id") : "",
+                                               dai_index,
+                                               q.count("file_name") ? q.at("file_name") : "output.wav");
+  }
   if (req.method == "POST" && req.path == "/api/runtime/stop") return {200, "application/json", runtime_->stop(req.body)};
   if (req.method == "POST" && req.path == "/api/param/update") {
     if (build_orchestrator_) return build_orchestrator_->updateRuntimeParameter(req.body);
@@ -563,22 +613,49 @@ static void writeResponse(int fd, const HttpResponse& res) {
   head << "Access-Control-Allow-Headers: Content-Type\r\n";
   head << "Connection: close\r\n\r\n";
   const std::string hs = head.str();
-  send(fd, hs.data(), hs.size(), 0);
-  if (!res.body.empty()) send(fd, res.body.data(), res.body.size(), 0);
+  if (!sendAll(fd, hs)) return;
+  if (!res.body.empty()) sendAll(fd, res.body);
 }
 
 int HttpServer::run() {
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) throw std::runtime_error("socket failed");
+  if (!setCloseOnExec(server_fd)) {
+    close(server_fd);
+    throw std::runtime_error("failed to set close-on-exec on server socket");
+  }
   int opt = 1; setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
   sockaddr_in addr{}; addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY; addr.sin_port = htons(static_cast<uint16_t>(port_));
-  if (bind(server_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) throw std::runtime_error("bind failed");
-  if (listen(server_fd, 32) < 0) throw std::runtime_error("listen failed");
+  if (bind(server_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    close(server_fd);
+    throw std::runtime_error("bind failed");
+  }
+  if (listen(server_fd, 32) < 0) {
+    close(server_fd);
+    throw std::runtime_error("listen failed");
+  }
+
+  struct sigaction action {};
+  struct sigaction old_sigint {};
+  struct sigaction old_sigterm {};
+  action.sa_handler = requestHttpStop;
+  sigemptyset(&action.sa_mask);
+  sigaction(SIGINT, &action, &old_sigint);
+  sigaction(SIGTERM, &action, &old_sigterm);
+  http_stop_requested = 0;
+
   std::cout << "Audio Studio server: http://127.0.0.1:" << port_ << std::endl;
   std::cout << "Open this URL, not python -m http.server, to see backend callback prints." << std::endl;
-  while (true) {
+  while (!http_stop_requested) {
     int fd = accept(server_fd, nullptr, nullptr);
-    if (fd < 0) continue;
+    if (fd < 0) {
+      if (errno == EINTR || http_stop_requested) continue;
+      continue;
+    }
+    if (!setCloseOnExec(fd)) {
+      close(fd);
+      continue;
+    }
     HttpRequest req;
     if (readRequest(fd, req)) {
       auto res = handle(req);
@@ -586,6 +663,9 @@ int HttpServer::run() {
     }
     close(fd);
   }
+  close(server_fd);
+  sigaction(SIGINT, &old_sigint, nullptr);
+  sigaction(SIGTERM, &old_sigterm, nullptr);
   return 0;
 }
 

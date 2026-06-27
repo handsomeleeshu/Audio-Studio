@@ -1,274 +1,123 @@
 # Debug and Profile Guide
 
-This project uses a standalone HTML frontend served by the C++ mock backend.
-The VSCode setup therefore treats the backend process as the owner of the app
-and launches or attaches Chrome for frontend debugging.
+本文记录当前可用的 Audio Studio debug/profile 入口。完整 GUI + simulator 调试以 vass 根目录 `.vscode` 为准。
 
 ## Prerequisites
 
-Install the recommended VSCode extensions when prompted:
-
-- `ms-vscode.cmake-tools`
-- `ms-vscode.cpptools`
-- `vadimcn.vscode-lldb`
-
-On macOS, backend profiling uses `/usr/bin/sample` by default. For graphical
-Instruments traces, install full Xcode and run with `AUDIO_STUDIO_PROFILER=xctrace`.
-
-## Build Configurations
-
-The repository has isolated CMake presets:
+先构建必要目标：
 
 ```bash
-cmake --preset debug
-cmake --build --preset debug --parallel
-
-cmake --preset profile
-cmake --build --preset profile --parallel
-
-cmake --preset release
-cmake --build --preset release --parallel
+cmake --build Audio-Studio/out/linux/simulator/rpc_socket/Debug --parallel 16
+cmake --build Audio-Studio/out/linux/simulator/gui_backend/Debug --parallel 16
+cmake --build Audio-Studio/out/linux/simulator/audio_controller/Debug --parallel 16
+python3 application/rv32qemu/sof-build-test.py -b -d
 ```
 
-`debug` builds to `build/debug` with `-O0`, debug symbols, and frame pointers.
-`profile` builds to `build/profile` with optimization, debug symbols, and frame
-pointers. `release` is separate from profiling and does not inherit profile
-flags.
+## Full Stack Debug
 
-The product-style backend build is covered by `build_all.sh`:
+根 `.vscode/launch.json` 提供 GUI1 组合调试：
+
+- Audio Studio GUI1 frontend
+- Audio Studio GUI backend
+- as_server
+- simulator keep alive
+- QEMU gdbstub / RISC-V gdb
+
+`Audio Studio GUI: Simulator Keep Alive` 通过 `application/rv32qemu/sof-build-test.py` 启动 QEMU，并传入：
+
+```text
+--gui-keep-alive
+--gui-ready-after-pipeinstall
+--qemu-gdb-port <port>
+--qemu-gdb-wait
+--use-existing-as-server
+```
+
+RISC-V gdb 由 `.vscode/riscv-gdb-wrapper.sh` 包装。验证目标是可以连接到 QEMU gdbstub，并在 `application/rv32qemu/main.c` 的 `main` 断下。
+
+## Backend Debug
+
+backend 通过 argv 注入依赖：
 
 ```bash
-./scripts/build_all.sh --profile gui_backend -r linux a2
+Audio-Studio/out/linux/simulator/gui_backend/Debug/audio_studio_server Audio-Studio 18080 \
+  --as-server Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server \
+  --alsatplg Audio-Studio/third_party/alsatplg/bin/alsatplg \
+  --as-server-rpc-mode once \
+  --validation-python python3 \
+  --validation-script application/rv32qemu/sof-build-test.py \
+  --validation-as-server Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server \
+  --validation-as-log Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
+  --validation-trace-ldc application/rv32qemu/build/sof.ldc \
+  --validation-as-server-port 9901 \
+  --runtime-as-server-port 9901 \
+  --audio-driver-factory simulator
 ```
 
-That profile builds `Release` into `out/linux/a2/gui_backend/Release`, so
-profiling/debug choices do not affect the release path.
+不要再依赖 `AUDIO_STUDIO_*` 环境变量做路径发现。
 
-## One-Click Full Stack Debug
+## as_server / as_log Debug
 
-Open VSCode Run and Debug and choose:
-
-```text
-Full Stack: Debug
-```
-
-When prompted, keep port `8080` unless another process is using it.
-
-This compound configuration:
-
-1. Builds `build/debug/audio_studio_server`.
-2. Starts the backend under LLDB.
-3. Waits until `http://127.0.0.1:8080/api/projects` is reachable.
-4. Opens Chrome with a dedicated workspace-local profile.
-5. Lets you set breakpoints in both C++ and frontend JavaScript.
-
-Backend breakpoints go in:
-
-```text
-GUI/backend/src/main.cpp
-GUI/backend/src/http_server.cpp
-GUI/backend/src/mock_runtime.cpp
-GUI/backend/include/audio_studio.hpp
-```
-
-Frontend breakpoints go in:
-
-```text
-GUI/frontend/index.html
-```
-
-The files under `GUI/frontend/assets/js/` are tested helper/model modules, not the
-current browser entrypoint.
-
-Useful backend breakpoint locations:
-
-- `HttpServer::handle` in `GUI/backend/src/http_server.cpp`
-- `MockRuntimeEngine::buildPipeline` in `GUI/backend/src/mock_runtime.cpp`
-- `MockRuntimeEngine::run` in `GUI/backend/src/mock_runtime.cpp`
-- `FakeInspectorController::bufferLiveData` in `GUI/backend/src/mock_runtime.cpp`
-
-Useful frontend breakpoint locations:
-
-- `init`
-- `buildPipeline`
-- `runPipeline`
-- `syncTelemetryFromBackend`
-- `renderDashboard`
-
-## Backend-Only Debug
-
-Choose:
-
-```text
-Backend: Debug Server
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8080
-```
-
-Use this when you only need C++ breakpoints or want to open the page in an
-existing browser.
-
-## Frontend-Only Debug
-
-Start the backend first:
+手动启动 simulator as_server：
 
 ```bash
-cmake --build --preset debug --parallel
-./build/debug/audio_studio_server . 8080
+Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server \
+  --rpc --max-requests 0 \
+  --log-driver-factory simulator \
+  --log-trace-ldc application/rv32qemu/build/sof.ldc \
+  --audio-driver-factory simulator \
+  --audio-device pcm_playback \
+  --datalink /tmp/audio-studio-debug/as_datalink \
+  --port 9901
 ```
 
-Then choose:
-
-```text
-Frontend: Debug Chrome
-```
-
-Chrome opens with DevTools enabled. VSCode breakpoints work against files under
-`GUI/frontend/`. Browser DevTools breakpoints also work normally.
-
-If Chrome is already running with remote debugging on port `9222`, use:
-
-```text
-Frontend: Attach Chrome
-```
-
-## One-Click Full Stack Profile
-
-Choose:
-
-```text
-Full Stack: Profile
-```
-
-When prompted:
-
-- Port: `8080`
-- Duration: for example `30`
-
-This compound configuration:
-
-1. Builds `build/profile/audio_studio_server`.
-2. Starts backend sampling through `scripts/profile_backend.sh`.
-3. Opens Chrome with DevTools for frontend profiling.
-4. Writes backend samples to `profiles/backend/`.
-
-While the backend sampler is running, drive the UI workflow you want to analyze:
-load the page, build the pipeline, run it, select nodes/buffers, and interact
-with dashboard panels. The backend profile stops after the requested duration.
-
-## Backend Hotspot Analysis
-
-Run from terminal or VSCode task:
+观察普通 log：
 
 ```bash
-AUDIO_STUDIO_PROFILE_SECONDS=30 ./scripts/profile_backend.sh 8080
+Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log --level debug --follow --port 9901
 ```
 
-The default macOS profiler is `sample`, producing:
+预期：普通 firmware log 可见，`ASINFO|` telemetry 不应出现在 as_log 输出中。
 
-```text
-profiles/backend/audio_studio_backend-YYYYMMDD-HHMMSS.sample.txt
-```
+## GUI E2E Debug
 
-Open the sample file and look for the heaviest call-tree branches near the top.
-Because the profile preset keeps symbols and frame pointers, C++ functions such
-as `HttpServer::handle`, controller methods, and mock runtime methods should be
-visible.
-
-To use Instruments Time Profiler instead:
+一条命令覆盖 build/play/record/System Info/as_log/stall：
 
 ```bash
-AUDIO_STUDIO_PROFILER=xctrace AUDIO_STUDIO_PROFILE_SECONDS=30 ./scripts/profile_backend.sh 8080
+cd Audio-Studio
+python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e2e-artifacts
 ```
 
-This writes an `.trace` package under `profiles/backend/` when `xctrace` is
-available.
-
-## Frontend Hotspot Analysis
-
-Choose:
+失败时查看：
 
 ```text
-Frontend: Profile Chrome
+/tmp/audio-studio-gui-e2e-artifacts/gui-backend.log
+/tmp/audio-studio-gui-e2e-artifacts/input.wav
+/tmp/audio-studio-gui-e2e-artifacts/capture-output.wav
 ```
 
-or use the full-stack profile compound. Chrome opens DevTools automatically.
-
-Use these DevTools panels:
-
-- `Performance`: record UI interactions and inspect long tasks, layout, paint,
-  scripting, and event handlers.
-- `Memory`: take heap snapshots if memory growth is suspected.
-- `Network`: inspect API timing for `/api/*` calls.
-
-Recommended frontend profile flow:
-
-1. Open DevTools `Performance`.
-2. Start recording.
-3. Exercise one workflow, such as Build -> Run -> select buffer -> view probe.
-4. Stop recording.
-5. Inspect the heaviest scripting blocks and event handlers.
-
-Common frontend hotspots to inspect:
-
-- Node rendering and edge rendering.
-- Dashboard refresh and telemetry synchronization.
-- Inspector rendering after node or buffer selection.
-- Real-time probe canvas drawing.
-
-For repeatable command-line measurements, run:
+## Frontend Profile
 
 ```bash
 npm run profile:frontend
+AUDIO_STUDIO_PROFILE_SCENARIO=running npm run profile:frontend
 ```
 
-The harness starts the local mock backend when needed, launches headless Chrome
-through the Chrome DevTools Protocol, records idle UI metrics by default, and
-writes JSON reports to:
+Frontend profile 仍用于渲染性能，和 simulator runtime 正确性分开看。
 
-```text
-profiles/frontend/
-```
+## Backend Profile
 
-Useful variants:
+可继续使用已有 backend profile script；建议 profile 前先用 E2E 确认功能正确：
 
 ```bash
-AUDIO_STUDIO_PROFILE_SCENARIO=running npm run profile:frontend
-AUDIO_STUDIO_PROFILE_SCENARIO=both AUDIO_STUDIO_PROFILE_MS=30000 npm run profile:frontend
+python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e2e-artifacts --no-stall-check
 ```
-
-The report includes `Performance.getMetrics` deltas, Long Task totals,
-requestAnimationFrame frame intervals, DOM node count, JS heap size, request
-counts by API path, and active interval delays observed during page startup.
-
-## Release Safety
-
-The debug/profile setup is isolated from release behavior:
-
-- Debug and profile builds use separate CMake preset build directories.
-- Profile-only flags live in the `profile` preset.
-- VSCode Chrome profiles live under `.vscode/chrome-*` and are ignored.
-- Profile outputs live under `profiles/` and are ignored.
-- `scripts/build_all.sh --profile gui_backend -r linux a2` is the release-style
-  backend build entry.
-
-Use `./scripts/build_all.sh --profile gui_backend -r linux a2` for the product
-release-style backend build.
 
 ## Troubleshooting
 
-If port `8080` is occupied, enter another port when VSCode prompts you.
-
-If `Backend: Debug Server` fails with an LLDB adapter error, install the
-recommended `vadimcn.vscode-lldb` extension and reload VSCode.
-
-If Chrome fails to launch, check whether a stale dedicated profile exists under
-`.vscode/chrome-debug-profile` or `.vscode/chrome-profile`; deleting those
-ignored directories is safe.
-
-If backend profiling says `xctrace` is unavailable, use the default `sample`
-mode or install full Xcode. Command Line Tools alone may not include `xctrace`.
+- Build 后只有一个 pipeline 变 Loaded：frontend snapshot 或 backend build scope 出错；Build 必须 all-pipeline。
+- RUN 后按钮卡住：检查 `/api/runtime/audio/playback/eos` 或 `/api/runtime/stop` 是否返回 result。
+- as_log timeout：检查 System Info pump 是否独占 log service；当前 LogService mirror session 和 intercepted-entry return contract 应避免该问题。
+- File Input 无法 RUN：确认前端真的选择了合法 WAV，不允许 fallback/debug file。
+- Capture 空文件：检查 FILE_IO_DAI input WAV 是否 stage，capture frame 是否持续返回 bytes。
+- QEMU gdb 不能断下：确认 `--qemu-gdb-wait` 已传入，gdb port 未被占用，`riscv-gdb-wrapper.sh` 能找到 riscv gdb。

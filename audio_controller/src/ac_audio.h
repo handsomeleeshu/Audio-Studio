@@ -32,6 +32,7 @@ typedef struct ac_audio_stream_slot {
     int allocated;
     int configured;
     int running;
+    int stream_started;
     int channel_registered;
     void* dma_raw;
     void* dma_aligned;

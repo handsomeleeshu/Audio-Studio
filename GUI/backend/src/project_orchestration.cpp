@@ -63,6 +63,16 @@ bool writeTextFile(const std::string& path, const std::string& text) {
   return static_cast<bool>(out);
 }
 
+std::string fileIoDaiPath(const std::string& output_dir,
+                          const char* stem,
+                          uint32_t dai_index) {
+  std::ostringstream name;
+  name << stem;
+  if (dai_index != 0u) name << ".dai" << dai_index;
+  name << ".wav";
+  return (fs::path(output_dir) / name.str()).string();
+}
+
 std::string simpleJsonStringField(const std::string& body, const std::string& field, const std::string& fallback = "") {
   const std::string key = std::string("\"") + field + "\"";
   size_t pos = body.find(key);
@@ -520,6 +530,222 @@ std::map<std::string, std::string> originalPipelineObjects(const std::string& wo
   return out;
 }
 
+std::string pipelineObjectId(const std::string& pipeline_json) {
+  const std::string pipe_id = simpleJsonStringField(pipeline_json, "pipe_id");
+  return pipe_id.empty() ? simpleJsonStringField(pipeline_json, "name") : pipe_id;
+}
+
+std::string frontendConnectionPipelineId(const std::string& frontend_json) {
+  const std::string pipeline_id = jsonStringFieldAny(frontend_json, {"pipeline_id", "pipelineId"});
+  return pipeline_id.empty() ? simpleJsonStringField(frontend_json, "pipe_id") : pipeline_id;
+}
+
+std::set<std::string> frontendConnectionPipelineIds(const std::string& workspace_json) {
+  std::set<std::string> ids;
+  for (const auto& frontend_json : jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "frontend_connections"))) {
+    const std::string pipe_id = frontendConnectionPipelineId(frontend_json);
+    if (!pipe_id.empty()) ids.insert(pipe_id);
+  }
+  return ids;
+}
+
+void collectPipelineNodeKeys(const std::string& pipeline_json,
+                             std::set<std::string>& generated_node_keys) {
+  const std::string pipe_id = pipelineObjectId(pipeline_json);
+  if (pipe_id.empty()) return;
+  for (const auto& node_json : jsonObjectArrayItems(jsonMemberValue(pipeline_json, "nodes"))) {
+    const std::string node_id = simpleJsonStringField(node_json, "node_id",
+        simpleJsonStringField(node_json, "id"));
+    if (!node_id.empty()) generated_node_keys.insert(pipe_id + "." + node_id);
+  }
+}
+
+bool isAllPipelinesBuildRequest(const std::string& request_json,
+                                const std::string& snapshot_json) {
+  (void)request_json;
+  (void)snapshot_json;
+  return true;
+}
+
+std::set<std::string> pipelineNodeIds(const std::string& pipeline_json) {
+  std::set<std::string> ids;
+  for (const auto& node_json : jsonObjectArrayItems(jsonMemberValue(pipeline_json, "nodes"))) {
+    const std::string node_id = simpleJsonStringField(node_json, "node_id",
+        simpleJsonStringField(node_json, "id"));
+    if (!node_id.empty()) ids.insert(node_id);
+  }
+  return ids;
+}
+
+std::set<std::string> objectEdgeKeys(const std::string& object_json) {
+  std::set<std::string> keys;
+  for (const auto& edge_json : jsonObjectArrayItems(jsonMemberValue(object_json, "edges"))) {
+    const std::string from = simpleJsonStringField(edge_json, "from");
+    const std::string to = simpleJsonStringField(edge_json, "to");
+    if (!from.empty() && !to.empty()) keys.insert(from + "->" + to);
+  }
+  return keys;
+}
+
+bool regeneratedObjectCoversSource(const std::string& source_object,
+                                   const std::string& regenerated_object) {
+  const auto source_ids = pipelineNodeIds(source_object);
+  const auto regenerated_ids = pipelineNodeIds(regenerated_object);
+  for (const auto& node_id : source_ids) {
+    if (!regenerated_ids.count(node_id)) return false;
+  }
+
+  const auto source_edges = objectEdgeKeys(source_object);
+  const auto regenerated_edges = objectEdgeKeys(regenerated_object);
+  for (const auto& edge : source_edges) {
+    if (!regenerated_edges.count(edge)) return false;
+  }
+
+  return !source_ids.empty() || source_edges.empty();
+}
+
+bool regeneratedPipelineCoversSource(const std::string& source_pipeline,
+                                     const std::string& regenerated_pipeline) {
+  return regeneratedObjectCoversSource(source_pipeline, regenerated_pipeline);
+}
+
+std::map<std::string, std::string> pipelineNodesById(const std::string& pipeline_json) {
+  std::map<std::string, std::string> nodes;
+  for (const auto& node_json : jsonObjectArrayItems(jsonMemberValue(pipeline_json, "nodes"))) {
+    const std::string node_id = simpleJsonStringField(node_json, "node_id",
+        simpleJsonStringField(node_json, "id"));
+    if (!node_id.empty()) nodes[node_id] = node_json;
+  }
+  return nodes;
+}
+
+std::string mergeSourceNodeWithRegeneratedNode(const std::string& source_node,
+                                               const std::string& regenerated_node) {
+  std::string out = source_node;
+  const std::string name = jsonMemberValue(regenerated_node, "name");
+  if (!name.empty()) out = upsertObjectMember(out, "name", name);
+  const std::string params = jsonMemberValue(regenerated_node, "params");
+  if (!params.empty()) out = upsertObjectMember(out, "params", params);
+  return out;
+}
+
+std::string mergeSourcePipelineWithRegeneratedNodeParams(const std::string& source_pipeline,
+                                                         const std::string& regenerated_pipeline) {
+  const auto regenerated_nodes = pipelineNodesById(regenerated_pipeline);
+  std::vector<std::string> merged_nodes;
+  for (const auto& source_node : jsonObjectArrayItems(jsonMemberValue(source_pipeline, "nodes"))) {
+    const std::string node_id = simpleJsonStringField(source_node, "node_id",
+        simpleJsonStringField(source_node, "id"));
+    const auto it = regenerated_nodes.find(node_id);
+    merged_nodes.push_back(it == regenerated_nodes.end()
+        ? source_node
+        : mergeSourceNodeWithRegeneratedNode(source_node, it->second));
+  }
+
+  std::string out = source_pipeline;
+  const std::string name = jsonMemberValue(regenerated_pipeline, "name");
+  if (!name.empty()) out = upsertObjectMember(out, "name", name);
+  out = upsertObjectMember(out, "nodes", jsonArrayFromObjects(merged_nodes));
+  return out;
+}
+
+std::string mergeSourceFrontendWithRegeneratedNodeParams(const std::string& source_frontend,
+                                                         const std::string& regenerated_frontend) {
+  const auto regenerated_nodes = pipelineNodesById(regenerated_frontend);
+  std::vector<std::string> merged_nodes;
+  for (const auto& source_node : jsonObjectArrayItems(jsonMemberValue(source_frontend, "nodes"))) {
+    const std::string node_id = simpleJsonStringField(source_node, "node_id",
+        simpleJsonStringField(source_node, "id"));
+    const auto it = regenerated_nodes.find(node_id);
+    merged_nodes.push_back(it == regenerated_nodes.end()
+        ? source_node
+        : mergeSourceNodeWithRegeneratedNode(source_node, it->second));
+  }
+
+  std::string out = source_frontend;
+  out = upsertObjectMember(out, "nodes", jsonArrayFromObjects(merged_nodes));
+  return out;
+}
+
+void mergeSourcePipelinesForAllBuild(const std::string& workspace_json,
+                                     RegeneratedProject& regenerated) {
+  const auto source_pipelines = jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "pipelines"));
+  const auto regenerated_pipelines = jsonObjectArrayItems(regenerated.pipelines_json);
+  if (source_pipelines.empty()) return;
+  const std::set<std::string> layout_pipeline_ids = frontendConnectionPipelineIds(workspace_json);
+  const bool restrict_to_layout = !layout_pipeline_ids.empty();
+
+  std::map<std::string, std::string> regenerated_by_id;
+  std::vector<std::string> regenerated_order;
+  for (const auto& pipeline_json : regenerated_pipelines) {
+    const std::string pipe_id = pipelineObjectId(pipeline_json);
+    if (pipe_id.empty()) continue;
+    regenerated_by_id[pipe_id] = pipeline_json;
+    regenerated_order.push_back(pipe_id);
+  }
+
+  std::vector<std::string> merged_pipelines;
+  std::vector<std::string> merged_ids;
+  std::set<std::string> emitted_ids;
+  for (const auto& source_pipeline : source_pipelines) {
+    const std::string pipe_id = pipelineObjectId(source_pipeline);
+    if (pipe_id.empty()) continue;
+    if (restrict_to_layout && !layout_pipeline_ids.count(pipe_id) && !regenerated_by_id.count(pipe_id)) continue;
+    const auto replacement = regenerated_by_id.find(pipe_id);
+    const std::string chosen = replacement == regenerated_by_id.end()
+        ? source_pipeline
+        : (regeneratedPipelineCoversSource(source_pipeline, replacement->second)
+            ? replacement->second
+            : mergeSourcePipelineWithRegeneratedNodeParams(source_pipeline, replacement->second));
+    merged_pipelines.push_back(chosen);
+    merged_ids.push_back(pipe_id);
+    emitted_ids.insert(pipe_id);
+    collectPipelineNodeKeys(chosen, regenerated.generated_node_keys);
+  }
+  (void)regenerated_order;
+
+  std::map<std::string, std::string> regenerated_frontend_by_id;
+  std::vector<std::string> regenerated_frontend_order;
+  for (const auto& frontend_json : jsonObjectArrayItems(regenerated.frontend_connections_json)) {
+    const std::string pipe_id = frontendConnectionPipelineId(frontend_json);
+    if (pipe_id.empty()) continue;
+    regenerated_frontend_by_id[pipe_id] = frontend_json;
+    regenerated_frontend_order.push_back(pipe_id);
+  }
+  std::map<std::string, std::string> source_frontend_by_id;
+  for (const auto& frontend_json : jsonObjectArrayItems(topLevelJsonMemberValue(workspace_json, "frontend_connections"))) {
+    const std::string pipe_id = frontendConnectionPipelineId(frontend_json);
+    if (!pipe_id.empty()) source_frontend_by_id[pipe_id] = frontend_json;
+  }
+
+  std::vector<std::string> merged_frontend;
+  std::set<std::string> emitted_frontend_ids;
+  for (const auto& pipe_id : merged_ids) {
+    const auto regenerated_it = regenerated_frontend_by_id.find(pipe_id);
+    const auto source_it = source_frontend_by_id.find(pipe_id);
+    if (regenerated_it == regenerated_frontend_by_id.end() && source_it == source_frontend_by_id.end()) continue;
+    if (regenerated_it == regenerated_frontend_by_id.end()) {
+      merged_frontend.push_back(source_it->second);
+    } else if (source_it == source_frontend_by_id.end() ||
+               regeneratedObjectCoversSource(source_it->second, regenerated_it->second)) {
+      merged_frontend.push_back(regenerated_it->second);
+    } else {
+      merged_frontend.push_back(
+          mergeSourceFrontendWithRegeneratedNodeParams(source_it->second, regenerated_it->second));
+    }
+    emitted_frontend_ids.insert(pipe_id);
+  }
+  for (const auto& pipe_id : regenerated_frontend_order) {
+    if (emitted_frontend_ids.count(pipe_id)) continue;
+    const auto it = regenerated_frontend_by_id.find(pipe_id);
+    if (it != regenerated_frontend_by_id.end()) merged_frontend.push_back(it->second);
+  }
+
+  regenerated.pipelines_json = jsonArrayFromObjects(merged_pipelines);
+  regenerated.frontend_connections_json = jsonArrayFromObjects(merged_frontend);
+  regenerated.pipeline_ids = std::move(merged_ids);
+}
+
 std::string mergeTopLevelObjectArrayById(const std::string& current_json,
                                          const std::string& source_json,
                                          const std::string& field,
@@ -553,10 +779,8 @@ std::string workspaceJsonWithSourceBaseline(const std::string& workspace_json,
   std::string out = workspace_json;
   out = upsertObjectMember(out, "pipelines",
       mergeTopLevelObjectArrayById(workspace_json, source_json, "pipelines", "pipe_id"));
-  if (topLevelJsonMemberValue(out, "frontend_connections").empty()) {
-    const std::string frontend_connections = topLevelJsonMemberValue(source_json, "frontend_connections");
-    if (!frontend_connections.empty()) out = upsertObjectMember(out, "frontend_connections", frontend_connections);
-  }
+  out = upsertObjectMember(out, "frontend_connections",
+      mergeTopLevelObjectArrayById(workspace_json, source_json, "frontend_connections", "pipeline_id"));
   return out;
 }
 
@@ -912,6 +1136,7 @@ std::string validationPipelineSelector(const std::string& request_json,
 
   const std::string group_id = simpleJsonStringField(
       request_json, "group_id", simpleJsonStringField(snapshot_json, "group_id"));
+  if (isAllPipelinesBuildRequest(request_json, snapshot_json)) return {};
   std::string selector = selector_for_pipeline(pipeline_from_group(group_id));
   if (!selector.empty()) return selector;
 
@@ -961,123 +1186,37 @@ std::string shellQuote(const std::string& value) {
   return out;
 }
 
-std::string envString(const char* name, const std::string& fallback) {
-  const char* value = std::getenv(name);
-  return value && *value ? std::string(value) : fallback;
-}
-
-std::string firstExistingPath(const std::vector<fs::path>& candidates) {
-  for (const auto& candidate : candidates) {
-    if (candidate.empty()) continue;
-    if (fs::exists(candidate)) return candidate.string();
-  }
-  return {};
-}
-
-std::vector<fs::path> pathAndParents(fs::path path, size_t max_depth = 8) {
-  std::vector<fs::path> out;
-  if (path.empty()) return out;
+std::string absolutePathFromRoot(const std::string& root_dir, const std::string& path) {
+  if (path.empty()) return {};
   std::error_code ec;
-  path = fs::absolute(path, ec);
-  if (ec) return out;
-  for (size_t i = 0; i < max_depth && !path.empty(); ++i) {
-    out.push_back(path);
-    const fs::path parent = path.parent_path();
-    if (parent == path) break;
-    path = parent;
-  }
-  return out;
+  fs::path resolved(path);
+  if (!resolved.is_absolute()) resolved = fs::path(root_dir) / resolved;
+  const fs::path absolute = fs::absolute(resolved, ec);
+  if (!ec) resolved = absolute;
+  return resolved.lexically_normal().string();
 }
 
-std::string firstExistingRelativeToRoots(const std::vector<fs::path>& roots,
-                                         const std::vector<fs::path>& relatives) {
-  std::vector<fs::path> candidates;
-  for (const auto& root : roots) {
-    for (const auto& rel : relatives) {
-      candidates.push_back(root / rel);
-    }
-  }
-  return firstExistingPath(candidates);
+BackendRuntimeConfig normalizedBackendConfig(const std::string& root_dir,
+                                             BackendRuntimeConfig config) {
+  config.compile_as_server_path = absolutePathFromRoot(root_dir, config.compile_as_server_path);
+  config.compile_alsatplg_path = absolutePathFromRoot(root_dir, config.compile_alsatplg_path);
+  config.validation_script_path = absolutePathFromRoot(root_dir, config.validation_script_path);
+  config.validation_as_server_path = absolutePathFromRoot(root_dir, config.validation_as_server_path);
+  config.validation_as_log_path = absolutePathFromRoot(root_dir, config.validation_as_log_path);
+  config.validation_trace_ldc_path = absolutePathFromRoot(root_dir, config.validation_trace_ldc_path);
+  config.validation_datalink_endpoint = absolutePathFromRoot(root_dir, config.validation_datalink_endpoint);
+  config.compile_as_server_rpc_mode = lowerAscii(config.compile_as_server_rpc_mode);
+  if (config.compile_as_server_rpc_mode != "socket") config.compile_as_server_rpc_mode = "once";
+  if (config.validation_python.empty()) config.validation_python = "python3";
+  if (config.validation_ready_timeout_ms <= 0) config.validation_ready_timeout_ms = 120000;
+  return config;
 }
 
-std::string resolveCompileServerPath(const std::string& root_dir) {
-  const std::string env_path = envString("AUDIO_STUDIO_AS_SERVER_PATH", "");
-  if (!env_path.empty() && fs::exists(env_path)) return env_path;
-  auto roots = pathAndParents(root_dir);
-  const auto cwd_roots = pathAndParents(fs::current_path());
-  roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  const std::string resolved = firstExistingRelativeToRoots(roots, {
-      "out/linux/simulator/rpc_socket/Debug/as_server",
-      "out/linux/a2/rpc_socket/Debug/as_server",
-      "out/linux/a2/as_config/Debug/as_server",
-      "as_config/Debug/as_server",
-      "rpc_socket/Debug/as_server"});
-  if (!resolved.empty()) return resolved;
-  return (fs::path(root_dir) / "out/linux/simulator/rpc_socket/Debug/as_server").string();
-}
-
-std::string resolveSimulatorRpcToolPath(const std::string& root_dir,
-                                        const std::string& tool,
-                                        const char* env_name) {
-  const std::string env_path = envString(env_name, "");
-  if (!env_path.empty() && fs::exists(env_path)) return env_path;
-  auto roots = pathAndParents(root_dir);
-  const auto cwd_roots = pathAndParents(fs::current_path());
-  roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  const std::string resolved = firstExistingRelativeToRoots(roots, {
-      fs::path("out/linux/simulator/rpc_socket/Debug") / tool,
-      fs::path("out/linux/a2/rpc_socket/Debug") / tool,
-      fs::path("rpc_socket/Debug") / tool});
-  if (!resolved.empty()) return resolved;
-  return (fs::path(root_dir) / "out/linux/simulator/rpc_socket/Debug" / tool).string();
-}
-
-std::string resolveTraceLdcPath(const std::string& root_dir) {
-  const std::string env_path = envString("AUDIO_STUDIO_VALIDATION_TRACE_LDC", "");
-  if (!env_path.empty() && fs::exists(env_path)) return env_path;
-  auto roots = pathAndParents(root_dir);
-  const auto cwd_roots = pathAndParents(fs::current_path());
-  roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  const std::string resolved = firstExistingRelativeToRoots(roots, {
-      "application/rv32qemu/build/sof.ldc",
-      "../application/rv32qemu/build/sof.ldc"});
-  if (!resolved.empty()) return resolved;
-  return (fs::path(root_dir) / "../application/rv32qemu/build/sof.ldc").string();
-}
-
-uint16_t envPort(const char* name, uint16_t fallback) {
-  const char* value = std::getenv(name);
-  if (!value || !*value) return fallback;
-  char* end = nullptr;
-  const long parsed = std::strtol(value, &end, 10);
-  if (!end || *end != '\0' || parsed <= 0 || parsed > 65535) return fallback;
-  return static_cast<uint16_t>(parsed);
-}
-
-std::string runtimeAudioDriverFactory(const std::string& request_json) {
+std::string runtimeAudioDriverFactory(const std::string& request_json,
+                                      const BackendRuntimeConfig& config) {
   const std::string explicit_driver = simpleJsonStringField(request_json, "driver_factory", "");
   if (!explicit_driver.empty()) return explicit_driver;
-  return envString("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "simulator");
-}
-
-long envPositiveLong(const char* name, long fallback) {
-  const char* value = std::getenv(name);
-  if (!value || !*value) return fallback;
-  char* end = nullptr;
-  const long parsed = std::strtol(value, &end, 10);
-  if (!end || *end != '\0' || parsed <= 0) return fallback;
-  return parsed;
-}
-
-std::string resolveValidationScriptPath(const std::string& root_dir) {
-  auto roots = pathAndParents(root_dir);
-  const auto cwd_roots = pathAndParents(fs::current_path());
-  roots.insert(roots.end(), cwd_roots.begin(), cwd_roots.end());
-  const std::string resolved = firstExistingRelativeToRoots(roots, {
-      "application/rv32qemu/sof-build-test.py",
-      "../application/rv32qemu/sof-build-test.py"});
-  if (!resolved.empty()) return resolved;
-  return (fs::path(root_dir) / "../application/rv32qemu/sof-build-test.py").string();
+  return config.runtime_audio_driver_factory;
 }
 
 std::string workspaceResponse(const std::string& workspace_id,
@@ -1143,15 +1282,11 @@ std::string failureResponse(const std::string& stage,
 class SocketConfigCompileClient final : public IConfigCompileClient {
 public:
   GuiConfigCompileResult compile(const GuiConfigCompileRequest& request) override;
-
-private:
-  std::string host_ = envString("AUDIO_STUDIO_AS_SERVER_HOST", "127.0.0.1");
-  uint16_t port_ = envPort("AUDIO_STUDIO_AS_SERVER_PORT", 9900);
-  uint32_t timeout_ms_ = static_cast<uint32_t>(envPort("AUDIO_STUDIO_AS_SERVER_TIMEOUT_MS", 5000));
 };
 
 class ProcessValidationRunner final : public IValidationRunner {
 public:
+  ~ProcessValidationRunner() override;
   ValidationResult start(const ValidationRequest& request) override;
   ValidationResult stop(const std::string& workspace_id) override;
 
@@ -1162,11 +1297,28 @@ private:
 #endif
 };
 
+ProcessValidationRunner::~ProcessValidationRunner() {
+#if !defined(_WIN32)
+  std::vector<std::string> workspace_ids;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    for (const auto& session : sessions_) workspace_ids.push_back(session.first);
+  }
+  for (const auto& workspace_id : workspace_ids) stop(workspace_id);
+#endif
+}
+
 #if !defined(_WIN32)
 bool writeAllToSocket(int fd, const std::string& data, std::string& error) {
   size_t written = 0;
   while (written < data.size()) {
-    const ssize_t n = send(fd, data.data() + written, data.size() - written, 0);
+    const ssize_t n = send(fd, data.data() + written, data.size() - written,
+#ifdef MSG_NOSIGNAL
+                           MSG_NOSIGNAL
+#else
+                           0
+#endif
+    );
     if (n < 0) {
       error = std::string("socket write failed: ") + std::strerror(errno);
       return false;
@@ -1368,7 +1520,7 @@ GuiConfigCompileResult SocketConfigCompileClient::compile(const GuiConfigCompile
   const std::string frame = "Content-Length: " + std::to_string(rpc_request.size()) +
                             "\r\n\r\n" + rpc_request;
 
-  const bool prefer_socket = lowerAscii(envString("AUDIO_STUDIO_AS_SERVER_RPC_MODE", "once")) == "socket";
+  const bool prefer_socket = lowerAscii(request.as_server_rpc_mode) == "socket";
   std::string rpc_once_response;
   std::string rpc_once_error;
   if (!prefer_socket &&
@@ -1378,7 +1530,8 @@ GuiConfigCompileResult SocketConfigCompileClient::compile(const GuiConfigCompile
   }
 
   std::string error;
-  const int fd = connectTcp(host_, port_, timeout_ms_, error);
+  const int fd = connectTcp(request.as_server_host, request.as_server_port,
+                            request.as_server_timeout_ms, error);
   if (fd < 0) {
     const std::string socket_error = error.empty() ? "failed to connect as_server config.compile RPC" : error;
     if (prefer_socket &&
@@ -1430,21 +1583,24 @@ void stopProcessGroup(pid_t pid) {
 
 ValidationResult ProcessValidationRunner::start(const ValidationRequest& request) {
   ValidationResult result;
+  if (request.script_path.empty()) {
+    result.ok = false;
+    result.message = "validation script path is not configured";
+    return result;
+  }
   if (!fs::exists(request.script_path)) {
     result.ok = false;
-    result.message = "rv32qemu sof-build-test.py not found: " + request.script_path;
+    result.message = "validation script not found: " + request.script_path;
     return result;
   }
 
 #if defined(_WIN32)
   result.ok = false;
-  result.message = "rv32qemu validation sessions are not implemented on Windows GUI backend yet";
+  result.message = "validation sessions are not implemented on Windows GUI backend yet";
   return result;
 #else
   stop(request.workspace_id);
 
-  const std::string host = envString("AUDIO_STUDIO_VALIDATION_AS_SERVER_HOST", "127.0.0.1");
-  const uint16_t port = envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901);
   const std::string log_path = (fs::path(request.workspace_dir) / "audio_studio_validation.log").string();
   const std::string ready_path = (fs::path(request.workspace_dir) / "audio_studio_validation.ready").string();
   std::error_code ec;
@@ -1459,13 +1615,18 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
                   fs::copy_options::overwrite_existing, ec);
   }
   const std::string cmd =
-      "python3 " + shellQuote(request.script_path) +
+      shellQuote(request.python.empty() ? std::string("python3") : request.python) +
+      " " + shellQuote(request.script_path) +
       " -t " + shellQuote(request.test_list_path) +
-      " --audio-controller-log --as-server-host " + shellQuote(host) +
-      " --as-server-port " + std::to_string(port) +
+      " --audio-controller-log --as-server-host " + shellQuote(request.as_server_host) +
+      " --as-server-port " + std::to_string(request.as_server_port) +
       (request.as_server_path.empty() ? "" : " --as-server " + shellQuote(request.as_server_path)) +
       (request.as_log_path.empty() ? "" : " --as-log " + shellQuote(request.as_log_path)) +
       (request.trace_ldc_path.empty() ? "" : " --trace-ldc " + shellQuote(request.trace_ldc_path)) +
+      (request.use_existing_as_server ? " --use-existing-as-server" : "") +
+      (request.datalink_endpoint.empty() ? "" : " --datalink-endpoint " + shellQuote(request.datalink_endpoint)) +
+      (request.qemu_gdb_port == 0 ? "" : " --qemu-gdb-port " + std::to_string(request.qemu_gdb_port)) +
+      (request.qemu_gdb_wait ? " --qemu-gdb-wait" : "") +
       " --gui-keep-alive --gui-ready-marker " + shellQuote(ready_path) +
       " --gui-ready-after-pipeinstall" +
       " > " + shellQuote(log_path) + " 2>&1";
@@ -1473,7 +1634,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
   const pid_t pid = ::fork();
   if (pid < 0) {
     result.ok = false;
-    result.message = std::string("failed to fork rv32qemu validation session: ") + std::strerror(errno);
+    result.message = std::string("failed to fork validation session: ") + std::strerror(errno);
     return result;
   }
   if (pid == 0) {
@@ -1482,7 +1643,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
     _exit(127);
   }
 
-  const long ready_timeout_ms = envPositiveLong("AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS", 120000);
+  const long ready_timeout_ms = request.ready_timeout_ms > 0 ? request.ready_timeout_ms : 120000;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ready_timeout_ms);
   int status = 0;
   while (std::chrono::steady_clock::now() < deadline) {
@@ -1490,7 +1651,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
       std::lock_guard<std::mutex> lk(mutex_);
       sessions_[request.workspace_id] = pid;
       result.ok = true;
-      result.message = "rv32qemu validation session ready";
+      result.message = "validation session ready";
       result.diagnostics.push_back("validation_log=" + log_path);
       result.diagnostics.push_back("ready_file=" + ready_path);
       return result;
@@ -1499,11 +1660,11 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
     if (done == pid) {
       result.ok = false;
       if (WIFEXITED(status)) {
-        result.message = "rv32qemu validation failed with exit code " + std::to_string(WEXITSTATUS(status));
+        result.message = "validation failed with exit code " + std::to_string(WEXITSTATUS(status));
       } else if (WIFSIGNALED(status)) {
-        result.message = "rv32qemu validation killed by signal " + std::to_string(WTERMSIG(status));
+        result.message = "validation killed by signal " + std::to_string(WTERMSIG(status));
       } else {
-        result.message = "rv32qemu validation failed before ready";
+        result.message = "validation failed before ready";
       }
       result.diagnostics.push_back("validation_log=" + log_path);
       return result;
@@ -1513,7 +1674,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
 
   stopProcessGroup(pid);
   result.ok = false;
-  result.message = "rv32qemu validation did not become ready before timeout";
+  result.message = "validation did not become ready before timeout";
   result.diagnostics.push_back("validation_log=" + log_path);
   result.diagnostics.push_back("ready_file=" + ready_path);
   return result;
@@ -1523,7 +1684,7 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
 ValidationResult ProcessValidationRunner::stop(const std::string& workspace_id) {
   ValidationResult result;
   result.ok = true;
-  result.message = "rv32qemu validation session stopped";
+  result.message = "validation session stopped";
 #if !defined(_WIN32)
   pid_t pid = 0;
   {
@@ -1544,15 +1705,26 @@ ValidationResult ProcessValidationRunner::stop(const std::string& workspace_id) 
 
 BuildOrchestrator::BuildOrchestrator(std::string root_dir,
                                      std::shared_ptr<IConfigCompileClient> compile_client,
-                                     std::shared_ptr<IValidationRunner> validation_runner)
+                                     std::shared_ptr<IValidationRunner> validation_runner,
+                                     BackendRuntimeConfig config)
   : compile_client_(std::move(compile_client)),
     validation_runner_(std::move(validation_runner)) {
   std::error_code ec;
   const fs::path requested_root = root_dir.empty() ? fs::path(".") : fs::path(std::move(root_dir));
   const fs::path absolute_root = fs::absolute(requested_root, ec);
   root_dir_ = (ec ? requested_root : absolute_root).lexically_normal().string();
+  config_ = normalizedBackendConfig(root_dir_, std::move(config));
   if (!compile_client_) compile_client_ = std::make_shared<SocketConfigCompileClient>();
   if (!validation_runner_) validation_runner_ = std::make_shared<ProcessValidationRunner>();
+}
+
+BuildOrchestrator::~BuildOrchestrator() {
+  std::vector<std::string> workspace_ids;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    for (const auto& workspace : workspaces_) workspace_ids.push_back(workspace.first);
+  }
+  for (const auto& workspace_id : workspace_ids) validation_runner_->stop(workspace_id);
 }
 
 BuildOrchestrator::WorkspaceRecord* BuildOrchestrator::findWorkspaceLocked(const std::string& workspace_id) {
@@ -1650,6 +1822,9 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
                             request_json,
                             workspace_diagnostics)};
   }
+  if (isAllPipelinesBuildRequest(request_json, snapshot_json)) {
+    mergeSourcePipelinesForAllBuild(regeneration_base_json, regenerated);
+  }
   uint64_t workspace_revision = record.workspace_revision;
 
   const std::string all_json_next = mergeSnapshotWithRegeneratedProject(
@@ -1677,8 +1852,12 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   compile_request.output_dir = record.output_dir;
   compile_request.project_name = record.project_name;
   compile_request.working_dir = root_dir_;
-  compile_request.alsatplg = (fs::path(root_dir_) / "third_party/alsatplg/bin/alsatplg").string();
-  compile_request.as_server = resolveCompileServerPath(root_dir_);
+  compile_request.alsatplg = config_.compile_alsatplg_path;
+  compile_request.as_server = config_.compile_as_server_path;
+  compile_request.as_server_rpc_mode = config_.compile_as_server_rpc_mode;
+  compile_request.as_server_host = config_.compile_as_server_host;
+  compile_request.as_server_port = config_.compile_as_server_port;
+  compile_request.as_server_timeout_ms = config_.compile_as_server_timeout_ms;
   compile_request.build_tplg = true;
   compile_request.strict = true;
   compile_request.plugin_paths = {};
@@ -1693,8 +1872,11 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   fs::create_directories(record.output_dir);
   const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
   const std::string validation_pipeline = validationPipelineSelector(request_json, snapshot_json, regenerated.pipeline_ids);
+  const std::string validation_datalink = config_.validation_datalink_endpoint.empty()
+                                            ? "as_datalink"
+                                            : config_.validation_datalink_endpoint;
   const std::string test_list =
-      "ac_run --endpoint as_datalink --mtu 512\n"
+      "ac_run --endpoint " + shellQuote(validation_datalink) + " --mtu 512\n"
       "trace on\n"
       "pipeinstall " + (validation_pipeline.empty() ? std::string() : ("-p " + validation_pipeline + " ")) +
       compile_result.tplg_path + "\n"
@@ -1710,12 +1892,18 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   validation_request.project_name = record.project_name;
   validation_request.tplg_path = compile_result.tplg_path;
   validation_request.test_list_path = test_list_path;
-  validation_request.script_path = resolveValidationScriptPath(root_dir_);
-  validation_request.as_server_path = resolveSimulatorRpcToolPath(
-      root_dir_, "as_server", "AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH");
-  validation_request.as_log_path = resolveSimulatorRpcToolPath(
-      root_dir_, "as_log", "AUDIO_STUDIO_VALIDATION_AS_LOG_PATH");
-  validation_request.trace_ldc_path = resolveTraceLdcPath(root_dir_);
+  validation_request.python = config_.validation_python;
+  validation_request.script_path = config_.validation_script_path;
+  validation_request.as_server_path = config_.validation_as_server_path;
+  validation_request.as_log_path = config_.validation_as_log_path;
+  validation_request.trace_ldc_path = config_.validation_trace_ldc_path;
+  validation_request.as_server_host = config_.validation_as_server_host;
+  validation_request.as_server_port = config_.validation_as_server_port;
+  validation_request.ready_timeout_ms = config_.validation_ready_timeout_ms;
+  validation_request.use_existing_as_server = config_.validation_use_existing_as_server;
+  validation_request.datalink_endpoint = config_.validation_datalink_endpoint;
+  validation_request.qemu_gdb_port = config_.validation_qemu_gdb_port;
+  validation_request.qemu_gdb_wait = config_.validation_qemu_gdb_wait;
 
   auto validation_result = validation_runner_->start(validation_request);
   if (!validation_result.ok) {
@@ -1814,6 +2002,66 @@ HttpResponse BuildOrchestrator::saveProject(const std::string& request_json) {
   }
   return {200, "application/json; charset=utf-8",
           "{\"ok\":true,\"status\":\"saved\",\"source_path\":\"" + jsonEscape(record.source_path) + "\"}"};
+}
+
+HttpResponse BuildOrchestrator::stageDaiInput(const std::string& workspace_id,
+                                              uint32_t dai_index,
+                                              const std::string& file_name,
+                                              const std::string& wav_bytes) {
+  WorkspaceRecord record;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(workspace_id);
+    if (!found || !found->build_ok) {
+      return {409, "application/json; charset=utf-8",
+              R"({"ok":false,"error":"build_required","diagnostics":["workspace must be built before staging FILE_IO DAI input"]})"};
+    }
+    record = *found;
+  }
+
+  if (wav_bytes.size() < 12u || wav_bytes.compare(0u, 4u, "RIFF") != 0 ||
+      wav_bytes.compare(8u, 4u, "WAVE") != 0) {
+    return {400, "application/json; charset=utf-8",
+            R"({"ok":false,"error":"invalid_wav","diagnostics":["FILE_IO DAI input must be a RIFF/WAVE file"]})"};
+  }
+
+  const std::string path = fileIoDaiPath(record.output_dir, "sof_fileio_in", dai_index);
+  if (!writeTextFile(path, wav_bytes)) {
+    return {500, "application/json; charset=utf-8",
+            R"({"ok":false,"error":"write_failed","diagnostics":["failed to stage FILE_IO DAI input"]})"};
+  }
+
+  std::ostringstream os;
+  os << "{\"ok\":true,\"accepted_bytes\":" << wav_bytes.size()
+     << ",\"file_name\":\"" << jsonEscape(file_name) << "\""
+     << ",\"stream_uri\":\"audio-studio://workspace/" << jsonEscape(workspace_id)
+     << "/file-io-dai/" << dai_index << "/input\"}";
+  return {200, "application/json; charset=utf-8", os.str()};
+}
+
+HttpResponse BuildOrchestrator::fetchDaiOutput(const std::string& workspace_id,
+                                               uint32_t dai_index,
+                                               const std::string& file_name) {
+  WorkspaceRecord record;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto* found = findWorkspaceLocked(workspace_id);
+    if (!found || !found->build_ok) {
+      return {409, "application/json; charset=utf-8",
+              R"({"ok":false,"error":"build_required","diagnostics":["workspace must be built before reading FILE_IO DAI output"]})"};
+    }
+    record = *found;
+  }
+
+  const std::string path = fileIoDaiPath(record.output_dir, "sof_fileio_out", dai_index);
+  const std::string wav_bytes = readTextFile(path);
+  if (wav_bytes.size() < 12u || wav_bytes.compare(0u, 4u, "RIFF") != 0 ||
+      wav_bytes.compare(8u, 4u, "WAVE") != 0) {
+    return {404, "application/json; charset=utf-8",
+            "{\"ok\":false,\"error\":\"output_not_ready\",\"file_name\":\"" +
+                jsonEscape(file_name) + "\"}"};
+  }
+  return {200, "audio/wav", wav_bytes};
 }
 
 namespace {
@@ -1962,13 +2210,15 @@ HttpResponse BuildOrchestrator::updateRuntimeParameter(const std::string& reques
 }
 
 struct GuiRuntimeEngine::PlaybackWorker {
+  explicit PlaybackWorker(BackendRuntimeConfig config)
+    : config_(std::move(config)) {}
+
   struct Frame {
     std::vector<uint8_t> bytes;
   };
 
   struct BufferProgress {
-    uint64_t consumed_bytes = 0;
-    int64_t last_change_ms = 0;
+    int64_t last_progress_ms = 0;
     bool seen = false;
   };
 
@@ -2047,6 +2297,10 @@ struct GuiRuntimeEngine::PlaybackWorker {
       rpc_ready_ = false;
       in_flight_ = false;
     }
+    {
+      std::lock_guard<std::mutex> lock(system_info_mutex_);
+      system_buffer_progress_.clear();
+    }
   }
 
   std::string enqueueStream(const std::string& query, const std::string& frame) {
@@ -2080,7 +2334,7 @@ struct GuiRuntimeEngine::PlaybackWorker {
       error = error_;
     }
     cv_.notify_one();
-    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age);
+    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age, accepted);
     stalled = blockage.stalled;
 
     std::ostringstream os;
@@ -2132,7 +2386,8 @@ struct GuiRuntimeEngine::PlaybackWorker {
       rpc_ready = rpc_ready_;
       error = error_;
     }
-    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age);
+    const auto blockage = blockageStatus(blocked_edge, queued, rpc_ready, queue_age,
+                                         stream_ok && bytes_written > 0);
     stalled = blockage.stalled;
 
     const bool accepted = active && stream_ok && bytes_written > 0 && error.empty();
@@ -2305,10 +2560,12 @@ private:
   BlockageStatus blockageStatus(const std::string& gui_edge_key,
                                 size_t queued_bytes,
                                 bool rpc_ready,
-                                int64_t queue_age_ms) {
+                                int64_t queue_age_ms,
+                                bool expecting_system_progress) {
     BlockageStatus status;
     status.gui_edge_key = gui_edge_key;
-    status.stalled = !rpc_ready || queued_bytes >= kHighWaterBytes || queue_age_ms >= 100;
+    status.stalled = !rpc_ready || queued_bytes >= kHighWaterBytes ||
+                     (queued_bytes > 0 && queue_age_ms >= 100);
 
 #if defined(AUDIO_STUDIO_GUI_PLAYBACK_RPC)
     try {
@@ -2332,17 +2589,23 @@ private:
         if (system_edge.empty()) continue;
         saw_buffer = true;
 
+        const uint64_t avail = jsonU64Field(buffer, "avail_bytes", 0);
+        const uint64_t produced = jsonU64Field(buffer, "produced_bytes", 0);
         const uint64_t consumed = jsonU64Field(buffer, "consumed_bytes", 0);
         const bool reported_stalled = jsonBoolField(buffer, "stalled", false);
+        const bool has_pending_data = avail > 0 || produced > 0;
         auto& progress = system_buffer_progress_[system_edge];
-        if (!progress.seen || progress.consumed_bytes != consumed) {
+        if (!progress.seen) {
           progress.seen = true;
-          progress.consumed_bytes = consumed;
-          progress.last_change_ms = now;
+          progress.last_progress_ms = now;
+        }
+        if (consumed > 0 || (!has_pending_data && !expecting_system_progress)) {
+          progress.last_progress_ms = now;
           if (!reported_stalled) continue;
         }
 
-        const bool no_consumption = progress.seen && (now - progress.last_change_ms) >= 100;
+        const bool no_consumption = (has_pending_data || expecting_system_progress) &&
+                                    (now - progress.last_progress_ms) >= 100;
         if (reported_stalled || no_consumption) {
           system_status.stalled = true;
           system_status.system_edge_key = system_edge;
@@ -2353,11 +2616,10 @@ private:
       }
 
       if (saw_buffer) {
-        if (!found_blocked) {
-          system_status.stalled = false;
-          system_status.system_edge_key.clear();
-        }
-        return system_status;
+        if (found_blocked) return system_status;
+        system_status.stalled = false;
+        system_status.system_edge_key.clear();
+        if (!status.stalled) return system_status;
       }
     } catch (...) {
     }
@@ -2384,9 +2646,9 @@ private:
       if (!status.ok()) throw std::runtime_error(status.message());
 
       audio_studio::rpc::SocketRpcEndpoint endpoint;
-      endpoint.host = simpleJsonStringField(request_json, "as_server_host", "127.0.0.1");
+      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.runtime_as_server_host);
       endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
-          request_json, "as_server_port", envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901)));
+          request_json, "as_server_port", config_.runtime_as_server_port));
       endpoint.timeout_ms = 1000;
       system_info_endpoint_ = endpoint;
       system_info_endpoint_.timeout_ms = 250;
@@ -2405,16 +2667,18 @@ private:
                        simpleJsonIntField(request_json, "bits", 16));
       config.bytes_per_sample = static_cast<uint16_t>(std::max(1, bits / 8));
       config.device_name = simpleJsonStringField(request_json, "device", "as_config_playback");
-      config.driver_factory = runtimeAudioDriverFactory(request_json);
+      config.driver_factory = runtimeAudioDriverFactory(request_json, config_);
       config.blocking_write = true;
       playback_ = std::make_unique<audio_studio::rpc::AudioPlayback>(audio_client_->createPlaybackSession(config));
       playback_->start();
       std::lock_guard<std::mutex> lock(mutex_);
       rpc_ready_ = true;
     } catch (const std::exception& error) {
+      const std::string message = error.what();
+      cleanupRpc();
       std::lock_guard<std::mutex> lock(mutex_);
       rpc_ready_ = false;
-      error_ = error.what();
+      error_ = message;
     }
 #else
     (void)request_json;
@@ -2529,6 +2793,7 @@ private:
   int next_push_ms_ = 20;
   int sample_frame_bytes_ = 4;
   int sample_rate_ = 48000;
+  BackendRuntimeConfig config_;
   std::string session_id_;
   std::string blocked_edge_key_;
   std::string error_;
@@ -2546,6 +2811,9 @@ private:
 };
 
 struct GuiRuntimeEngine::CaptureWorker {
+  explicit CaptureWorker(BackendRuntimeConfig config)
+    : config_(std::move(config)) {}
+
   ~CaptureWorker() {
     stop();
   }
@@ -2693,9 +2961,9 @@ private:
       if (!status.ok()) throw std::runtime_error(status.message());
 
       audio_studio::rpc::SocketRpcEndpoint endpoint;
-      endpoint.host = simpleJsonStringField(request_json, "as_server_host", "127.0.0.1");
+      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.runtime_as_server_host);
       endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
-          request_json, "as_server_port", envPort("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", 9901)));
+          request_json, "as_server_port", config_.runtime_as_server_port));
       endpoint.timeout_ms = 1000;
 
       json_transport_ = std::make_unique<audio_studio::rpc::SocketJsonRpcTransport>(drivers.socket(), endpoint);
@@ -2712,15 +2980,17 @@ private:
                        simpleJsonIntField(request_json, "bits", 16));
       config.bytes_per_sample = static_cast<uint16_t>(std::max(1, bits / 8));
       config.device_name = simpleJsonStringField(request_json, "device", "as_config_capture");
-      config.driver_factory = runtimeAudioDriverFactory(request_json);
+      config.driver_factory = runtimeAudioDriverFactory(request_json, config_);
       capture_ = std::make_unique<audio_studio::rpc::AudioCapture>(audio_client_->createCaptureSession(config));
       capture_->start();
       std::lock_guard<std::mutex> lock(mutex_);
       rpc_ready_ = true;
     } catch (const std::exception& error) {
+      const std::string message = error.what();
+      cleanupRpc();
       std::lock_guard<std::mutex> lock(mutex_);
       rpc_ready_ = false;
-      error_ = error.what();
+      error_ = message;
     }
 #else
     (void)request_json;
@@ -2776,6 +3046,7 @@ private:
   int sample_frame_bytes_ = 4;
   int sample_rate_ = 48000;
   uint64_t captured_bytes_ = 0;
+  BackendRuntimeConfig config_;
   std::string session_id_;
   std::string node_id_;
   std::string file_name_;
@@ -2790,11 +3061,13 @@ private:
 #endif
 };
 
-GuiRuntimeEngine::GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator)
-  : build_orchestrator_(std::move(build_orchestrator)) {
-  if (!build_orchestrator_) build_orchestrator_ = std::make_shared<BuildOrchestrator>(".");
-  playback_ = std::make_unique<PlaybackWorker>();
-  capture_ = std::make_unique<CaptureWorker>();
+GuiRuntimeEngine::GuiRuntimeEngine(std::shared_ptr<BuildOrchestrator> build_orchestrator,
+                                   BackendRuntimeConfig config)
+  : build_orchestrator_(std::move(build_orchestrator)),
+    config_(std::move(config)) {
+  if (!build_orchestrator_) build_orchestrator_ = std::make_shared<BuildOrchestrator>(".", nullptr, nullptr, config_);
+  playback_ = std::make_unique<PlaybackWorker>(config_);
+  capture_ = std::make_unique<CaptureWorker>(config_);
   rng_.seed(static_cast<unsigned>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
 }
 

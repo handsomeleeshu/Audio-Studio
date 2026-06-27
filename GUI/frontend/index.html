@@ -3803,6 +3803,23 @@
       }
       return null;
     }
+    async function apiGetBinary(path) {
+      try {
+        const r = await fetch(path, { cache: 'no-store' });
+        if (!r.ok) {
+          let message = `HTTP ${r.status}`;
+          try {
+            const error = await r.json();
+            message = error?.error || error?.diagnostics?.[0] || message;
+          } catch (_) {}
+          throw new Error(message);
+        }
+        return await r.arrayBuffer();
+      } catch (e) {
+        console.warn('[AudioStudio API] binary GET failed:', path, e?.message || e);
+        throw e;
+      }
+    }
 
     // Pipeline runtime UX helper functions.
     const edgeRuntimeFormatCache = new Map();
@@ -4044,8 +4061,6 @@
       const states = normalizeSettableStates(p);
       const status = runtimeStatusForNode(n);
       if (!states.length) return status !== RUNTIME_STATES.PIPE_RUNNING;
-      if (status === RUNTIME_STATES.PIPE_RUNNING) return states.includes(RUNTIME_STATES.PIPE_RUNNING);
-      if (states.includes(RUNTIME_STATES.PIPE_LOADED)) return status === RUNTIME_STATES.PIPE_LOADED;
       return states.includes(status);
     }
     function debugFileIoDirection(n) {
@@ -4292,7 +4307,7 @@
     let bufferDumpState = { active: false, edgeKey: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], fallback: false, format: null, lastTimestamp: 0, timer: null, writeChain: Promise.resolve(), pumpBusy: false };
     const debugFileIoFiles = new Map();
     const playbackFramePump = { active: false, busy: false, timer: 0, generation: 0, file: null, audio: null, nodeId: '', fileName: '', edgeKey: '', blockedEdgeKey: '', offset: 0, end: 0, frameIndex: 0, frameBytes: 3840, nextPushMs: 20, groupId: '' };
-    const captureFramePump = { active: false, busy: false, timer: 0, generation: 0, nodeId: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], format: null, frameBytes: 3840, nextPollMs: 20, groupId: '', writeChain: Promise.resolve() };
+    const captureFramePump = { active: false, busy: false, timer: 0, generation: 0, nodeId: '', fileName: '', handle: null, writable: null, bytes: 0, chunks: [], format: null, frameBytes: 3840, expectedBytes: 0, nextPollMs: 20, groupId: '', writeChain: Promise.resolve() };
     let selectedEdgeKey = '';
     let selectedNodeIds = new Set();
     let selectedEdgeKeys = new Set();
@@ -6017,6 +6032,7 @@
     }
     function renderDaiFileInputControl(n) {
       if (!isDaiFileIoInputSource(n)) return '';
+      if (nodeDisplayParams(n).some(p => paramId(p) === 'file_path')) return '';
       const status = runtimeStatusForNode(n);
       const enabled = status === RUNTIME_STATES.PIPE_UNLOADED;
       const disabled = enabled ? '' : ' disabled';
@@ -6135,6 +6151,7 @@
               const pathHint = file.webkitRelativePath || file.name;
               debugFileIoFiles.set(n.id, { file, info, path_hint: pathHint, selected_at: Date.now() });
               n.debugFileIo = { direction: 'input', file_name: file.name, path_hint: pathHint, audio: info };
+              if (isDaiFileIoInputSource(n)) applyDaiInputAudioInfoToParams(n, info);
               writeInspectorPresetParam(n, p, pathHint);
               renderInspectorParameters(n);
               backendEdit('debug_file_io_selected', { node_id: n.id, file_name: file.name, path_hint: pathHint, audio: info });
@@ -6285,6 +6302,15 @@
             fail(n, `${n.name || n.id}: output path must be a .wav file`);
           }
         }
+        if (isDaiFileIoNode(n) && debugFileIoDirection(n) === 'output') {
+          const record = captureFileRecordForNode(n);
+          const name = String(record?.file_name || record?.path_hint || n.debugFileIo?.file_name || n.debugFileIo?.path_hint || n.paramValues?.file_path || '');
+          if (!record && !name) {
+            fail(n, `${n.name || n.id}: choose a DAI output WAV path before RUN`);
+          } else if (name && !/\.wav$/i.test(name)) {
+            fail(n, `${n.name || n.id}: DAI output path must be a .wav file`);
+          }
+        }
       });
       if (failures.length) {
         const first = failures[0];
@@ -6295,6 +6321,61 @@
         return false;
       }
       return true;
+    }
+    async function stageDaiInputsForGroup(groupId = targetRuntimeGroupId()) {
+      const nodes = uniqueRuntimeNodesForGroups(groupsForRuntimeId(groupId));
+      const inputs = nodes.filter(isDaiFileIoInputSource);
+      for (const n of inputs) {
+        const record = playbackFileRecordForNode(n);
+        if (!record?.file) throw new Error(`${n.name || n.id}: DAI input WAV is unavailable`);
+        const bytes = await record.file.arrayBuffer();
+        const query = new URLSearchParams({
+          workspace_id: currentWorkspaceId || currentProjectConfig?.workspace_id || '',
+          node_id: n.id || '',
+          dai_index: String(Math.max(0, Number(n.paramValues?.dai_index || 0))),
+          file_name: record.file.name || n.debugFileIo?.file_name || 'input.wav'
+        });
+        const res = await apiPostBinary('/api/runtime/audio/dai/input?' + query.toString(), bytes);
+        if (!res || res.ok !== true || Number(res.accepted_bytes || 0) !== bytes.byteLength) {
+          throw new Error(res?.error || `${n.name || n.id}: failed to stage DAI input WAV`);
+        }
+        n.runtimeFileIoStreamUri = res.stream_uri || '';
+      }
+      return inputs.length;
+    }
+    async function saveDaiOutputsForGroup(groupId = targetRuntimeGroupId()) {
+      const nodes = uniqueRuntimeNodesForGroups(groupsForRuntimeId(groupId));
+      const outputs = nodes.filter(n => isDaiFileIoNode(n) && debugFileIoDirection(n) === 'output');
+      for (const n of outputs) {
+        const record = captureFileRecordForNode(n) || {};
+        const fileName = record.file_name || n.debugFileIo?.file_name || `${originalNodeId(n) || 'output'}.wav`;
+        const query = new URLSearchParams({
+          workspace_id: currentWorkspaceId || currentProjectConfig?.workspace_id || '',
+          node_id: n.id || '',
+          dai_index: String(Math.max(0, Number(n.paramValues?.dai_index || 0))),
+          file_name: fileName
+        });
+        const wav = await apiGetBinary('/api/runtime/audio/dai/output?' + query.toString());
+        const bytes = new Uint8Array(wav);
+        if (bytes.length < 12 || String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' ||
+            String.fromCharCode(...bytes.slice(8, 12)) !== 'WAVE') {
+          throw new Error(`${n.name || n.id}: backend returned an invalid DAI output WAV`);
+        }
+        if (record.handle?.createWritable) {
+          const writable = await record.handle.createWritable();
+          await writable.write(bytes);
+          await writable.close();
+        } else {
+          const blob = new Blob([bytes], { type: 'audio/wav' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = fileName;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        }
+        addLog('ok', 'DAI output saved', `${fileName} · ${bytes.length} bytes`);
+      }
+      return outputs.length;
     }
     function playbackEdgeForNode(n, groups) {
       const edges = groups.flatMap(g => g?.edges || []);
@@ -6421,11 +6502,18 @@
       } catch (e) {
         res = { ok: false, error: e?.message || 'playback EOS failed' };
       }
-      const ok = !!res && res.ok === true;
+      let ok = !!res && res.ok === true;
+      if (ok) {
+        try {
+          await saveDaiOutputsForGroup(groupId);
+        } catch (e) {
+          ok = false;
+          res = { ...(res || {}), ok: false, error: e?.message || 'DAI output save failed' };
+        }
+      }
       stopPlaybackFramePump(ok ? 'eof' : 'error');
       running = false;
-      if (ok) setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, 'run_complete');
-      else setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'run_error');
+      setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, ok ? 'run_complete' : 'run_error');
       $('#playBtn').textContent = '▶';
       renderAll(true);
       addLog(ok ? 'ok' : 'warn', ok ? 'Playback EOS complete' : 'Playback EOS failed', res?.error || res?.playback?.error || reason);
@@ -6539,6 +6627,15 @@
       const bits = Math.max(8, Number(fmt.bits || 16));
       const frameSamples = Math.max(64, Math.min(4096, Number(fmt.frameSamples || Math.round(sampleRate * 0.02)) || 480));
       const frameBytes = Math.max(channels * Math.max(1, bits / 8), frameSamples * channels * Math.max(1, bits / 8));
+      const daiInput = nodes.find(isDaiFileIoInputSource);
+      const inputInfo = playbackFileRecordForNode(daiInput)?.info || daiInput?.debugFileIo?.audio || {};
+      const inputByteRate = Number(inputInfo.byte_rate || 0) ||
+        Number(inputInfo.sample_rate || 0) * Number(inputInfo.channels || 0) * Math.max(1, Number(inputInfo.bits_per_sample || 0) / 8);
+      const durationSec = Number(inputInfo.duration_sec || 0) ||
+        (inputByteRate > 0 ? Number(inputInfo.data_bytes || 0) / inputByteRate : 0);
+      const expectedDataBytes = durationSec > 0
+        ? Math.max(channels * Math.max(1, bits / 8), Math.round(durationSec * sampleRate) * channels * Math.max(1, bits / 8))
+        : 0;
       return {
         enabled: true,
         node_id: sink.id,
@@ -6551,6 +6648,7 @@
         bits_per_sample: bits,
         frame_samples: frameSamples,
         frame_bytes: frameBytes,
+        expected_data_bytes: expectedDataBytes,
         audio: { sample_rate: sampleRate, channels, bits_per_sample: bits, data_offset: 44 }
       };
     }
@@ -6601,7 +6699,25 @@
       captureFramePump.handle = null;
       captureFramePump.chunks = [];
       captureFramePump.bytes = 0;
+      captureFramePump.expectedBytes = 0;
       captureFramePump.busy = false;
+    }
+    async function finishCaptureFramePump(reason = 'eof') {
+      if (!captureFramePump.active) return false;
+      const groupId = captureFramePump.groupId || targetRuntimeGroupId();
+      captureFramePump.active = false;
+      if (captureFramePump.timer) clearTimeout(captureFramePump.timer);
+      captureFramePump.timer = 0;
+      const res = await postRuntimeGroupState('stop', groupId, RUNTIME_STATES.PIPE_LOADED);
+      await finalizeCaptureFramePump(reason);
+      const ok = !!res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
+      running = false;
+      setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, ok ? 'run_complete' : 'run_error');
+      $('#playBtn').textContent = '▶';
+      renderAll(true);
+      addLog(ok ? 'ok' : 'warn', ok ? 'Capture complete' : 'Capture stop failed', res?.error || reason);
+      toast(ok ? 'Capture complete' : 'Capture failed', ok ? 'ok' : 'error');
+      return ok;
     }
     function scheduleCaptureFramePump(delayMs = 0) {
       if (!captureFramePump.active) return;
@@ -6612,10 +6728,13 @@
       if (!captureFramePump.active || captureFramePump.busy || generation !== captureFramePump.generation) return;
       captureFramePump.busy = true;
       try {
+        const remaining = captureFramePump.expectedBytes > 0
+          ? Math.max(0, captureFramePump.expectedBytes - captureFramePump.bytes)
+          : captureFramePump.frameBytes;
         const qp = new URLSearchParams({
           node_id: captureFramePump.nodeId || '',
           file_name: captureFramePump.fileName || '',
-          max_bytes: String(captureFramePump.frameBytes || 3840)
+          max_bytes: String(Math.max(1, Math.min(captureFramePump.frameBytes || 3840, remaining || captureFramePump.frameBytes || 3840)))
         });
         const res = await apiGet('/api/runtime/audio/capture/frame?' + qp.toString());
         if (!captureFramePump.active || generation !== captureFramePump.generation) return;
@@ -6625,11 +6744,16 @@
         const bytes = bytesFromBase64(res?.capture?.data_base64 || '');
         await writeCaptureChunk(bytes);
         captureFramePump.nextPollMs = Math.max(1, Math.min(250, Number(res?.capture?.next_poll_ms || 20)));
+        if (captureFramePump.expectedBytes > 0 && captureFramePump.bytes >= captureFramePump.expectedBytes) {
+          await finishCaptureFramePump('eof');
+          return;
+        }
       } catch (e) {
         addLog('warn', 'Capture frame pump failed', e?.message || 'capture error');
         await finalizeCaptureFramePump('error');
         const groupId = captureFramePump.groupId || targetRuntimeGroupId();
-        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.ERROR, 'run_error');
+        await postRuntimeGroupState('stop', groupId, RUNTIME_STATES.PIPE_LOADED);
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, 'run_error');
         $('#playBtn').textContent = '▶';
         renderAll(true);
       } finally {
@@ -6652,6 +6776,7 @@
       captureFramePump.chunks = [];
       captureFramePump.format = { channels: captureRequest.channels || 2, sampleRate: captureRequest.sample_rate || 48000, bits: captureRequest.bits_per_sample || 16 };
       captureFramePump.frameBytes = Math.max(256, Number(captureRequest.frame_bytes || 3840));
+      captureFramePump.expectedBytes = Math.max(0, Number(captureRequest.expected_data_bytes || 0));
       captureFramePump.nextPollMs = 1;
       captureFramePump.groupId = groupId;
       captureFramePump.writeChain = Promise.resolve();
@@ -8986,9 +9111,12 @@
         const groupsApi = window.audioStudioWorkingPipelineGroupsV44;
         if (selected !== 'ALL' && groupsApi?.currentWorkingGroupsV44) {
           const g = groupsApi.currentWorkingGroupsV44().find(x => x.id === selected);
-          if (g?.nodes?.length) return [...g.nodes];
+          if (g?.nodes?.length) return [...g.nodes].filter(n => !isDebugFileIoNode(n));
         }
-        return [...state.nodes];
+        return algorithmCostDspNodesV50();
+      }
+      function algorithmCostDspNodesV50() {
+        return state.nodes.filter(n => !isDebugFileIoNode(n));
       }
       function normalizeCostItemV50(raw, n) {
         if (!raw) return null;
@@ -9075,21 +9203,22 @@
         backendEdit('algorithm_cost_sort_v50', { key, dir: algorithmCostLiveV50.sortDir });
       }
       async function fetchBackendCostsV50(nodes) {
-        const ids = encodeURIComponent(nodes.map(n => n.id).join(','));
-        const cores = encodeURIComponent(nodes.map(n => n.core ?? 0).join(','));
+        const requestedNodes = algorithmCostDspNodesV50();
+        const ids = encodeURIComponent(requestedNodes.map(n => n.id).join(','));
+        const cores = encodeURIComponent(requestedNodes.map(n => n.core ?? 0).join(','));
         const data = await apiGet(`/api/algorithm/cost/live?running=${running ? 1 : 0}&nodes=${ids}&cores=${cores}&_=${Date.now()}`);
         algorithmCostLiveV50.items.clear();
         if (!data) return false;
         if (Array.isArray(data.costs)) {
           data.costs.forEach(raw => {
             const id = raw?.node_id || raw?.nodeId;
-            const n = nodes.find(x => x.id === id);
+            const n = requestedNodes.find(x => x.id === id);
             const item = normalizeCostItemV50(raw, n);
             if (item?.node_id) algorithmCostLiveV50.items.set(item.node_id, item);
           });
         } else if (data.nodeCost && typeof data.nodeCost === 'object') {
           Object.entries(data.nodeCost).forEach(([id, raw]) => {
-            const n = nodes.find(x => x.id === id);
+            const n = requestedNodes.find(x => x.id === id);
             const item = normalizeCostItemV50({ ...raw, node_id: id }, n);
             if (item?.node_id) algorithmCostLiveV50.items.set(item.node_id, item);
           });
@@ -13071,17 +13200,17 @@
       $('.badge.ok').textContent = '◌ BUILDING';
       toast('Building...', 'info');
       addLog('info', 'Build started', 'Calling /api/pipeline/build');
-      const groups = groupsForRuntimeId(groupId);
+      const groups = runtimeGroups();
       const targetNodes = groups.flatMap(g => g.nodes.map(n => n.id));
       const targetEdges = groups.flatMap(g => g.edges.map(edgeKeyForEdge));
       const buildPayload = {
         ...pipelineSnapshot(),
-        build_scope: groupId === 'ALL' ? 'all_pipelines' : 'selected_pipeline',
-        group_id: groupId,
-        scope: groupId === 'ALL' ? 'all_working_groups' : 'working_group',
+        build_scope: 'all_pipelines',
+        group_id: 'ALL',
+        scope: 'all_working_groups',
         target_group: {
-          id: groupId,
-          name: groupId === 'ALL' ? 'All working pipeline groups' : (runtimeGroupById(groupId)?.displayName || groupId),
+          id: 'ALL',
+          name: 'All working pipeline groups',
           groups: groups.map(g => g.id),
           nodes: targetNodes,
           edges: targetEdges
@@ -13094,7 +13223,7 @@
       const pipeLoaded = normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_LOADED;
       const ok = backendOk && pipeLoaded && !((res?.errors || []).length);
       buildState = ok ? 'success' : 'failed';
-      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
+      setRuntimeStatusForGroup('ALL', ok ? RUNTIME_STATES.PIPE_LOADED : RUNTIME_STATES.ERROR, ok ? 'build_success' : 'build_failed');
       $('.badge.ok').textContent = ok ? '● BUILD SUCCESS' : '● BUILD FAILED';
       if (res?.core_map) {
         state.nodes.forEach(n => { if (res.core_map[n.id] !== undefined) n.core = Number(res.core_map[n.id]); });
@@ -13150,11 +13279,26 @@
         return false;
       }
       if (!validateRuntimeFileIoForGroup(groupId)) return false;
+      try {
+        await stageDaiInputsForGroup(groupId);
+      } catch (e) {
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, 'run_rejected');
+        addLog('warn', 'Run rejected', e?.message || 'Failed to stage DAI input');
+        toast(e?.message || 'Failed to stage DAI input', 'error');
+        return false;
+      }
       const res = await postRuntimeGroupState('run', groupId, RUNTIME_STATES.PIPE_RUNNING);
-      const ok = res?.ok !== false;
-      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_RUNNING : RUNTIME_STATES.ERROR, ok ? 'run_button' : 'run_rejected');
-      if (ok && res?.playback_request) startPlaybackFramePump(res.playback_request, groupId);
-      if (ok && res?.capture_request) await startCaptureFramePump(res.capture_request, groupId);
+      let ok = !!res && res.ok === true && normalizeRuntimeStatus(res?.runtime_state) === RUNTIME_STATES.PIPE_RUNNING;
+      setRuntimeStatusForGroup(groupId, ok ? RUNTIME_STATES.PIPE_RUNNING : RUNTIME_STATES.PIPE_LOADED, ok ? 'run_button' : 'run_rejected');
+      try {
+        if (ok && res?.playback_request) startPlaybackFramePump(res.playback_request, groupId);
+        if (ok && res?.capture_request) await startCaptureFramePump(res.capture_request, groupId);
+      } catch (e) {
+        ok = false;
+        await postRuntimeGroupState('stop', groupId, RUNTIME_STATES.PIPE_LOADED);
+        setRuntimeStatusForGroup(groupId, RUNTIME_STATES.PIPE_LOADED, 'run_error');
+        addLog('warn', 'Run setup failed', e?.message || 'frontend audio setup failed');
+      }
       if (!ok) stopPlaybackFramePump('run_rejected');
       if (!ok) await finalizeCaptureFramePump('run_rejected');
       if (typeof wakeAnimationLoop === 'function') wakeAnimationLoop();

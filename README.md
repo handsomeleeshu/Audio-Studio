@@ -1,475 +1,258 @@
 # Audio Studio
 
-Audio Studio 是一个面向音频 DSP / VASS（VeriSilicon Advanced Sound System）产品化验证的 Web 工程 Demo。它用于展示基于产品 JSON 配置的音频 pipeline 设计、算法组件编排、运行态监控、参数调试、buffer probe / dump，以及后端 DSP runtime 接入接口。
+Audio Studio 是面向 VASS/SOF simulator 的 Web 工具链。当前主线已经不再是纯 mock demo：前端通过 C++ GUI backend 调用 `as_server` JSON-RPC，backend 再驱动 `audio_controller`、rv32qemu simulator 和 SOF FILE_IO_DAI，完成 topology build、playback、record 和运行态监控。
 
-当前工程已经从早期 React 方案切换为 **standalone HTML 前端 + C++17 Mock Backend**。前端不需要 npm build；本地调试时由 C++ mock server 直接托管 `GUI/frontend/index.html`、静态资源和 `/api/*` 后端接口。
-
----
+前端仍是 standalone HTML/CSS/JS，不需要 npm build。C++ backend 直接托管 `GUI/frontend/index.html` 和 `/api/*`。
 
 ## 1. 工程目标
 
-Audio Studio 的目标不是做一个纯前端静态画图工具，而是模拟真实 Audio Studio / DSP runtime 工具链的工作方式：
+- 从产品 JSON 加载 module catalog、pipeline、节点、端口、参数和 GUI-only frontend connections。
+- 在 Web UI 中编辑 pipeline layout，并把 build 前参数写回 workspace JSON。
+- Build 时把 layout 里所有 working pipelines 一次性编译成 tplg，并在 simulator 中 pipeinstall。
+- RUN 时按当前选中 pipeline 独立启动 playback 或 capture。
+- File Input 通过独立 binary stream URL 推 PCM，metadata API 返回 queue/backpressure。
+- File Output 通过 capture frame API 定时拉 PCM，不在 backend 建 capture queue。
+- 用 System Info 替代 runtime mock，驱动 PER-ALGORITHM COST、DSP CORE LOADING、SYSTEM HEALTH。
+- `as_log` 保持普通 firmware log 可读，内部 `ASINFO|` telemetry 被 log service 拦截，不出现在 as_log。
 
-- 从产品 JSON 加载算法库、pipeline、节点、端口、参数和默认布局。
-- 在 Web UI 中编辑 pipeline，包括添加、删除、连接、拆分、合并和自动排布。
-- 将 UI 操作通过 backend API 回调给后端，为后续接真实 DSP / simulator / runtime 保留接口。
-- 在 pipeline running 状态下展示实时监控数据，包括算法开销、core loading、system health、audio I/O、Inspector、buffer probe 和实时信号 probe。
-- 支持本地 C++ mock backend 生成合理 mock 数据，便于没有真实 DSP 设备时演示和调试 UI。
-- 禁止关键运行态数据由前端自己伪造；实时 DSP 相关数据应通过后端 controller 返回。
+## 2. 当前能力
 
----
+### 2.1 Product JSON
 
-## 2. 当前能力概览
+当前主要测试源是：
 
-### 2.1 Project / JSON 配置
+```text
+configs/platform/simulator/simulator.json
+```
 
-- 支持从 `configs/platform/*/*.json` 扫描 project。
-- 当前示例 project 为 `configs/platform/a2/A2.json`。
-- Project JSON 描述内容包括：
-  - module types
-  - module instances
-  - pipelines
-  - nodes
-  - edges
-  - runtime parameters
-  - static schema
-  - notes / description
-  - performance hints
+JSON 顶层结构：
 
-前端会根据 JSON 自动生成算法库、pipeline graph、节点端口、Inspector 参数区和说明区。
+```text
+meta
+imports
+resource_catalog
+module_types
+pipelines
+frontend_connections
+presets
+```
 
-### 2.2 Pipeline Layout 编辑
+设计原则：
+
+- `pipelines[]` 是 SOF/tplg 编译输入。
+- `frontend_connections[]` 与 `pipelines[]` 并列，描述 `builtin.file_input/output` 和 HOST external port 的 GUI/runtime 连接。
+- `module_instances` 已取消；node 自己携带 `module_type` 和 `params`。
+- node `params` 只能使用 module parameter schema 中声明过的参数。
+- HOST/DAI 的 binding 信息放入各自 params，不额外拆 endpoint section。
+- `audio_studio_gui` 是临时 workspace section，save 时会 strip。
+
+### 2.2 Pipeline Layout
 
 Pipeline layout 支持：
 
-- 从 Algorithm Library 拖拽新增算法组件。
-- 点击节点查看 Inspector。
-- 点击 buffer connection 查看 buffer Inspector / Dump / Probe。
-- output port 到 input port 手动连线。
-- 单 output / 单 input 一对一连接约束。
-- 删除节点和连线。
-- 框选、多选、Ctrl/Cmd 多选。
-- Copy / Cut / Paste。
-- Delete / Backspace 删除选中内容。
-- Undo / Redo。
-- Save / Export。
-- Auto Arrange 自动排布。
+- 加载 `pipelines[] + frontend_connections[]`。
+- 添加、删除、移动、连接、断开节点。
+- 一对一手动连接约束。
+- 框选、多选、Copy/Cut/Paste。
+- Undo/Redo、Auto Arrange、Save/Export。
+- Build 成功后结构锁定，Unload 后解除。
 
-Auto Arrange 当前支持：
+Build 是全量语义：只要 layout 里有多个 working pipeline，点击 Build 就一起 build/load；前端选中一个 pipeline 只影响 RUN/STOP，不影响 Build 范围。
 
-- 长 pipeline 横向自然延展，不再限制一行算法数量。
-- 不相连的 pipeline component 自动上下分 band 排布。
-- fan-in / fan-out 按端口顺序尽量保持视觉关系。
-- layout world bounds 自动扩展，支持滚动和缩放。
+### 2.3 Inspector 与参数状态
 
-### 2.3 Working Pipeline Groups
+参数 settable state 只有三种：
 
-Pipeline list 不再只是原始 JSON 中的 pipeline 列表。前端会基于当前 layout 的 connected components 自动识别 working pipeline group，并显示状态：
+```text
+PIPE_UNLOADED
+PIPE_LOADED
+PIPE_RUNNING
+```
 
-- `Saved`
-- `Modified`
-- `New`
-- `Unsaved split`
-- `Unsaved merge`
+前端根据 `apply.settable_states` 自动置灰。Build 前可改参数写入 `pipelines[].nodes[].params`；RUN 中可改参数调用 `/api/param/update`，backend 更新 `inspector_preset`，并保留后续接入 as_control 的接口。
 
-典型场景：
+### 2.4 File Input / Output
 
-- 修改一个已保存 pipeline，但图仍连通：显示 `Modified`。
-- 把一个 pipeline 手动拆成多个不相连图块：显示 `Unsaved split`。
-- 新建一个和其它 pipeline 无连接的新图块：显示 `New`。
-- 把两个原始 pipeline 接到一起：显示 `Unsaved merge`。
+- `builtin.file_input` 和 `builtin.file_output` 是前端 runtime 节点，只保存于 `frontend_connections[]`。
+- File Input 必须选择合法 WAV 后才能 RUN playback。
+- File Output 必须选择可写 `.wav` 输出路径后才能 RUN capture。
+- 前端写一帧 PCM 到 `/api/runtime/audio/playback/stream`，随后用 `/api/runtime/audio/playback/frame` 上报 frame 元信息。
+- backend 立即把 PCM 入队并返回 `accepted`、`queued_audio_ms`、`next_push_ms`、`stalled`、`blocked_edge_key`。
+- 前端文件读完后发 `/api/runtime/audio/playback/eos`；backend 等 queue drain 和 playback tail flush 后关闭 session。
+- Capture 不建 backend queue，前端定时 GET `/api/runtime/audio/capture/frame`，收到 PCM 后写入本地 WAV。
 
-后续完善 JSON save 逻辑时，可以基于这些 working groups 提醒用户命名、确认删除、确认拆分或合并。
+### 2.5 FILE_IO_DAI
 
-### 2.4 Inspector
+`builtin.dai` + params 表示 FILE_IO_DAI：
 
-Inspector 根据当前选中对象自动切换：
+```json
+{
+  "module_type": "builtin.dai",
+  "params": {
+    "dai_type": "file_io_dai",
+    "dai_index": 0,
+    "link_name": "FILE_IO_PLAYBACK_DAI0",
+    "device_id": "FILEIO0",
+    "direction": "playback",
+    "sample_rate": 48000,
+    "channels": 2,
+    "sample_bits": 16,
+    "tdm_slots": 2,
+    "slot_width": 16
+  }
+}
+```
 
-- 选中 algorithm node：显示节点 Inspector。
-- 选中 connection / buffer：显示 buffer Inspector。
+Capture pipeline 中 FILE_IO_DAI 作为输入源时，前端选择 WAV 后会解析并填入 DAI 已声明的格式参数。Playback pipeline 中 FILE_IO_DAI 作为输出 sink 时，UI 可配置输出格式。
 
-节点 Inspector 支持：
+### 2.6 Runtime Dashboard
 
-- General 信息。
-- Runtime parameters。
-- Probe。
-- Notes。
+Dashboard 数据来自 backend live APIs：
 
-Buffer Inspector 支持：
+- `PER-ALGORITHM COST`：`/api/algorithm/cost/live`
+- `DSP CORE LOADING`：`/api/dsp/core/loading`
+- `SYSTEM HEALTH`：`/api/system/health/live`
 
-- buffer format。
-- RMS / Peak。
-- frame size。
-- waveform / spectrum。
-- buffer dump。
+这些 API 优先调用 as_server `systemInfo.*`。SOF 端 `audio_studio` task 每 100ms 输出 `ASINFO|` trace；as_server `SystemInfoService` 解析后维护 snapshot。1s 没收到 heartbeat 时状态断连，前端不继续显示历史值。
 
-### 2.5 Buffer Dump
-
-Buffer dump 支持多 buffer 同时 dump：
-
-- 每条 connection / buffer 有独立 dump session。
-- 多个 buffer 可以同时 Start Dump。
-- 每个 buffer 独立保存 WAV、独立统计 written bytes、独立 timer。
-- Dump 数据必须来自后端 `/api/inspector/buffer/live` 返回的 PCM16。
-- GitHub Pages 或无 backend 情况下不生成前端 fake PCM 文件。
-
-### 2.6 Real-Time Signal Probe
-
-`REAL-TIME SIGNAL PROBE` 是底部高清实时信号窗口，用于增强显示当前选中 buffer 的时域或频域数据。
-
-能力包括：
-
-- 根据当前选中 buffer format 自动识别声道数。
-- 最多同时显示两个声道。
-- 声道选择为上拉菜单，显示 `ch0 ~ chN`。
-- Purple 通道可选择 `Off`，用于只显示一个声道。
-- 支持 Time / Frequency 模式切换。
-- Frequency 模式由后端执行 4096-point FFT。
-- 前端只渲染后端 `/api/realtime/probe/live` 返回的数据，不自己造 fake waveform / spectrum。
-- 控制信息通过 `/api/realtime/probe/config` 传给后端。
-
-### 2.7 Per-Algorithm Cost
-
-`PER-ALGORITHM COST` 面板展示每个算法实例的运行开销：
-
-- CPU
-- MEM
-- LAT
-- Core
-- IDX
-- Total row
-- 排序和节点定位
-
-数据由后端 `/api/algorithm/cost/live` 返回，mock 后端在 running 状态下生成合理 fake cost 数据。
-
-### 2.8 DSP Core Loading
-
-`DSP CORE LOADING` 面板展示 DSP core 运行状态：
-
-- Core N load
-- temperature
-- power
-- Total Load
-- Headroom
-
-Core 行区域可滚动，底部 Total Load / Headroom 固定显示。Core 数量跟随顶部 `Cores` 配置变化，例如 4 cores 或 8 cores。
-
-数据由后端 `/api/dsp/core/loading` 返回。前端不自己生成 core loading fake 数据。
-
-### 2.9 System Health / Audio I/O / Event Log
-
-底部 dashboard 还包括：
-
-- `SYSTEM HEALTH`
-  - latency
-  - buffer occupancy
-  - throughput
-  - XRuns / dropouts
-  - memory usage
-  - power usage
-  - active cores
-
-- `AUDIO I/O`
-  - IN L / IN R / OUT L / OUT R 电平表
-
-- `EVENT LOG`
-  - UI 操作日志
-  - backend callback 日志
-  - running 状态下的周期性事件
-
-这些面板均通过对应后端 controller 获取 mock 数据，便于后续接入真实系统状态。
-
----
+SYSTEM HEALTH 会展开 heap 信息，包括 memory category、block size、free_count、total_count、used/free bytes 等细项。
 
 ## 3. 工程结构
 
 ```text
 Audio-Studio/
-├── README.md
-├── GUI/frontend/
-│   ├── index.html                 # standalone HTML/CSS/JS frontend
-│   └── assets/
-│       ├── js/
-│       │   ├── configParser.js     # product JSON parser
-│       │   └── utils.js
-│       └── verisilicon-logo.png
-├── GUI/backend/
-│   ├── CMakeLists.txt
-│   ├── include/
-│   │   └── audio_studio.hpp        # backend interfaces and controller declarations
-│   └── src/
-│       ├── main.cpp                # mock server entry
-│       ├── http_server.cpp         # static file server + REST API routes
-│       └── mock_runtime.cpp        # fake runtime/controller implementations
-├── configs/
-│   ├── built-in-algorithm.json     # shared built-in module catalog
-│   └── platform/
-│       ├── a2/
-│       │   ├── a2_defconfig
-│       │   └── A2.json             # A2 platform project config
-│       └── simulator/
-│           ├── simulator_defconfig
-│           └── simulator.json      # simulator platform project config
-├── scripts/
-│   ├── build_all.sh
-│   └── run_tests.sh
-└── tests/
-    └── frontend/
-        ├── config-parser.test.mjs
-        ├── plain-html-integration.test.mjs
-        └── standalone-features.test.mjs
+├── GUI/frontend/                 # standalone UI
+├── GUI/backend/                  # local HTTP server and runtime orchestration
+├── server/framework/             # config/audio/log/system_info/transport services
+├── server/platform/simulator/    # simulator drivers
+├── audio_controller/             # C control/data endpoint
+├── configs/                      # product JSON and module catalogs
+├── plugins/                      # third-party module extension point
+├── cli/common/                   # as_play/as_record/as_log shared code
+└── tests/                        # contracts and E2E
 ```
 
----
+相关 VASS 路径：
+
+```text
+../sof/src/audio_studio/
+../sof/src/drivers/file_io/
+../application/rv32qemu/sof-build-test.py
+../Misc/sof_test/
+```
 
 ## 4. 快速启动
 
-### 4.1 构建后端
+构建 simulator 相关目标：
 
 ```bash
-./scripts/build_all.sh --profile gui_backend -r linux a2
+cmake --build out/linux/simulator/rpc_socket/Debug --parallel 16
+cmake --build out/linux/simulator/gui_backend/Debug --parallel 16
+cmake --build out/linux/simulator/audio_controller/Debug --parallel 16
 ```
 
-### 4.2 启动本地 server
+启动 GUI backend：
 
 ```bash
-./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
+out/linux/simulator/gui_backend/Debug/audio_studio_server . 8080 \
+  --as-server out/linux/simulator/rpc_socket/Debug/as_server \
+  --alsatplg third_party/alsatplg/bin/alsatplg \
+  --as-server-rpc-mode once \
+  --validation-python python3 \
+  --validation-script ../application/rv32qemu/sof-build-test.py \
+  --validation-as-server out/linux/simulator/rpc_socket/Debug/as_server \
+  --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
+  --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
+  --validation-as-server-port 9901 \
+  --runtime-as-server-port 9901 \
+  --audio-driver-factory simulator
 ```
 
-### 4.3 打开页面
+打开：
 
 ```text
 http://127.0.0.1:8080
 ```
 
-推荐使用本地 C++ server 打开页面。这样前端可以访问完整 `/api/*`，所有运行态数据都由 mock backend 返回。
+推荐项目：
 
-如果直接以静态页面方式打开，或者部署到没有 C++ backend 的 GitHub Pages，部分 backend-driven 面板会显示 API 不可用 / N/A。这是预期行为。
+```text
+simulator/simulator.json
+```
 
----
+## 5. 主要 API
 
-## 5. 测试
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/api/projects` | 列出 platform JSON |
+| GET | `/api/config?project=...` | 创建 workspace copy |
+| POST | `/api/pipeline/build` | 全 layout build/load |
+| POST | `/api/pipeline/unload` | 停止 simulator keep-alive |
+| POST | `/api/runtime/run` | 启动 selected pipeline |
+| POST | `/api/runtime/audio/playback/stream` | Playback PCM binary stream |
+| POST | `/api/runtime/audio/playback/frame` | Playback frame metadata/backpressure |
+| POST | `/api/runtime/audio/playback/eos` | Playback EOS/drain/close |
+| GET | `/api/runtime/audio/capture/frame` | Capture PCM frame |
+| POST | `/api/runtime/stop` | 停止 selected pipeline |
+| POST | `/api/param/update` | RUN 中参数更新 |
+| GET | `/api/algorithm/cost/live` | PER-ALGORITHM COST |
+| GET | `/api/dsp/core/loading` | DSP CORE LOADING |
+| GET | `/api/system/health/live` | SYSTEM HEALTH |
+| POST | `/api/project/save` | 保存 JSON，strip `audio_studio_gui` |
 
-完整测试：
+## 6. 测试
+
+常用 contract：
 
 ```bash
-./scripts/run_tests.sh
+python3 tests/system-info-runtime-contract.test.py
+python3 tests/backend-process-lifecycle-contract.test.py
+python3 tests/vscode-qemu-debug-contract.test.py
+node tests/frontend/gui-runtime-contract.test.mjs
+node tests/frontend/parameter-policy.test.mjs
+node tests/frontend/pipeline-runtime-build-button.test.mjs
 ```
 
-单独运行前端测试：
+C++ tests：
 
 ```bash
-node tests/frontend/config-parser.test.mjs
-node tests/frontend/plain-html-integration.test.mjs
-node tests/frontend/standalone-features.test.mjs
+ctest --test-dir out/linux/simulator/gui_backend/Debug --output-on-failure
+ctest --test-dir out/linux/simulator/audio_controller/Debug --output-on-failure
+ctest --test-dir out/linux/simulator/driver_interface_tests/Debug --output-on-failure
+ctest --test-dir out/linux/simulator/rpc_socket/Debug --output-on-failure
 ```
 
-构建后端：
+GUI/simulator E2E：
 
 ```bash
-./scripts/build_all.sh --profile gui_backend -r linux a2
+python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e2e-artifacts
 ```
 
----
-
-## 5.1 VSCode Debug / Profile
-
-本工程已提供 VSCode 一键调试和剖析配置：
-
-```text
-Full Stack: Debug
-Full Stack: Profile
-Backend: Debug Server
-Frontend: Debug Chrome
-Frontend: Profile Chrome
-```
-
-详细使用方式见：
-
-```text
-docs/debug_profile_guide.md
-```
-
----
-
-## 6. 主要后端 API
-
-### 6.1 Project / Config
-
-```text
-GET  /api/projects
-GET  /api/config?project=a2/A2.json
-GET  /configs/platform/a2/A2.json
-```
-
-### 6.2 Pipeline Runtime
-
-```text
-POST /api/pipeline/validate
-POST /api/pipeline/build
-POST /api/pipeline/edit
-POST /api/pipeline/tool
-POST /api/project/save
-POST /api/runtime/run
-POST /api/runtime/stop
-```
-
-### 6.3 Node / Parameter / Inspector
-
-```text
-POST /api/node/action
-POST /api/param/update
-POST /api/inspector/inspect
-GET  /api/inspector/live
-POST /api/inspector/buffer/inspect
-GET  /api/inspector/buffer/live
-```
-
-### 6.4 Dashboard / Runtime Monitoring
-
-```text
-GET  /api/telemetry
-GET  /api/algorithm/cost/live
-GET  /api/dsp/core/loading
-GET  /api/system/health/live
-GET  /api/audio/io/live
-GET  /api/event-log/live
-POST /api/ui/event
-```
-
-### 6.5 Real-Time Probe
-
-```text
-POST /api/realtime/probe/config
-GET  /api/realtime/probe/live
-```
-
----
-
-## 7. 后端扩展点
-
-真实 DSP / VASS / simulator 接入时，主要替换或继承以下接口：
-
-```text
-IRuntimeEngine
-INodeController
-IParameterController
-IInspectorController
-IAlgorithmCostController
-IDspCoreLoadingController
-IEventLogController
-ISystemHealthController
-IAudioIoController
-IRealTimeProbeController
-```
-
-当前 fake controller 的职责是：
-
-- 让前端 UI 在没有真实 DSP 的情况下可运行、可演示、可测试。
-- 保持接口形态接近真实产品集成需求。
-- 对关键实时数据采用后端生成，而不是前端直接 fake。
-
-后续接入真实 runtime 时，可以保持 API contract 不变，只替换 controller 实现。
-
----
-
-## 8. Product JSON 说明
-
-`configs/platform/a2/A2.json` 是当前产品配置示例，描述 A2 音频 pipeline 和算法模块。前端会解析其中的：
-
-```text
-imports
-module_types
-pipelines
-frontend_connections
-nodes
-edges
-parameters
-notes
-performance
-ui
-```
-
-常见字段用途：
-
-- `imports`：显式导入共享 module catalog，例如 `configs/built-in-algorithm.json`。
-- `module_types`：项目私有算法类型定义；通用内置算法不在 `A2.json` 重复声明。
-- `pipelines`：SOF pipeline 拓扑。每个 node 直接声明 `module_type` 和初始化 `params`。
-- `frontend_connections`：File Input/File Output 等前端节点与 HOST stream 的 layout/runtime 连接关系，不参与 tplg 编译。
-- `nodes`：pipeline 中的算法、HOST、DAI 节点。
-- `edges`：节点之间的 buffer connection。
-- `parameters`：算法参数模板；带 `RUNNING` settable state 的参数会在 Inspector 中自动显示为 toggle、select、slider 或 number input。
-- `performance`：默认 CPU / latency / memory hints。
-- `notes`：Inspector Notes 中显示的模块说明。
-
----
-
-## 9. 前端开发说明
-
-当前前端是 standalone HTML：
-
-```text
-GUI/frontend/index.html
-```
-
-特点：
-
-- 不依赖 React / Vite / Webpack。
-- 不需要 npm install。
-- 可以直接由 C++ server 托管。
-- UI、交互和 API 调用逻辑集中在 `index.html`。
-- JSON 解析相关逻辑在 `GUI/frontend/assets/js/configParser.js`。
-
-修改前端后，通常只需要刷新浏览器即可验证。若浏览器缓存旧页面，可以强制刷新。
-
----
-
-## 10. 后端开发说明
-
-后端是无第三方依赖的 C++17 mock server：
-
-```text
-GUI/backend/include/audio_studio.hpp
-GUI/backend/src/http_server.cpp
-GUI/backend/src/mock_runtime.cpp
-GUI/backend/src/main.cpp
-```
-
-开发方式：
-
-1. 在 `audio_studio.hpp` 中新增 interface / controller 声明。
-2. 在 `mock_runtime.cpp` 中实现 fake controller。
-3. 在 `http_server.cpp` 中增加 route。
-4. 在 `main.cpp` 中创建并注入 controller。
-5. 运行 `./scripts/build_all.sh --profile gui_backend -r linux a2` 验证编译。
-
----
-
-## 11. 常用开发命令
+VASS/SOF side contracts：
 
 ```bash
-# 构建后端
-./scripts/build_all.sh --profile gui_backend -r linux a2
-
-# 运行完整测试
-./scripts/run_tests.sh
-
-# 启动本地服务
-./out/linux/a2/gui_backend/Release/audio_studio_server . 8080
-
-# 打开本地页面
-open http://127.0.0.1:8080
+python3 ../Misc/sof_test/tests/test_audio_studio_info_contract.py
+python3 ../Misc/sof_test/tests/test_splay_host_buffer_contract.py
+python3 ../Misc/sof_test/tests/test_rv32qemu_file_io_capacity_contract.py
+python3 ../application/rv32qemu/sof-build-test.py -t ../Misc/sof_test/simple_test/tplg-splay-test-lists.txt
 ```
 
----
+## 7. VSCode Debug
 
-## 12. 当前定位
+根 `.vscode` 提供 full-stack debug group，可同时起：
 
-Audio Studio 当前已经具备较完整的前端 demo 能力，适合作为以下工作的基础：
+- GUI1 frontend
+- GUI backend
+- as_server
+- rv32qemu simulator keep-alive
+- QEMU gdbstub / RISC-V gdb
 
-- A2 / VASS 产品 pipeline 配置演示。
-- DSP runtime API 对接验证。
-- Audio algorithm 参数调试 UI 验证。
-- Buffer probe / dump / realtime probe 交互验证。
-- 多 dashboard 运行态监控窗口验证。
-- 后续 save-to-json、真实 DSP runtime、simulator、remote target 接入开发。
+`Audio Studio GUI: Simulator Keep Alive` 已改成可 debug QEMU 的方式：backend 把 `--validation-qemu-gdb-port` 和 `--validation-qemu-gdb-wait` 传给 `sof-build-test.py`，`.vscode/riscv-gdb-wrapper.sh` 负责连接 gdbstub。
+
+## 8. 扩展原则
+
+- 新三方算法走 `plugins/` 或 `module_types[]`，不要恢复 `module_instances`。
+- 新 frontend-only 节点写入 `frontend_connections[]`。
+- 新 runtime 能力优先复用 as_server RPC，GUI backend 只做 HTTP/stream 适配。
+- 新平台能力放进 driver/framework/platform 层。
+- 新 ASINFO 字段必须同步 SOF producer、SystemInfo parser、backend API、前端显示和测试。

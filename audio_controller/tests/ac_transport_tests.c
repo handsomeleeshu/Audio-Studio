@@ -29,6 +29,7 @@ struct test_driver_state {
     unsigned int datalink_delay_min_timeout_ms;
     unsigned int alloc_count;
     unsigned int free_count;
+    unsigned int sleep_ms_total;
     size_t last_alloc_size;
     size_t last_alloc_alignment;
 };
@@ -40,14 +41,18 @@ static unsigned int test_stream_trigger_count;
 static unsigned int test_stream_close_count;
 static unsigned int test_stream_write_count;
 static unsigned int test_stream_read_count;
+static unsigned int test_stream_poll_count;
+static int test_stream_config_fail_once;
 static size_t test_stream_written_bytes;
 static size_t test_stream_read_bytes;
 static uint32_t test_stream_write_max_bytes;
 static uint32_t test_stream_read_max_bytes;
 static uint32_t test_last_host_period_bytes;
+static uint32_t test_last_long_unwrap_posn;
 static uint32_t test_last_dma_buffer_size;
 static uint32_t test_last_dma_pages;
 static void* test_last_dma_addr;
+static uint32_t test_stream_poll_release_bytes;
 
 #define TEST_DATALINK_HEADER_SIZE 36u
 #define TEST_DATALINK_FLAG_DATA 0x0001u
@@ -70,13 +75,19 @@ int sof_stream_config(struct sof_stream* stream, struct sof_stream_params* param
 {
     if (!stream || !params)
         return -1;
+    test_stream_config_count++;
+    if (test_stream_config_fail_once) {
+        test_stream_config_fail_once = 0;
+        return -1;
+    }
     stream->free_size = (int32_t)params->dma_buffer.size;
     stream->avail_size = (int32_t)params->dma_buffer.size;
+    stream->dma_buffer = params->dma_buffer;
     test_last_host_period_bytes = params->host_period_bytes;
+    test_last_long_unwrap_posn = params->long_unwrap_posn;
     test_last_dma_buffer_size = params->dma_buffer.size;
     test_last_dma_pages = params->dma_buffer.pages;
     test_last_dma_addr = params->dma_buffer.addr;
-    test_stream_config_count++;
     return 0;
 }
 
@@ -125,7 +136,19 @@ int sof_stream_read(struct sof_stream* stream, void* data, uint32_t size)
 
 int sof_stream_poll_position(struct sof_stream* stream)
 {
-    return stream ? 0 : -1;
+    int32_t remaining;
+
+    if (!stream)
+        return -1;
+    test_stream_poll_count++;
+    remaining = (int32_t)stream->dma_buffer.size - stream->free_size;
+    if (remaining > 0 && test_stream_poll_release_bytes > 0u) {
+        if ((uint32_t)remaining > test_stream_poll_release_bytes)
+            stream->free_size += (int32_t)test_stream_poll_release_bytes;
+        else
+            stream->free_size = (int32_t)stream->dma_buffer.size;
+    }
+    return 0;
 }
 
 int sof_stream_close(struct sof_stream* stream)
@@ -240,6 +263,15 @@ static void test_free(void* user, void* ptr)
     if (state)
         state->free_count++;
     free(ptr);
+}
+
+static void test_sleep_ms(void* user, unsigned int milliseconds)
+{
+    struct test_driver_state* state;
+
+    state = (struct test_driver_state*)user;
+    if (state)
+        state->sleep_ms_total += milliseconds;
 }
 
 static void test_log(void* user, audio_controller_log_level_t level,
@@ -499,16 +531,30 @@ static void test_audio_start_assigns_independent_data_channels(
     config.channels = 2u;
     config.bytes_per_sample = 2u;
     assert(ac_audio_configure(&audio, playback_id, &config) == 0);
+#if CONFIG_HOST_PTABLE
+    assert(test_last_host_period_bytes == 1u);
+    assert(test_last_dma_buffer_size == 2u * AC_AUDIO_DMA_ALIGNMENT);
+    assert(test_last_dma_pages == 2u);
+#else
     assert(test_last_host_period_bytes == 768u);
     assert(test_last_dma_buffer_size == 4096u);
     assert(test_last_dma_pages == 1u);
+#endif
+    assert(test_last_long_unwrap_posn == 1u);
     assert(test_last_dma_addr != 0);
     assert(((uintptr_t)test_last_dma_addr %
             (uintptr_t)AC_AUDIO_DMA_ALIGNMENT) == 0u);
     assert(ac_audio_configure(&audio, capture_id, &config) == 0);
+#if CONFIG_HOST_PTABLE
+    assert(test_last_host_period_bytes == 1u);
+    assert(test_last_dma_buffer_size == 2u * AC_AUDIO_DMA_ALIGNMENT);
+    assert(test_last_dma_pages == 2u);
+#else
     assert(test_last_host_period_bytes == 768u);
     assert(test_last_dma_buffer_size == 4096u);
     assert(test_last_dma_pages == 1u);
+#endif
+    assert(test_last_long_unwrap_posn == 1u);
     assert(test_last_dma_addr != 0);
     assert(((uintptr_t)test_last_dma_addr %
             (uintptr_t)AC_AUDIO_DMA_ALIGNMENT) == 0u);
@@ -521,9 +567,11 @@ static void test_audio_start_assigns_independent_data_channels(
     assert(playback_channel != capture_channel);
     assert(test_stream_open_count == 2u);
     assert(test_stream_config_count == 2u);
+    assert(test_stream_trigger_count == 1u);
 
     assert(ac_audio_close(&audio, playback_id) == 0);
     assert(ac_audio_close(&audio, capture_id) == 0);
+    assert(test_stream_trigger_count == 2u);
     assert(test_stream_close_count == 2u);
     ac_audio_deinit(&audio);
     ac_transport_deinit(&transport);
@@ -563,6 +611,7 @@ static void test_audio_write_uses_blocking_write(
     assert(ac_audio_configure(&audio, stream_id, &config) == 0);
     assert(ac_audio_start(&audio, &transport, stream_id,
                           &data_channel) == 0);
+    assert(test_stream_trigger_count == 0u);
 
     request.version = 1u;
     request.channel_id = data_channel;
@@ -577,8 +626,122 @@ static void test_audio_write_uses_blocking_write(
     assert(test_stream_write_count == 2u);
     assert(test_stream_written_bytes == sizeof(payload));
     assert(audio.streams[0].frames_written == 4u);
+    assert(test_stream_trigger_count == 1u);
 
     test_stream_write_max_bytes = 0u;
+    ac_audio_deinit(&audio);
+    ac_transport_deinit(&transport);
+}
+
+static void test_audio_config_failure_releases_open_sof_stream(
+    audio_controller_driver_ops_t* driver)
+{
+    ac_audio_controller_t audio;
+    ac_audio_stream_config_t config;
+    uint32_t stream_id;
+
+    memset(&audio, 0, sizeof(audio));
+    memset(&config, 0, sizeof(config));
+    test_stream_open_count = 0u;
+    test_stream_config_count = 0u;
+    test_stream_trigger_count = 0u;
+    test_stream_close_count = 0u;
+    test_stream_config_fail_once = 1;
+
+    assert(ac_audio_init(&audio, driver) == 0);
+    assert(ac_audio_open(&audio, AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK,
+                         "pcm-playback", &stream_id) == 0);
+
+    config.sample_rate = 48000u;
+    config.channels = 2u;
+    config.bytes_per_sample = 2u;
+    assert(ac_audio_configure(&audio, stream_id, &config) != 0);
+    assert(test_stream_open_count == 1u);
+    assert(test_stream_config_count == 1u);
+    assert(test_stream_close_count == 1u);
+    assert(audio.streams[0].stream == 0);
+    assert(audio.streams[0].configured == 0);
+
+    assert(ac_audio_configure(&audio, stream_id, &config) == 0);
+    assert(test_stream_open_count == 2u);
+    assert(test_stream_config_count == 2u);
+    assert(test_stream_close_count == 1u);
+
+    assert(ac_audio_close(&audio, stream_id) == 0);
+    assert(test_stream_close_count == 2u);
+    ac_audio_deinit(&audio);
+}
+
+static void test_audio_drain_waits_until_host_buffer_is_consumed(
+    audio_controller_driver_ops_t* driver)
+{
+    struct test_driver_state* state;
+    ac_audio_controller_t audio;
+    ac_transport_controller_t transport;
+    ac_audio_stream_config_t config;
+    ac_transport_frame_t request;
+    unsigned char payload[4];
+    uint32_t stream_id;
+    uint16_t data_channel;
+    size_t flush_bytes;
+    unsigned int tail_ms;
+
+    memset(&audio, 0, sizeof(audio));
+    memset(&transport, 0, sizeof(transport));
+    memset(&config, 0, sizeof(config));
+    memset(&request, 0, sizeof(request));
+    test_stream_open_count = 0u;
+    test_stream_trigger_count = 0u;
+    test_stream_poll_count = 0u;
+    test_stream_written_bytes = 0u;
+    test_stream_poll_release_bytes = 4u;
+    state = (struct test_driver_state*)driver->user;
+    state->sleep_ms_total = 0u;
+
+    assert(ac_transport_init(&transport, driver) == 0);
+    assert(ac_audio_init(&audio, driver) == 0);
+    assert(ac_audio_open(&audio, AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK,
+                         "pcm-playback", &stream_id) == 0);
+    config.sample_rate = 48000u;
+    config.channels = 2u;
+    config.bytes_per_sample = 2u;
+    assert(ac_audio_configure(&audio, stream_id, &config) == 0);
+    assert(ac_audio_start(&audio, &transport, stream_id,
+                          &data_channel) == 0);
+    assert(test_stream_trigger_count == 0u);
+    memset(payload, 0, sizeof(payload));
+    request.version = 1u;
+    request.channel_id = data_channel;
+    request.command_id = AC_TRANSPORT_AUDIO_WRITE;
+    request.flags = AC_TRANSPORT_FLAG_REQUEST;
+    request.sequence_id = 7u;
+    request.session_id = stream_id;
+    request.payload = payload;
+    request.payload_size = sizeof(payload);
+    (void)ac_audio_data_transport_handler(&audio, &transport, &request);
+    assert(test_stream_trigger_count == 1u);
+    audio.streams[0].stream->free_size =
+        (int32_t)audio.streams[0].dma_buffer_size - 16;
+
+    request.command_id = AC_TRANSPORT_AUDIO_DRAIN;
+    request.sequence_id = 8u;
+    request.payload = 0;
+    request.payload_size = 0u;
+    (void)ac_audio_data_transport_handler(&audio, &transport, &request);
+
+    flush_bytes = (size_t)config.sample_rate * config.channels *
+                  config.bytes_per_sample * 4000u / 1000000u * 5u;
+    assert(test_stream_written_bytes == sizeof(payload) + flush_bytes);
+    assert(test_stream_poll_count == 4u);
+    tail_ms = (unsigned int)(((audio.streams[0].dma_buffer_size /
+                              audio.streams[0].frame_bytes) * 1000u +
+                             config.sample_rate - 1u) /
+                            config.sample_rate);
+    assert(state->sleep_ms_total == 4u + tail_ms);
+    assert(audio.streams[0].stream->free_size ==
+           (int32_t)audio.streams[0].dma_buffer_size);
+
+    test_stream_poll_release_bytes = 0u;
     ac_audio_deinit(&audio);
     ac_transport_deinit(&transport);
 }
@@ -718,6 +881,7 @@ int main(void)
     driver.user = &state;
     driver.alloc = test_alloc;
     driver.free = test_free;
+    driver.sleep_ms = test_sleep_ms;
     driver.log = test_log;
     driver.datalink = &datalink;
     driver.log_source = &log_source;
@@ -746,6 +910,8 @@ int main(void)
     test_audio_stream_pool_allows_sixteen_streams(&driver);
     test_audio_start_assigns_independent_data_channels(&driver);
     test_audio_write_uses_blocking_write(&driver);
+    test_audio_config_failure_releases_open_sof_stream(&driver);
+    test_audio_drain_waits_until_host_buffer_is_consumed(&driver);
     test_audio_read_uses_blocking_read(&driver);
     return 0;
 }

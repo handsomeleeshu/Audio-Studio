@@ -27,6 +27,59 @@ static int ac_first_control_payload(const ac_widget_t* widget,
 
 static int ac_comp_uses_init_payload(int comp_type);
 static int ac_comp_uses_runtime_payload(int comp_type);
+static const char* ac_token_string(const ac_widget_t* widget, uint32_t token);
+
+static void ac_log_install_widget(audio_controller_t* controller,
+                                  const ac_widget_t* widget,
+                                  const struct sof_comp_config* config)
+{
+    char message[256];
+    const char* process_type;
+    size_t pos;
+    size_t i;
+    unsigned int value;
+    char number[16];
+
+    if (!controller || !controller->verbose || !controller->driver.log ||
+        !widget || !config)
+        return;
+
+    process_type = ac_token_string(widget, AC_SOF_TKN_PROCESS_TYPE);
+    pos = 0u;
+#define AC_APPEND_LITERAL(text) \
+    do { \
+        const char* ac_text_ = (text); \
+        for (i = 0u; ac_text_[i] != '\0' && pos + 1u < sizeof(message); i++) \
+            message[pos++] = ac_text_[i]; \
+    } while (0)
+#define AC_APPEND_UINT(num) \
+    do { \
+        size_t ac_n_ = sizeof(number); \
+        value = (unsigned int)(num); \
+        number[--ac_n_] = '\0'; \
+        do { \
+            number[--ac_n_] = (char)('0' + (value % 10u)); \
+            value /= 10u; \
+        } while (value != 0u && ac_n_ > 0u); \
+        AC_APPEND_LITERAL(&number[ac_n_]); \
+    } while (0)
+
+    AC_APPEND_LITERAL("install widget ");
+    AC_APPEND_LITERAL(widget->name ? widget->name : "");
+    AC_APPEND_LITERAL(" dapm=");
+    AC_APPEND_UINT(widget->id);
+    AC_APPEND_LITERAL(" process=");
+    AC_APPEND_LITERAL(process_type ? process_type : "");
+    AC_APPEND_LITERAL(" comp=");
+    AC_APPEND_UINT(config->type);
+
+#undef AC_APPEND_UINT
+#undef AC_APPEND_LITERAL
+    message[pos] = '\0';
+    controller->driver.log(controller->driver.user,
+                           AUDIO_CONTROLLER_LOG_DEBUG,
+                           message);
+}
 
 static uintptr_t ac_align_up_uintptr(uintptr_t value, uint32_t alignment)
 {
@@ -757,6 +810,7 @@ static int ac_install_one_pipeline(audio_controller_t* controller,
                                    widget->name);
             return -1;
         }
+        ac_log_install_widget(controller, widget, &comp_config);
 
         ret = sof_pipeline_add_comp(pipe, &comp_config,
                                     src_count ? src_ids : 0, src_count,
@@ -861,7 +915,6 @@ int audio_controller_install_all(audio_controller_t* controller,
                                      installed)
 {
     size_t i;
-    uint32_t last;
 
     if (!controller || !installed)
         return -1;
@@ -880,10 +933,9 @@ int audio_controller_install_all(audio_controller_t* controller,
 
     installed->pipe_id = controller->topology.pipelines[0].id;
     for (i = 0u; i < controller->topology.pipeline_count; i++) {
-        last = (i + 1u == controller->topology.pipeline_count) ? 1u : 0u;
         if (ac_install_one_pipeline(controller,
                                     &controller->topology.pipelines[i],
-                                    last,
+                                    1u,
                                     &installed->pipelines[i]) != 0) {
             ac_cleanup_installed(installed);
             return -1;

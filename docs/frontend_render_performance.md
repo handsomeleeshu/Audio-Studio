@@ -6,6 +6,12 @@ Improve pipeline UI smoothness without changing visible behavior. The current
 focus is main-thread rendering during runtime telemetry and ordinary user
 operations such as canvas scrolling and selecting nodes.
 
+Runtime telemetry now comes from GUI backend live APIs backed by as_server
+System Info. Performance work must preserve that ownership: the frontend may
+cache and render efficiently, but it must not replace PER-ALGORITHM COST, DSP
+CORE LOADING, SYSTEM HEALTH, probe, or dump data with local fake values when
+backend data is available.
+
 ## Findings
 
 - The previous profile harness counted long tasks from page load, so startup
@@ -32,6 +38,9 @@ operations such as canvas scrolling and selecting nodes.
 - Added `renderSelectionChange()` for selection-only updates. It updates node
   selected classes, edge visuals, and Inspector state without refreshing
   unrelated dashboard panels.
+- Runtime refresh paths treat Build as all-pipeline and RUN as selected-pipeline
+  state, so dashboard refresh should follow `PIPE_RUNNING` for the active group
+  without changing loaded state for the rest of the layout.
 
 ## Evidence
 
@@ -53,3 +62,4 @@ performing canvas scroll and node selection work.
 - `tests/frontend/runtime-loop-policy.test.mjs`
 - `tests/frontend/selection-render-performance.test.mjs`
 - `tests/frontend/performance-profile.test.mjs`
+- `tests/frontend/gui-runtime-contract.test.mjs`

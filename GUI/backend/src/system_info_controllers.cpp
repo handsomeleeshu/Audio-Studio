@@ -156,7 +156,7 @@ std::string RpcAlgorithmCostController::liveCosts(const std::map<std::string, st
       os << "{\"node_id\":\"" << jsonEscape(node_id) << "\""
          << ",\"cpu\":" << numberField(component, "cpu_percent", 0.0)
          << ",\"core\":" << static_cast<int>(numberField(component, "core", 0.0))
-         << ",\"mem_kb\":" << static_cast<uint64_t>(u64Field(component, "memory_bytes", 0) / 1024)
+         << ",\"mem_kb\":" << static_cast<uint64_t>((u64Field(component, "memory_bytes", 0) + 1023) / 1024)
          << ",\"latency_ms\":" << numberField(component, "latency_ms", 0.0)
          << "}";
     }

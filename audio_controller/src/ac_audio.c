@@ -15,6 +15,8 @@
 #define AC_AUDIO_STREAM_WAIT_RETRIES 5000u
 #define AC_AUDIO_DEFAULT_PERIOD_US 4000u
 #define AC_AUDIO_DEFAULT_PERIOD_COUNT 4u
+#define AC_AUDIO_DRAIN_FLUSH_PERIOD_COUNT 5u
+#define AC_AUDIO_HOST_PAGE_COUNT 2u
 
 static uint16_t ac_audio_read_le16(const unsigned char* data)
 {
@@ -98,6 +100,19 @@ ac_audio_find_stream_by_channel(ac_audio_controller_t* audio,
     return 0;
 }
 
+static void ac_audio_release_sof_stream(ac_audio_stream_slot_t* slot)
+{
+    if (!slot)
+        return;
+    if (slot->stream) {
+        (void)sof_stream_close(slot->stream);
+        slot->stream = 0;
+    }
+    slot->configured = 0;
+    slot->frame_bytes = 0u;
+    slot->stream_started = 0;
+}
+
 static void ac_audio_set_default_chmap(uint16_t* chmap, uint16_t channels)
 {
     unsigned int i;
@@ -156,8 +171,10 @@ static int ac_audio_prepare_dma(ac_audio_stream_slot_t* slot,
                                 uint32_t frame_bytes,
                                 struct sof_stream_params* params)
 {
+#if !CONFIG_HOST_PTABLE
     uint64_t period_bytes64;
     uint32_t period_bytes;
+#endif
     uint32_t dma_buf_size;
     uintptr_t aligned_addr;
     size_t alloc_size;
@@ -167,6 +184,9 @@ static int ac_audio_prepare_dma(ac_audio_stream_slot_t* slot,
     if (!slot->driver || !slot->driver->alloc || !slot->driver->free)
         return -1;
 
+#if CONFIG_HOST_PTABLE
+    dma_buf_size = AC_AUDIO_HOST_PAGE_COUNT * AC_AUDIO_DMA_ALIGNMENT;
+#else
     period_bytes64 = ((uint64_t)slot->config.sample_rate *
                       (uint64_t)AC_AUDIO_DEFAULT_PERIOD_US *
                       (uint64_t)frame_bytes + 1000000ULL - 1ULL) /
@@ -182,6 +202,8 @@ static int ac_audio_prepare_dma(ac_audio_stream_slot_t* slot,
         return -1;
     dma_buf_size = (dma_buf_size + AC_AUDIO_DMA_ALIGNMENT - 1u) &
                    ~(AC_AUDIO_DMA_ALIGNMENT - 1u);
+    params->host_period_bytes = period_bytes;
+#endif
 
     ac_audio_free_dma(slot);
     alloc_size = (size_t)dma_buf_size + AC_AUDIO_DMA_ALIGNMENT - 1u;
@@ -195,7 +217,6 @@ static int ac_audio_prepare_dma(ac_audio_stream_slot_t* slot,
     slot->dma_aligned = (void*)aligned_addr;
     slot->dma_buffer_size = dma_buf_size;
 
-    params->host_period_bytes = period_bytes;
     params->dma_buffer.size = dma_buf_size;
     params->dma_buffer.pages =
         (dma_buf_size + AC_AUDIO_DMA_ALIGNMENT - 1u) /
@@ -258,17 +279,16 @@ static int ac_audio_prepare_sof_stream(ac_audio_stream_slot_t* slot)
     params.channels = slot->config.channels;
     params.host_period_bytes = 1u;
     params.cont_update_posn = 1u;
-#if CONFIG_HOST_PTABLE
-    params.long_unwrap_posn = 0u;
-#else
     params.long_unwrap_posn = 1u;
-#endif
     ac_audio_set_default_chmap(params.chmap, slot->config.channels);
-    if (ac_audio_prepare_dma(slot, frame_bytes, &params) != 0)
+    if (ac_audio_prepare_dma(slot, frame_bytes, &params) != 0) {
+        ac_audio_release_sof_stream(slot);
         return -6;
+    }
 
     if (sof_stream_config(slot->stream, &params) != 0) {
         ac_audio_free_dma(slot);
+        ac_audio_release_sof_stream(slot);
         return -7;
     }
 
@@ -319,6 +339,70 @@ static int ac_audio_wait_stream_progress(ac_audio_stream_slot_t* slot,
     (*wait_retries)++;
     ac_audio_transport_sleep(transport, AC_AUDIO_STREAM_WAIT_SLEEP_MS);
     return 0;
+}
+
+static int ac_audio_write_stream(ac_audio_stream_slot_t* slot,
+                                 ac_transport_controller_t* transport,
+                                 const unsigned char* payload,
+                                 size_t payload_size);
+
+static int ac_audio_flush_pipeline_tail(ac_audio_stream_slot_t* slot,
+                                        ac_transport_controller_t* transport)
+{
+    uint64_t period_bytes;
+    size_t flush_bytes;
+    unsigned char* silence;
+    int ret;
+
+    period_bytes = (uint64_t)slot->config.sample_rate * slot->frame_bytes *
+                   AC_AUDIO_DEFAULT_PERIOD_US / 1000000u;
+    flush_bytes = (size_t)period_bytes * AC_AUDIO_DRAIN_FLUSH_PERIOD_COUNT;
+    if (flush_bytes == 0u)
+        return 0;
+
+    silence = slot->driver->alloc(slot->driver->user, flush_bytes,
+                                  slot->frame_bytes);
+    if (!silence)
+        return -1;
+    memset(silence, 0, flush_bytes);
+    ret = ac_audio_write_stream(slot, transport, silence, flush_bytes);
+    slot->driver->free(slot->driver->user, silence);
+    return ret;
+}
+
+static int ac_audio_drain_stream(ac_audio_stream_slot_t* slot,
+                                 ac_transport_controller_t* transport)
+{
+    uint64_t buffer_frames;
+    uint64_t tail_ms;
+    unsigned int wait_retries;
+    int32_t free_size;
+
+    if (!slot || !slot->stream || slot->direction !=
+        AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK ||
+        slot->dma_buffer_size == 0u || slot->frame_bytes == 0u ||
+        slot->config.sample_rate == 0u)
+        return -1;
+    if (!slot->stream_started)
+        return 0;
+    if (ac_audio_flush_pipeline_tail(slot, transport) != 0)
+        return -1;
+
+    wait_retries = 0u;
+    for (;;) {
+        free_size = sof_stream_get_free_size(slot->stream);
+        if (free_size >= 0 &&
+            (size_t)free_size >= slot->dma_buffer_size) {
+            buffer_frames = slot->dma_buffer_size / slot->frame_bytes;
+            tail_ms = (buffer_frames * 1000u + slot->config.sample_rate - 1u) /
+                      slot->config.sample_rate;
+            ac_audio_transport_sleep(transport, (unsigned int)tail_ms);
+            return 0;
+        }
+        if (ac_audio_wait_stream_progress(slot, transport,
+                                          &wait_retries) != 0)
+            return -1;
+    }
 }
 
 int ac_audio_init(ac_audio_controller_t* audio,
@@ -433,8 +517,11 @@ int ac_audio_start(ac_audio_controller_t* audio,
     if (ac_transport_open_channel(transport, slot->data_channel_id) != 0)
         return -1;
     if (!slot->running) {
-        if (sof_stream_trigger(slot->stream, STREAM_TRIG_START) != 0)
-            return -1;
+        if (slot->direction == AC_TRANSPORT_AUDIO_DIRECTION_CAPTURE) {
+            if (sof_stream_trigger(slot->stream, STREAM_TRIG_START) != 0)
+                return -1;
+            slot->stream_started = 1;
+        }
         slot->running = 1;
     }
     *data_channel_id = slot->data_channel_id;
@@ -448,11 +535,12 @@ int ac_audio_stop(ac_audio_controller_t* audio, uint32_t stream_id)
     slot = ac_audio_find_stream(audio, stream_id);
     if (!slot)
         return -1;
-    if (slot->running && slot->stream) {
+    if (slot->running && slot->stream && slot->stream_started) {
         if (sof_stream_trigger(slot->stream, STREAM_TRIG_STOP) != 0)
             return -1;
     }
     slot->running = 0;
+    slot->stream_started = 0;
     return 0;
 }
 
@@ -464,17 +552,13 @@ int ac_audio_close(ac_audio_controller_t* audio, uint32_t stream_id)
     if (!slot)
         return -1;
     (void)ac_audio_stop(audio, stream_id);
-    if (slot->stream) {
-        (void)sof_stream_close(slot->stream);
-        slot->stream = 0;
-    }
+    ac_audio_release_sof_stream(slot);
     ac_audio_free_dma(slot);
     slot->allocated = 0;
-    slot->configured = 0;
     slot->running = 0;
+    slot->stream_started = 0;
     slot->direction = 0u;
     slot->stream_name[0] = '\0';
-    slot->frame_bytes = 0u;
     slot->frames_written = 0u;
     slot->frames_read = 0u;
     return 0;
@@ -537,6 +621,11 @@ static int ac_audio_write_stream(ac_audio_stream_slot_t* slot,
         }
         if ((size_t)ret % (size_t)slot->frame_bytes != 0u)
             return -1;
+        if (!slot->stream_started) {
+            if (sof_stream_trigger(slot->stream, STREAM_TRIG_START) != 0)
+                return -1;
+            slot->stream_started = 1;
+        }
 
         current += ret;
         remaining -= (size_t)ret;
@@ -753,11 +842,7 @@ int ac_audio_data_transport_handler(void* user,
     }
 
     if (request->command_id == AC_TRANSPORT_AUDIO_DRAIN) {
-        if (!slot->stream || slot->direction !=
-            AC_TRANSPORT_AUDIO_DIRECTION_PLAYBACK)
-            return ac_transport_send_error(transport, request,
-                                           "audio drain failed");
-        if (sof_stream_poll_position(slot->stream) != 0)
+        if (ac_audio_drain_stream(slot, transport) != 0)
             return ac_transport_send_error(transport, request,
                                            "audio drain failed");
         return ac_transport_send_response(transport, request, 0u, 0, 0u);

@@ -79,7 +79,7 @@ assertIncludes('startCaptureFramePump', 'file output capture should start a back
 assertIncludes('/api/runtime/audio/capture/frame', 'file output capture should pull frames from GUI backend');
 assertIncludes('capture_request', 'runtime run response should carry capture request metadata');
 assertIncludes('runtimeDeviceNameForEdge', 'file I/O runtime requests should pass the connected HOST stream name to GUI backend');
-assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*['"]run_complete['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
+assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*ok \? ['"]run_complete['"] : ['"]run_error['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
 assert.ok(
   /function isParamEnabledForNode[\s\S]*return states\.includes\(status\)/.test(html),
   'parameter editability should be driven directly by the JSON settable state list'
@@ -93,9 +93,37 @@ assert.ok(
   /async function startRuntimeGroup[\s\S]*validateRuntimeFileIoForGroup\(groupId\)[\s\S]*postRuntimeGroupState\('run'/.test(html),
   'RUN must reject missing/invalid File I/O before POST /api/runtime/run'
 );
+assert.ok(
+  /(?:const|let) ok = !!res && res\.ok === true && normalizeRuntimeStatus\(res\?\.runtime_state\) === RUNTIME_STATES\.PIPE_RUNNING/.test(html),
+  'RUN must require an explicit successful PIPE_RUNNING response before starting frontend pumps'
+);
+assert.ok(
+  /setRuntimeStatusForGroup\(groupId, ok \? RUNTIME_STATES\.PIPE_RUNNING : RUNTIME_STATES\.PIPE_LOADED/.test(html),
+  'a rejected RUN request should restore the pre-run PIPE_LOADED state'
+);
+assert.ok(
+  /finishPlaybackFramePump[\s\S]*setRuntimeStatusForGroup\(groupId, RUNTIME_STATES\.PIPE_LOADED, ok \? ['"]run_complete['"] : ['"]run_error['"]\)/.test(html),
+  'playback EOS success or failure should leave the built pipeline loaded'
+);
+assert.ok(
+  /pumpCaptureFrame[\s\S]*catch \(e\)[\s\S]*postRuntimeGroupState\('stop', groupId, RUNTIME_STATES\.PIPE_LOADED\)[\s\S]*setRuntimeStatusForGroup\(groupId, RUNTIME_STATES\.PIPE_LOADED, ['"]run_error['"]\)/.test(html),
+  'capture frame failures should stop the backend session and restore PIPE_LOADED'
+);
 assertIncludes('assertValidWavInfo', 'WAV file selection must reject invalid local files before runtime requests');
 assertIncludes('applyDaiInputAudioInfoToParams', 'File_IO DAI input WAV selection should update DAI audio format params for build');
 assertIncludes('data-dai-file-param-action', 'File_IO DAI source nodes should expose a frontend WAV chooser');
+assertIncludes("paramId(p) === 'file_path'", 'FILE_IO DAI file_path should suppress the legacy duplicate input control');
+assertIncludes('choose a DAI output WAV path before RUN', 'FILE_IO DAI output should require an explicit frontend save path');
+assertIncludes('/api/runtime/audio/dai/input', 'FILE_IO DAI input WAV bytes must use a dedicated backend stream URL');
+assertIncludes('/api/runtime/audio/dai/output', 'FILE_IO DAI output WAV bytes must use a dedicated backend stream URL');
+assertIncludes('stageDaiInputsForGroup', 'RUN must stage selected FILE_IO DAI input files before starting SOF');
+assertIncludes('saveDaiOutputsForGroup', 'playback completion must save FILE_IO DAI output files to the frontend selection');
+assertIncludes('expected_data_bytes', 'FILE_IO DAI capture should derive an automatic EOS byte count from the selected input WAV');
+assertIncludes('finishCaptureFramePump', 'capture should stop the backend and finalize the WAV when the selected DAI input reaches EOS');
+assert.ok(
+  /pumpCaptureFrame[\s\S]*captureFramePump\.bytes >= captureFramePump\.expectedBytes[\s\S]*finishCaptureFramePump\('eof'\)/.test(html),
+  'capture frame pumping should automatically finish at the selected FILE_IO DAI input duration'
+);
 assert.ok(
   /apiPost\('\/api\/param\/update'[\s\S]*workspace_id:[\s\S]*pipeline_node_id:[\s\S]*runtime_state:/.test(html),
   'runtime parameter updates should include workspace and original node identity for backend inspector_preset storage'

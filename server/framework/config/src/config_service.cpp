@@ -172,6 +172,8 @@ struct InstallParamInfo {
   uint32_t param_uid = 0;
   std::string config_format;
   std::vector<uint8_t> payload;
+  bool emit_topology = false;
+  std::string topology_control_name;
 };
 
 struct PresetEntryInfo {
@@ -1259,11 +1261,6 @@ bool usesAggregateSofTopologyControl(const std::string& module_type) {
          module_type == "mix.fader_balance" || module_type == "filter.dsp_filter";
 }
 
-std::string aggregateTopologyParamId(const ModuleTypeInfo& type) {
-  if (type.parameters.empty()) return {};
-  return type.parameters.front().param_id;
-}
-
 std::string aggregateTopologyControlLabel(const std::string& module_type) {
   if (module_type == "filter.channel_remap" || module_type == "filter.chremap") return "Channel Remap";
   if (module_type == "delay.line" || module_type == "delay.delay_line") return "Delay Line";
@@ -1323,11 +1320,23 @@ Status buildParameterTables(ProjectIr& ir, const ModuleConfigRegistry& module_co
       if (node.module_type.empty()) continue;
       const auto& type = moduleTypeForNode(ir, node);
       const bool aggregate_topology = usesAggregateSofTopologyControl(node.module_type);
-      const std::string aggregate_param_id = aggregate_topology ? aggregateTopologyParamId(type) : std::string{};
       module_config::ModuleConfigBlob aggregate_blob;
       if (aggregate_topology) {
         auto status = packAggregateTopologyDefault(ir, module_configs, pipe, node, aggregate_blob);
         if (!status.ok()) return status;
+
+        InstallParamInfo install;
+        install.pipe_id = pipe.pipe_id;
+        install.node_id = node.node_id;
+        install.inst_id = node.inst_id;
+        install.module_type = node.module_type;
+        install.param_id = "config";
+        install.param_uid = stableUid("install", install.pipe_id + ":" + install.node_id + ":" + install.module_type + ":config");
+        install.config_format = aggregate_blob.format;
+        install.payload = aggregate_blob.data;
+        install.emit_topology = true;
+        install.topology_control_name = aggregateTopologyControlName(pipe, node);
+        ir.install_params.push_back(std::move(install));
       }
       for (const auto& param : type.parameters) {
         if (containsString(param.states, "PIPE_RUNNING")) {
@@ -1351,7 +1360,7 @@ Status buildParameterTables(ProjectIr& ir, const ModuleConfigRegistry& module_co
           if (!status.ok()) return status;
           control.config_format = blob.format;
           control.default_payload = std::move(blob.data);
-          control.emit_topology = !aggregate_topology || control.param_id == aggregate_param_id;
+          control.emit_topology = !aggregate_topology;
           if (aggregate_topology && control.emit_topology) {
             control.topology_control_name = aggregateTopologyControlName(pipe, node);
             control.topology_default_payload = aggregate_blob.data;
@@ -1359,6 +1368,7 @@ Status buildParameterTables(ProjectIr& ir, const ModuleConfigRegistry& module_co
           addCheckedUid(used, control.control_uid, "control:" + control.pipe_id + ":" + control.node_id + ":" + control.param_id);
           ir.controls.push_back(std::move(control));
         } else {
+          if (aggregate_topology) continue;
           InstallParamInfo install;
           install.pipe_id = pipe.pipe_id;
           install.node_id = node.node_id;
@@ -1508,7 +1518,9 @@ std::vector<uint8_t> buildPrivatePayload(const ProjectIr& ir) {
     json << "\"module_type\":" << quote(p.module_type) << ",";
     json << "\"param_id\":" << quote(p.param_id) << ",";
     json << "\"config_format\":" << quote(p.config_format) << ",";
-    json << "\"payload_hex\":" << quote(compactHex(p.payload));
+    json << "\"payload_hex\":" << quote(compactHex(p.payload)) << ",";
+    json << "\"emit_topology\":" << (p.emit_topology ? "true" : "false") << ",";
+    json << "\"topology_control_name\":" << quote(p.topology_control_name);
     json << "}";
   }
   json << "],\"presets\":[";
@@ -1554,6 +1566,26 @@ std::vector<uint8_t> buildPrivatePayload(const ProjectIr& ir) {
   return out;
 }
 
+std::string bytesControlConf(const std::string& control_name, const std::vector<uint8_t>& payload) {
+  std::ostringstream out;
+  const std::string data_name = control_name + " Data";
+  out << "SectionData." << topologyQuote(data_name) << " {\n";
+  out << "  bytes " << topologyQuote(hexBytes(payload)) << "\n";
+  out << "}\n";
+  out << "SectionControlBytes." << topologyQuote(control_name) << " {\n";
+  out << "  index \"1\"\n";
+  out << "  ops.\"ctl\" { info \"bytes\" }\n";
+  out << "  extops.\"extctl\" { get \"258\" put \"258\" }\n";
+  out << "  base \"0x00\"\n";
+  out << "  num_regs \"0x00\"\n";
+  out << "  mask \"0x00\"\n";
+  out << "  max " << topologyQuote(std::to_string(std::max<size_t>(1, payload.size()))) << "\n";
+  out << "  access [ tlv_write tlv_read tlv_callback ]\n";
+  out << "  data [ " << topologyQuote(data_name) << " ]\n";
+  out << "}\n\n";
+  return out.str();
+}
+
 std::string controlConf(const ControlInfo& control) {
   if (!control.emit_topology) return {};
 
@@ -1566,22 +1598,7 @@ std::string controlConf(const ControlInfo& control) {
       : control.topology_default_payload;
   const std::string name = topologyQuote(topology_control_name);
   if (control.config_format == "sof-ipc3-bytes-v1") {
-    const std::string data_name = topology_control_name + " Data";
-    out << "SectionData." << topologyQuote(data_name) << " {\n";
-    out << "  bytes " << topologyQuote(hexBytes(topology_payload)) << "\n";
-    out << "}\n";
-    out << "SectionControlBytes." << name << " {\n";
-    out << "  index \"1\"\n";
-    out << "  ops.\"ctl\" { info \"bytes\" }\n";
-    out << "  extops.\"extctl\" { get \"258\" put \"258\" }\n";
-    out << "  base \"0x00\"\n";
-    out << "  num_regs \"0x00\"\n";
-    out << "  mask \"0x00\"\n";
-    out << "  max " << topologyQuote(std::to_string(std::max<size_t>(1, topology_payload.size()))) << "\n";
-    out << "  access [ tlv_write tlv_read tlv_callback ]\n";
-    out << "  data [ " << topologyQuote(data_name) << " ]\n";
-    out << "}\n\n";
-    return out.str();
+    return bytesControlConf(topology_control_name, topology_payload);
   }
   if (control.value_type == "bytes") {
     out << "# " << control.control_name << " is described in AS_PRIVATE; no SectionControlBytes is emitted.\n\n";
@@ -1632,6 +1649,14 @@ std::string controlConf(const ControlInfo& control) {
   return out.str();
 }
 
+std::string installParamTopologyControlConf(const InstallParamInfo& install) {
+  if (!install.emit_topology || install.config_format != "sof-ipc3-bytes-v1" ||
+      install.topology_control_name.empty()) {
+    return {};
+  }
+  return bytesControlConf(install.topology_control_name, install.payload);
+}
+
 std::string widgetType(const NodeInfo& node, const PipelineInfo& pipeline) {
   if (isHostModuleType(node.module_type)) return pipeline.direction == "capture" ? "aif_out" : "aif_in";
   if (isDaiModuleType(node.module_type)) return pipeline.direction == "capture" ? "dai_out" : "dai_in";
@@ -1656,12 +1681,32 @@ std::string sanitizeName(const std::string& value) {
   return out;
 }
 
+std::string shortHash(uint32_t value) {
+  std::ostringstream out;
+  out << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << value;
+  return out.str();
+}
+
+std::string shortenedToken(const std::string& value, size_t max_chars) {
+  std::string token = sanitizeName(value);
+  if (token.size() > max_chars) token.resize(max_chars);
+  return token;
+}
+
+std::string shortInternalSectionBase(const PipelineInfo& pipeline,
+                                     const std::string& kind,
+                                     const std::string& identity) {
+  return "P" + std::to_string(pipeline.pcm_index + 1) + "_" +
+         shortenedToken(kind, 8) + "_" +
+         shortHash(fnv1a32(pipeline.pipe_id + ":" + identity));
+}
+
 std::string sofSectionBase(const PipelineInfo& pipeline, const NodeInfo& node) {
-  return sanitizeName(pipeline.pipe_id + "_" + node.node_id);
+  return shortInternalSectionBase(pipeline, node.node_id, node.node_id);
 }
 
 std::string sofPipelineBase(const PipelineInfo& pipeline) {
-  return sanitizeName(pipeline.pipe_id + "_SCHED");
+  return shortInternalSectionBase(pipeline, "SCHED", "SCHED");
 }
 
 std::string daiTypeForPort(const PortInfo& port) {
@@ -1783,6 +1828,13 @@ WidgetControlRefs controlsForNode(const ProjectIr& ir, const PipelineInfo& pipel
       }
     }
   }
+  for (const auto& install : ir.install_params) {
+    if (install.pipe_id == pipeline.pipe_id && install.node_id == node.node_id &&
+        install.emit_topology && install.config_format == "sof-ipc3-bytes-v1" &&
+        !install.topology_control_name.empty()) {
+      refs.bytes.push_back(install.topology_control_name);
+    }
+  }
   return refs;
 }
 
@@ -1842,7 +1894,8 @@ std::string inferredBufferName(const PipelineInfo& pipeline, size_t edge_index) 
 }
 
 std::string inferredBufferBase(const PipelineInfo& pipeline, size_t edge_index) {
-  return sanitizeName(pipeline.pipe_id + "_BUF" + std::to_string(edge_index));
+  const std::string key = "BUF" + std::to_string(edge_index);
+  return shortInternalSectionBase(pipeline, key, key);
 }
 
 InferredBufferInfo inferBufferForEdge(const PipelineInfo& pipeline,
@@ -2233,6 +2286,7 @@ std::string generateAlsaConf(const ProjectIr& ir, const std::vector<uint8_t>& pr
   emitSofVendorTokens(out);
 
   for (const auto& control : ir.controls) out << controlConf(control);
+  for (const auto& install : ir.install_params) out << installParamTopologyControlConf(install);
 
   for (const auto& pipeline : ir.pipelines) {
     emitPipelineScheduler(out, pipeline);

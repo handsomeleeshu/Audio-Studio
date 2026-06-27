@@ -27,12 +27,12 @@ assert.ok(
 );
 
 assert.ok(
-  /const buildPayload = \{[\s\S]*\.\.\.pipelineSnapshot\(\)[\s\S]*build_scope:\s*groupId === ['"]ALL['"] \? ['"]all_pipelines['"] : ['"]selected_pipeline['"][\s\S]*group_id:\s*groupId[\s\S]*target_group/.test(html),
-  'build payload should explicitly describe whether it targets all or a selected group'
+  /const buildPayload = \{[\s\S]*\.\.\.pipelineSnapshot\(\)[\s\S]*build_scope:\s*['"]all_pipelines['"][\s\S]*group_id:\s*['"]ALL['"][\s\S]*scope:\s*['"]all_working_groups['"][\s\S]*target_group/.test(html),
+  'build payload should always describe a global layout build'
 );
 assert.ok(
-  /async function buildRuntimeGroup\(groupId = ['"]ALL['"]\)[\s\S]*const groups = groupsForRuntimeId\(groupId\)[\s\S]*setRuntimeStatusForGroup\(groupId,\s*ok \? RUNTIME_STATES\.PIPE_LOADED/.test(html),
-  'buildRuntimeGroup should keep ALL as the default so success updates all groups together'
+  /async function buildRuntimeGroup\(groupId = ['"]ALL['"]\)[\s\S]*const groups = runtimeGroups\(\)[\s\S]*setRuntimeStatusForGroup\(['"]ALL['"],\s*ok \? RUNTIME_STATES\.PIPE_LOADED/.test(html),
+  'buildRuntimeGroup should build and update every layout pipeline together'
 );
 assert.ok(
   /apiPost\(['"]\/api\/pipeline\/build['"],\s*buildPayload\)/.test(html),
