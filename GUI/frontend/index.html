@@ -6609,7 +6609,7 @@
       const nodes = groups.flatMap(g => g?.nodes || []).filter(n => n && !seen.has(n.id) && seen.add(n.id));
       const sink = nodes.find(n => {
         const d = String(n?.debugFileIo?.direction || debugFileIoDirection(n)).toLowerCase();
-        return d === 'output' && (isDebugFileIoNode(n) || isDaiFileIoNode(n)) && captureFileRecordForNode(n);
+        return d === 'output' && isDebugFileIoNode(n) && captureFileRecordForNode(n);
       });
       if (!sink) return null;
       const record = captureFileRecordForNode(sink) || {};

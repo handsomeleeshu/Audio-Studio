@@ -2,6 +2,9 @@ import { strict as assert } from 'assert';
 import fs from 'fs';
 
 const html = fs.readFileSync(new URL('../../GUI/frontend/index.html', import.meta.url), 'utf8');
+const simulatorConfig = JSON.parse(
+  fs.readFileSync(new URL('../../configs/platform/simulator/simulator.json', import.meta.url), 'utf8')
+);
 
 function assertIncludes(token, message = `missing token: ${token}`) {
   assert.ok(html.includes(token), message);
@@ -79,6 +82,20 @@ assertIncludes('startCaptureFramePump', 'file output capture should start a back
 assertIncludes('/api/runtime/audio/capture/frame', 'file output capture should pull frames from GUI backend');
 assertIncludes('capture_request', 'runtime run response should carry capture request metadata');
 assertIncludes('runtimeDeviceNameForEdge', 'file I/O runtime requests should pass the connected HOST stream name to GUI backend');
+{
+  const frontendByPipeline = new Map(
+    (simulatorConfig.frontend_connections || []).map(connection => [connection.pipeline_id, connection])
+  );
+  for (const pipelineId of ['PLAYBACK_MAIN', 'CAPTURE_MAIN', 'DSP_FILTER_COVERAGE']) {
+    assert.ok(frontendByPipeline.has(pipelineId), `simulator frontend_connections must cover ${pipelineId}`);
+  }
+  const dspFilter = frontendByPipeline.get('DSP_FILTER_COVERAGE');
+  assert.ok(
+    dspFilter.nodes.some(node => node.module_type === 'builtin.file_input') &&
+      dspFilter.edges.some(edge => edge.from === 'FILE_IN:out' && edge.to === 'HOST_IN:in'),
+    'simulator DSP filter playback must be triggerable from the frontend File Input node'
+  );
+}
 assert.ok(/setRuntimeStatusForGroup\(groupId,\s*RUNTIME_STATES\.PIPE_LOADED,\s*ok \? ['"]run_complete['"] : ['"]run_error['"]\)/.test(html), 'EOS completion should restore the selected group to PIPE_LOADED');
 assert.ok(
   /function isParamEnabledForNode[\s\S]*return states\.includes\(status\)/.test(html),
@@ -119,6 +136,10 @@ assertIncludes('/api/runtime/audio/dai/output', 'FILE_IO DAI output WAV bytes mu
 assertIncludes('stageDaiInputsForGroup', 'RUN must stage selected FILE_IO DAI input files before starting SOF');
 assertIncludes('saveDaiOutputsForGroup', 'playback completion must save FILE_IO DAI output files to the frontend selection');
 assertIncludes('expected_data_bytes', 'FILE_IO DAI capture should derive an automatic EOS byte count from the selected input WAV');
+assert.ok(
+  /function buildCaptureRequestForGroup[\s\S]*return d === 'output' && isDebugFileIoNode\(n\) && captureFileRecordForNode\(n\)/.test(html),
+  'as_server capture request should only use builtin.file_output; FILE_IO DAI output is saved after playback EOS'
+);
 assertIncludes('finishCaptureFramePump', 'capture should stop the backend and finalize the WAV when the selected DAI input reaches EOS');
 assert.ok(
   /pumpCaptureFrame[\s\S]*captureFramePump\.bytes >= captureFramePump\.expectedBytes[\s\S]*finishCaptureFramePump\('eof'\)/.test(html),

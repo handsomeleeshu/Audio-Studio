@@ -242,14 +242,16 @@ def pipeline_group(snapshot, pipeline_id):
     return next(group for group in snapshot["working_groups"] if group["id"] == pipeline_id)
 
 
-def run_playback(base, snapshot, pcm, session_id, backend_pid, test_stall):
-    group = pipeline_group(snapshot, "PLAYBACK_MAIN")
-    edge_key = "PLAYBACK_MAIN__FILE_IN:out->PLAYBACK_MAIN__HOST_IN:in"
+def run_playback(base, snapshot, pcm, session_id, backend_pid, test_stall,
+                 pipeline_id="PLAYBACK_MAIN", device="as_config_playback", dai_index=0):
+    group = pipeline_group(snapshot, pipeline_id)
+    file_node_id = f"{pipeline_id}__FILE_IN"
+    edge_key = f"{pipeline_id}__FILE_IN:out->{pipeline_id}__HOST_IN:in"
     audio = {
         "enabled": True,
-        "node_id": "PLAYBACK_MAIN__FILE_IN",
+        "node_id": file_node_id,
         "file_name": "tone.wav",
-        "device": "as_config_playback",
+        "device": device,
         "edge_key": edge_key,
         "sample_rate": 48000,
         "channels": 2,
@@ -262,15 +264,15 @@ def run_playback(base, snapshot, pcm, session_id, backend_pid, test_stall):
     response = request_json(base, "/api/runtime/run", "POST", {
         "session_id": session_id,
         "project": "simulator/simulator.json",
-        "pipeline_id": "PLAYBACK_MAIN",
-        "group_id": "PLAYBACK_MAIN",
+        "pipeline_id": pipeline_id,
+        "group_id": pipeline_id,
         "runtime_state": "PIPE_RUNNING",
         "nodes": group["nodes"],
         "edges": group["edges"],
         "playback": audio,
     })
     if not response.get("ok") or response.get("runtime_state") != "PIPE_RUNNING":
-        raise AssertionError(f"playback RUN rejected: {response}")
+        raise AssertionError(f"{pipeline_id} playback RUN rejected: {response}")
 
     qemu_pid = qemu_descendant(backend_pid) if test_stall else None
     stopped = False
@@ -324,7 +326,7 @@ def run_playback(base, snapshot, pcm, session_id, backend_pid, test_stall):
 
     eos = request_json(base, "/api/runtime/audio/playback/eos", "POST", {
         "session_id": session_id,
-        "group_id": "PLAYBACK_MAIN",
+        "group_id": pipeline_id,
         "edge_key": edge_key,
         "frame_index": frame_index,
         "timeout_ms": 5000,
@@ -337,13 +339,13 @@ def run_playback(base, snapshot, pcm, session_id, backend_pid, test_stall):
 
     query = urllib.parse.urlencode({
         "workspace_id": snapshot["workspace_id"],
-        "dai_index": 0,
+        "dai_index": dai_index,
         "file_name": f"{session_id}.wav",
     })
     status, content_type, output = request(base + "/api/runtime/audio/dai/output?" + query)
     if status != 200 or content_type != "audio/wav":
-        raise AssertionError(f"FILE_IO_DAI playback output is unavailable: HTTP {status}")
-    assert_wav(output, len(pcm), f"playback output {session_id}")
+        raise AssertionError(f"{pipeline_id} FILE_IO_DAI playback output is unavailable: HTTP {status}")
+    assert_wav(output, len(pcm), f"{pipeline_id} playback output {session_id}")
 
 
 def run_capture(base, snapshot, input_wav, expected_pcm, artifacts_dir):
@@ -523,6 +525,11 @@ def main():
             snapshot = graph_snapshot(config)
             if len(snapshot["working_groups"]) != len(config.get("pipelines", [])):
                 raise AssertionError("GUI build snapshot omitted a pipeline")
+            pipeline_ids = {group["id"] for group in snapshot["working_groups"]}
+            expected_pipeline_ids = {"PLAYBACK_MAIN", "CAPTURE_MAIN", "DSP_FILTER_COVERAGE"}
+            missing_pipeline_ids = expected_pipeline_ids - pipeline_ids
+            if missing_pipeline_ids:
+                raise AssertionError(f"GUI snapshot omitted simulator pipeline(s): {sorted(missing_pipeline_ids)}")
             result = request_json(base, "/api/pipeline/build", "POST", snapshot)
             if not result.get("ok") or result.get("runtime_state") != "PIPE_LOADED":
                 raise AssertionError(f"all-pipeline build failed: {result}")
@@ -531,6 +538,17 @@ def main():
             verify_as_log(as_log, rpc_port)
             run_playback(base, snapshot, pcm, "gui-e2e-play-1", process.pid, not args.no_stall_check)
             run_playback(base, snapshot, pcm, "gui-e2e-play-2", process.pid, False)
+            run_playback(
+                base,
+                snapshot,
+                pcm,
+                "gui-e2e-dsp-filter",
+                process.pid,
+                False,
+                pipeline_id="DSP_FILTER_COVERAGE",
+                device="as_config_dsp_filter",
+                dai_index=1,
+            )
             captured = run_capture(base, snapshot, input_bytes, pcm, artifacts)
             capture_wav = artifacts / "capture-output.wav"
             write_pcm_wav(capture_wav, captured)
@@ -540,7 +558,7 @@ def main():
             if not unload.get("ok") or unload.get("runtime_state") != "PIPE_UNLOADED":
                 raise AssertionError(f"pipeline unload failed: {unload}")
             stall_label = "stall" if not args.no_stall_check else "no-stall"
-            print(f"GUI simulator E2E passed: build, System Info, as_log, {stall_label}, play x2, record, unload")
+            print(f"GUI simulator E2E passed: build, System Info, as_log, {stall_label}, playback main x2, DSP filter playback, capture, unload")
             print(f"backend log: {backend_log}")
         finally:
             terminate(process)
