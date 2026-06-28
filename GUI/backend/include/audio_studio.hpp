@@ -54,18 +54,14 @@ struct BackendRuntimeConfig {
   uint32_t compile_as_server_timeout_ms = 5000;
   std::string validation_python = "python3";
   std::string validation_script_path;
-  std::string validation_as_server_path;
   std::string validation_as_log_path;
   std::string validation_trace_ldc_path;
-  std::string validation_as_server_host = "127.0.0.1";
-  uint16_t validation_as_server_port = 9901;
   long validation_ready_timeout_ms = 120000;
-  bool validation_use_existing_as_server = false;
   std::string validation_datalink_endpoint;
   uint16_t validation_qemu_gdb_port = 0;
   bool validation_qemu_gdb_wait = false;
   std::string runtime_as_server_host = "127.0.0.1";
-  uint16_t runtime_as_server_port = 9901;
+  uint16_t runtime_as_server_port = 9900;
   std::string runtime_audio_driver_factory;
 };
 
@@ -139,9 +135,8 @@ struct ValidationRequest {
   std::string as_log_path;
   std::string trace_ldc_path;
   std::string as_server_host = "127.0.0.1";
-  uint16_t as_server_port = 9901;
+  uint16_t as_server_port = 9900;
   long ready_timeout_ms = 120000;
-  bool use_existing_as_server = false;
   std::string datalink_endpoint;
   uint16_t qemu_gdb_port = 0;
   bool qemu_gdb_wait = false;
@@ -157,6 +152,7 @@ class IValidationRunner {
 public:
   virtual ~IValidationRunner() = default;
   virtual ValidationResult start(const ValidationRequest& request) = 0;
+  virtual ValidationResult waitReady(const ValidationRequest& request) = 0;
   virtual ValidationResult stop(const std::string& workspace_id) = 0;
 };
 

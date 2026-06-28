@@ -1201,12 +1201,13 @@ BackendRuntimeConfig normalizedBackendConfig(const std::string& root_dir,
   config.compile_as_server_path = absolutePathFromRoot(root_dir, config.compile_as_server_path);
   config.compile_alsatplg_path = absolutePathFromRoot(root_dir, config.compile_alsatplg_path);
   config.validation_script_path = absolutePathFromRoot(root_dir, config.validation_script_path);
-  config.validation_as_server_path = absolutePathFromRoot(root_dir, config.validation_as_server_path);
   config.validation_as_log_path = absolutePathFromRoot(root_dir, config.validation_as_log_path);
   config.validation_trace_ldc_path = absolutePathFromRoot(root_dir, config.validation_trace_ldc_path);
   config.validation_datalink_endpoint = absolutePathFromRoot(root_dir, config.validation_datalink_endpoint);
   config.compile_as_server_rpc_mode = lowerAscii(config.compile_as_server_rpc_mode);
   if (config.compile_as_server_rpc_mode != "socket") config.compile_as_server_rpc_mode = "once";
+  if (config.runtime_as_server_host.empty()) config.runtime_as_server_host = config.compile_as_server_host;
+  if (config.runtime_as_server_port == 0) config.runtime_as_server_port = config.compile_as_server_port;
   if (config.validation_python.empty()) config.validation_python = "python3";
   if (config.validation_ready_timeout_ms <= 0) config.validation_ready_timeout_ms = 120000;
   return config;
@@ -1288,6 +1289,7 @@ class ProcessValidationRunner final : public IValidationRunner {
 public:
   ~ProcessValidationRunner() override;
   ValidationResult start(const ValidationRequest& request) override;
+  ValidationResult waitReady(const ValidationRequest& request) override;
   ValidationResult stop(const std::string& workspace_id) override;
 
 private:
@@ -1534,15 +1536,8 @@ GuiConfigCompileResult SocketConfigCompileClient::compile(const GuiConfigCompile
                             request.as_server_timeout_ms, error);
   if (fd < 0) {
     const std::string socket_error = error.empty() ? "failed to connect as_server config.compile RPC" : error;
-    if (prefer_socket &&
-        runConfigCompileRpcOnce(request.as_server, request.working_dir, rpc_request,
-                                rpc_once_response, rpc_once_error)) {
-      result = parseConfigCompileResponse(rpc_once_response);
-      if (!result.ok) result.diagnostics.push_back("socket_rpc_error=" + socket_error);
-      return result;
-    }
     result.ok = false;
-    result.message = socket_error + "; " + rpc_once_error;
+    result.message = prefer_socket ? socket_error : (socket_error + "; " + rpc_once_error);
     if (!rpc_once_response.empty()) result.diagnostics.push_back(rpc_once_response);
     return result;
   }
@@ -1603,8 +1598,11 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
 
   const std::string log_path = (fs::path(request.workspace_dir) / "audio_studio_validation.log").string();
   const std::string ready_path = (fs::path(request.workspace_dir) / "audio_studio_validation.ready").string();
+  const std::string as_server_ready_path = (fs::path(request.workspace_dir) / "audio_studio_as_server.ready").string();
   std::error_code ec;
   fs::remove(ready_path, ec);
+  fs::remove(as_server_ready_path, ec);
+  fs::remove(request.test_list_path, ec);
   const fs::path test_dir = fs::path(request.test_list_path).parent_path();
   const fs::path default_capture_input =
       fs::path(request.script_path).parent_path().parent_path().parent_path() /
@@ -1617,17 +1615,17 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
   const std::string cmd =
       shellQuote(request.python.empty() ? std::string("python3") : request.python) +
       " " + shellQuote(request.script_path) +
-      " -t " + shellQuote(request.test_list_path) +
       " --audio-controller-log --as-server-host " + shellQuote(request.as_server_host) +
       " --as-server-port " + std::to_string(request.as_server_port) +
       (request.as_server_path.empty() ? "" : " --as-server " + shellQuote(request.as_server_path)) +
       (request.as_log_path.empty() ? "" : " --as-log " + shellQuote(request.as_log_path)) +
       (request.trace_ldc_path.empty() ? "" : " --trace-ldc " + shellQuote(request.trace_ldc_path)) +
-      (request.use_existing_as_server ? " --use-existing-as-server" : "") +
       (request.datalink_endpoint.empty() ? "" : " --datalink-endpoint " + shellQuote(request.datalink_endpoint)) +
       (request.qemu_gdb_port == 0 ? "" : " --qemu-gdb-port " + std::to_string(request.qemu_gdb_port)) +
       (request.qemu_gdb_wait ? " --qemu-gdb-wait" : "") +
       " --gui-keep-alive --gui-ready-marker " + shellQuote(ready_path) +
+      " --gui-as-server-ready-marker " + shellQuote(as_server_ready_path) +
+      " --gui-test-list " + shellQuote(request.test_list_path) +
       " --gui-ready-after-pipeinstall" +
       " > " + shellQuote(log_path) + " 2>&1";
 
@@ -1647,13 +1645,15 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ready_timeout_ms);
   int status = 0;
   while (std::chrono::steady_clock::now() < deadline) {
-    if (fs::exists(ready_path)) {
+    if (fs::exists(as_server_ready_path)) {
       std::lock_guard<std::mutex> lk(mutex_);
       sessions_[request.workspace_id] = pid;
       result.ok = true;
-      result.message = "validation session ready";
+      result.message = "validation as_server ready";
       result.diagnostics.push_back("validation_log=" + log_path);
+      result.diagnostics.push_back("as_server_ready_file=" + as_server_ready_path);
       result.diagnostics.push_back("ready_file=" + ready_path);
+      result.diagnostics.push_back("test_list=" + request.test_list_path);
       return result;
     }
     const pid_t done = ::waitpid(pid, &status, WNOHANG);
@@ -1673,6 +1673,69 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
   }
 
   stopProcessGroup(pid);
+  result.ok = false;
+  result.message = "validation as_server did not become ready before timeout";
+  result.diagnostics.push_back("validation_log=" + log_path);
+  result.diagnostics.push_back("as_server_ready_file=" + as_server_ready_path);
+  result.diagnostics.push_back("ready_file=" + ready_path);
+  return result;
+#endif
+}
+
+ValidationResult ProcessValidationRunner::waitReady(const ValidationRequest& request) {
+  ValidationResult result;
+#if defined(_WIN32)
+  (void)request;
+  result.ok = false;
+  result.message = "validation sessions are not implemented on Windows GUI backend yet";
+  return result;
+#else
+  const std::string log_path = (fs::path(request.workspace_dir) / "audio_studio_validation.log").string();
+  const std::string ready_path = (fs::path(request.workspace_dir) / "audio_studio_validation.ready").string();
+  pid_t pid = 0;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    auto it = sessions_.find(request.workspace_id);
+    if (it == sessions_.end()) {
+      result.ok = false;
+      result.message = "validation session is not running";
+      return result;
+    }
+    pid = it->second;
+  }
+
+  const long ready_timeout_ms = request.ready_timeout_ms > 0 ? request.ready_timeout_ms : 120000;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ready_timeout_ms);
+  int status = 0;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (fs::exists(ready_path)) {
+      result.ok = true;
+      result.message = "validation session ready";
+      result.diagnostics.push_back("validation_log=" + log_path);
+      result.diagnostics.push_back("ready_file=" + ready_path);
+      return result;
+    }
+    const pid_t done = ::waitpid(pid, &status, WNOHANG);
+    if (done == pid) {
+      {
+        std::lock_guard<std::mutex> lk(mutex_);
+        sessions_.erase(request.workspace_id);
+      }
+      result.ok = false;
+      if (WIFEXITED(status)) {
+        result.message = "validation failed with exit code " + std::to_string(WEXITSTATUS(status));
+      } else if (WIFSIGNALED(status)) {
+        result.message = "validation killed by signal " + std::to_string(WTERMSIG(status));
+      } else {
+        result.message = "validation failed before ready";
+      }
+      result.diagnostics.push_back("validation_log=" + log_path);
+      result.diagnostics.push_back("ready_file=" + ready_path);
+      return result;
+    }
+    ::usleep(100000);
+  }
+
   result.ok = false;
   result.message = "validation did not become ready before timeout";
   result.diagnostics.push_back("validation_log=" + log_path);
@@ -1847,6 +1910,38 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
     }
   }
 
+  fs::create_directories(record.output_dir);
+  const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
+  const std::string validation_pipeline = validationPipelineSelector(request_json, snapshot_json, regenerated.pipeline_ids);
+  const std::string validation_datalink = config_.validation_datalink_endpoint.empty()
+                                            ? "as_datalink"
+                                            : config_.validation_datalink_endpoint;
+
+  ValidationRequest validation_request;
+  validation_request.workspace_id = record.workspace_id;
+  validation_request.workspace_dir = record.workspace_dir;
+  validation_request.project_name = record.project_name;
+  validation_request.test_list_path = test_list_path;
+  validation_request.python = config_.validation_python;
+  validation_request.script_path = config_.validation_script_path;
+  validation_request.as_server_path = config_.compile_as_server_path;
+  validation_request.as_log_path = config_.validation_as_log_path;
+  validation_request.trace_ldc_path = config_.validation_trace_ldc_path;
+  validation_request.as_server_host = config_.compile_as_server_host;
+  validation_request.as_server_port = config_.compile_as_server_port;
+  validation_request.ready_timeout_ms = config_.validation_ready_timeout_ms;
+  validation_request.datalink_endpoint = config_.validation_datalink_endpoint;
+  validation_request.qemu_gdb_port = config_.validation_qemu_gdb_port;
+  validation_request.qemu_gdb_wait = config_.validation_qemu_gdb_wait;
+
+  auto validation_start = validation_runner_->start(validation_request);
+  if (!validation_start.ok) {
+    validation_runner_->stop(record.workspace_id);
+    return {200, "application/json; charset=utf-8",
+            failureResponse("validation", validation_start.message, request_json, validation_start.diagnostics,
+                            buildExtraFields(regenerated, workspace_revision))};
+  }
+
   GuiConfigCompileRequest compile_request;
   compile_request.input_path = record.input_path;
   compile_request.output_dir = record.output_dir;
@@ -1864,17 +1959,13 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
 
   auto compile_result = compile_client_->compile(compile_request);
   if (!compile_result.ok) {
+    validation_runner_->stop(record.workspace_id);
     return {200, "application/json; charset=utf-8",
             failureResponse("compile", compile_result.message, request_json, compile_result.diagnostics,
                             buildExtraFields(regenerated, workspace_revision))};
   }
 
-  fs::create_directories(record.output_dir);
-  const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
-  const std::string validation_pipeline = validationPipelineSelector(request_json, snapshot_json, regenerated.pipeline_ids);
-  const std::string validation_datalink = config_.validation_datalink_endpoint.empty()
-                                            ? "as_datalink"
-                                            : config_.validation_datalink_endpoint;
+  validation_request.tplg_path = compile_result.tplg_path;
   const std::string test_list =
       "ac_run --endpoint " + shellQuote(validation_datalink) + " --mtu 512\n"
       "trace on\n"
@@ -1882,30 +1973,12 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
       compile_result.tplg_path + "\n"
       "sleep 3600\n";
   if (!writeTextFile(test_list_path, test_list)) {
+    validation_runner_->stop(record.workspace_id);
     return {500, "application/json; charset=utf-8",
             failureResponse("validation", "failed to write audio_studio_test_list", request_json)};
   }
 
-  ValidationRequest validation_request;
-  validation_request.workspace_id = record.workspace_id;
-  validation_request.workspace_dir = record.workspace_dir;
-  validation_request.project_name = record.project_name;
-  validation_request.tplg_path = compile_result.tplg_path;
-  validation_request.test_list_path = test_list_path;
-  validation_request.python = config_.validation_python;
-  validation_request.script_path = config_.validation_script_path;
-  validation_request.as_server_path = config_.validation_as_server_path;
-  validation_request.as_log_path = config_.validation_as_log_path;
-  validation_request.trace_ldc_path = config_.validation_trace_ldc_path;
-  validation_request.as_server_host = config_.validation_as_server_host;
-  validation_request.as_server_port = config_.validation_as_server_port;
-  validation_request.ready_timeout_ms = config_.validation_ready_timeout_ms;
-  validation_request.use_existing_as_server = config_.validation_use_existing_as_server;
-  validation_request.datalink_endpoint = config_.validation_datalink_endpoint;
-  validation_request.qemu_gdb_port = config_.validation_qemu_gdb_port;
-  validation_request.qemu_gdb_wait = config_.validation_qemu_gdb_wait;
-
-  auto validation_result = validation_runner_->start(validation_request);
+  auto validation_result = validation_runner_->waitReady(validation_request);
   if (!validation_result.ok) {
     validation_runner_->stop(record.workspace_id);
     return {200, "application/json; charset=utf-8",
@@ -3136,11 +3209,18 @@ std::string GuiRuntimeEngine::run(const std::string& session_id) {
 }
 
 std::string GuiRuntimeEngine::stop(const std::string& session_id) {
-  (void)session_id;
-  running_.store(false);
+  const bool was_running = running_.exchange(false);
   playback_->stop();
   capture_->stop();
-  return "{\"ok\":true,\"running\":false,\"runtime_state\":\"PIPE_LOADED\"}";
+  const std::string requested = simpleJsonStringField(session_id, "runtime_state", "PIPE_UNLOADED");
+  std::string next_state = "PIPE_UNLOADED";
+  if (was_running || requested == "PIPE_RUNNING") {
+    next_state = "PIPE_LOADED";
+  } else if (requested == "PIPE_LOADED" || requested == "PIPE_UNLOADED" ||
+             requested == "NOT_READY" || requested == "ERROR") {
+    next_state = requested;
+  }
+  return "{\"ok\":true,\"running\":false,\"runtime_state\":\"" + next_state + "\"}";
 }
 
 std::string GuiRuntimeEngine::pushAudioStream(const std::string& query, const std::string& frame) {

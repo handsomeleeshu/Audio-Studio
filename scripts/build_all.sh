@@ -148,7 +148,7 @@ profile_config() {
       if [[ "$BUILD_OS" != linux ]]; then
         die 'profile gui_backend currently supports linux OS only; GUI/backend uses POSIX sockets today\n'
       fi
-      PROFILE_EXECUTABLES=(audio_studio_server audio_studio_backend_tests)
+      PROFILE_EXECUTABLES=(audio_studio_gui_server audio_studio_backend_tests)
       ;;
     rpc_socket|rpc_pipe)
       PROFILE_EXECUTABLES=(

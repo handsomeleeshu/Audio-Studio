@@ -5,7 +5,7 @@
       "name": "Backend: Debug Server",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/debug/audio_studio_server",
+      "program": "${workspaceFolder}/build/debug/audio_studio_gui_server",
       "args": [
         "${workspaceFolder}",
         "${input:serverPort}",
@@ -23,22 +23,16 @@
         "python3",
         "--validation-script",
         "${workspaceFolder}/../application/rv32qemu/sof-build-test.py",
-        "--validation-as-server",
-        "${workspaceFolder}/out/linux/simulator/rpc_socket/Debug/as_server",
         "--validation-as-log",
         "${workspaceFolder}/out/linux/simulator/rpc_socket/Debug/as_log",
         "--validation-trace-ldc",
         "${workspaceFolder}/../application/rv32qemu/build/sof.ldc",
-        "--validation-as-server-host",
-        "127.0.0.1",
-        "--validation-as-server-port",
-        "${input:validationAsServerPort}",
         "--validation-ready-timeout-ms",
         "120000",
         "--runtime-as-server-host",
         "127.0.0.1",
         "--runtime-as-server-port",
-        "${input:validationAsServerPort}",
+        "${input:asServerPort}",
         "--audio-driver-factory",
         "simulator"
       ],
@@ -127,12 +121,6 @@
       "type": "promptString",
       "description": "Audio Studio as_server RPC port",
       "default": "9900"
-    },
-    {
-      "id": "validationAsServerPort",
-      "type": "promptString",
-      "description": "Audio Studio validation as_server port",
-      "default": "9901"
     }
   ]
 }

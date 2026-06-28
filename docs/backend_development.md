@@ -15,23 +15,22 @@ cmake --build out/linux/simulator/audio_controller/Debug --parallel 16
 backend 依赖路径通过参数传入，不再从环境变量猜测：
 
 ```bash
-out/linux/simulator/gui_backend/Debug/audio_studio_server . 8080 \
+out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
   --as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode once \
+  --as-server-rpc-mode socket \
+  --as-server-host 127.0.0.1 \
+  --as-server-port 9900 \
   --validation-python python3 \
   --validation-script ../application/rv32qemu/sof-build-test.py \
-  --validation-as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
   --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --validation-as-server-host 127.0.0.1 \
-  --validation-as-server-port 9901 \
   --runtime-as-server-host 127.0.0.1 \
-  --runtime-as-server-port 9901 \
+  --runtime-as-server-port 9900 \
   --audio-driver-factory simulator
 ```
 
-`BackendRuntimeConfig` 是唯一配置入口。测试可以直接构造该 struct，VSCode debug 也通过 argv 传入同一组字段。
+`BackendRuntimeConfig` 是唯一配置入口。测试可以直接构造该 struct，VSCode debug 也通过 argv 传入同一组字段。GUI build 时 backend 先启动 `sof-build-test.py` helper，等 helper 写入 `audio_studio_as_server.ready` 后通过同一个 socket `as_server` 调用 `config.compile`；compile 成功后写入 `audio_studio_test_list.txt`，再等待 pipeinstall ready。
 
 ## API
 

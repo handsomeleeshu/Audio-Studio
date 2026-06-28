@@ -58,13 +58,9 @@ void printUsage(const char* program) {
       << "  --as-server-timeout-ms MS\n"
       << "  --validation-python PYTHON\n"
       << "  --validation-script PATH\n"
-      << "  --validation-as-server PATH\n"
       << "  --validation-as-log PATH\n"
       << "  --validation-trace-ldc PATH\n"
-      << "  --validation-as-server-host HOST\n"
-      << "  --validation-as-server-port PORT\n"
       << "  --validation-ready-timeout-ms MS\n"
-      << "  --validation-use-existing-as-server BOOL\n"
       << "  --validation-datalink PATH\n"
       << "  --validation-qemu-gdb-port PORT\n"
       << "  --validation-qemu-gdb-wait BOOL\n"
@@ -97,13 +93,9 @@ int parseBackendOptions(int argc, char** argv, BackendOptions& options) {
     else if (arg == "--as-server-timeout-ms") options.runtime.compile_as_server_timeout_ms = parseU32(value, arg);
     else if (arg == "--validation-python") options.runtime.validation_python = value;
     else if (arg == "--validation-script") options.runtime.validation_script_path = value;
-    else if (arg == "--validation-as-server") options.runtime.validation_as_server_path = value;
     else if (arg == "--validation-as-log") options.runtime.validation_as_log_path = value;
     else if (arg == "--validation-trace-ldc") options.runtime.validation_trace_ldc_path = value;
-    else if (arg == "--validation-as-server-host") options.runtime.validation_as_server_host = value;
-    else if (arg == "--validation-as-server-port") options.runtime.validation_as_server_port = parsePort(value, arg);
     else if (arg == "--validation-ready-timeout-ms") options.runtime.validation_ready_timeout_ms = parsePositiveLong(value, arg);
-    else if (arg == "--validation-use-existing-as-server") options.runtime.validation_use_existing_as_server = parseBool(value, arg);
     else if (arg == "--validation-datalink") options.runtime.validation_datalink_endpoint = value;
     else if (arg == "--validation-qemu-gdb-port") options.runtime.validation_qemu_gdb_port = parsePort(value, arg);
     else if (arg == "--validation-qemu-gdb-wait") options.runtime.validation_qemu_gdb_wait = parseBool(value, arg);

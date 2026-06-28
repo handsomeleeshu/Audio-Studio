@@ -154,19 +154,22 @@ cmake --build out/linux/simulator/audio_controller/Debug --parallel 16
 启动 GUI backend：
 
 ```bash
-out/linux/simulator/gui_backend/Debug/audio_studio_server . 8080 \
+out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
   --as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode once \
+  --as-server-rpc-mode socket \
+  --as-server-host 127.0.0.1 \
+  --as-server-port 9900 \
   --validation-python python3 \
   --validation-script ../application/rv32qemu/sof-build-test.py \
-  --validation-as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
   --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --validation-as-server-port 9901 \
-  --runtime-as-server-port 9901 \
+  --runtime-as-server-host 127.0.0.1 \
+  --runtime-as-server-port 9900 \
   --audio-driver-factory simulator
 ```
+
+GUI Build 会通过 `sof-build-test.py` 创建唯一的 `as_server`/QEMU/audio_controller session；Build 成功后该 session 保持存活，供后续 Run/Record 和 `as_log` 复用。
 
 打开：
 

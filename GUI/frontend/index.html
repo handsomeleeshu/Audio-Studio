@@ -8081,7 +8081,7 @@
           s.switching = false;
           renderBufferDumpUiV40(ep);
           drawEdges();
-          const msg = 'Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
+          const msg = 'Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_gui_server.';
           toast(msg);
           addLog('warn', 'Buffer dump blocked', msg);
           return;
@@ -8635,7 +8635,7 @@
           const firstLive = await fetchBackendBufferFrameV40c(ep, key);
           if (op !== s.opToken) return;
           if (!firstLive) {
-            const msg = 'Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_server.';
+            const msg = 'Backend buffer live API unavailable. GitHub Pages has no running C++ backend; local server users should rebuild/restart audio_studio_gui_server.';
             s.lastError = msg;
             toast(msg);
             addLog('warn', 'Buffer dump blocked', msg);
@@ -13317,6 +13317,11 @@
     }
     async function stopRuntimeGroup(groupId = targetRuntimeGroupId()) {
       const stopId = groupId === 'ALL' ? 'ALL' : groupId;
+      const current = runtimeStatusForGroupId(stopId);
+      if (current !== RUNTIME_STATES.PIPE_RUNNING) {
+        updateBuildRuntimeButtonState(stopId);
+        return false;
+      }
       await postRuntimeGroupState('stop', stopId, RUNTIME_STATES.PIPE_LOADED);
       stopPlaybackFramePump('pipeline_stopped');
       await finalizeCaptureFramePump('pipeline_stopped');
@@ -13333,6 +13338,7 @@
       const label = stopId === 'ALL' ? 'All pipeline groups' : (runtimeGroupById(stopId)?.displayName || stopId);
       addLog('warn', 'Pipeline stopped', `${label} stopped`);
       toast(`${label} stopped`, 'warn');
+      return true;
     }
     function setRuntimeGroupFilter(groupId) {
       activeRuntimeGroupId = groupId || 'ALL';

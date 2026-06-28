@@ -21,7 +21,8 @@ def main():
     helper = (VASS_ROOT / 'application' / 'rv32qemu' / 'sof-build-test.py').read_text(encoding='utf-8')
     require_contains(helper, 'parser.add_argument("--qemu-gdb-port"')
     require_contains(helper, 'parser.add_argument("--qemu-gdb-wait"')
-    require_contains(helper, 'parser.add_argument("--use-existing-as-server"')
+    require_contains(helper, 'parser.add_argument("--gui-as-server-ready-marker"')
+    require_contains(helper, 'parser.add_argument("--gui-test-list"')
     require_contains(helper, '-gdb tcp::')
 
     launch = json.loads((VASS_ROOT / '.vscode' / 'launch.json').read_text(encoding='utf-8'))
@@ -60,7 +61,7 @@ def main():
     assert any(item['text'] == 'tbreak main' for item in rv32_simple['setupCommands'])
 
     backend = configs['Audio Studio GUI: Backend Debug Server']
-    assert backend['program'].endswith('/out/linux/simulator/gui_backend/Debug/audio_studio_server')
+    assert backend['program'].endswith('/out/linux/simulator/gui_backend/Debug/audio_studio_gui_server')
     backend_args = backend['args']
     assert backend_args[:2] == ['${workspaceFolder}/Audio-Studio', '${input:audioStudioServerPort}']
     for option in [
@@ -71,13 +72,9 @@ def main():
         '--as-server-port',
         '--validation-python',
         '--validation-script',
-        '--validation-as-server',
         '--validation-as-log',
         '--validation-trace-ldc',
-        '--validation-as-server-host',
-        '--validation-as-server-port',
         '--validation-ready-timeout-ms',
-        '--validation-use-existing-as-server',
         '--validation-datalink',
         '--validation-qemu-gdb-port',
         '--validation-qemu-gdb-wait',
@@ -86,11 +83,16 @@ def main():
         '--audio-driver-factory',
     ]:
         assert option in backend_args, f'missing backend arg {option}'
+    for option in [
+        '--validation-as-server',
+        '--validation-as-server-host',
+        '--validation-as-server-port',
+        '--validation-use-existing-as-server',
+    ]:
+        assert option not in backend_args, f'legacy validation as_server arg must be removed: {option}'
     assert backend_args[backend_args.index('--as-server-rpc-mode') + 1] == 'socket'
     assert backend_args[backend_args.index('--as-server-port') + 1] == '${input:audioStudioAsServerPort}'
-    assert backend_args[backend_args.index('--validation-as-server-port') + 1] == '${input:audioStudioAsServerPort}'
     assert backend_args[backend_args.index('--runtime-as-server-port') + 1] == '${input:audioStudioAsServerPort}'
-    assert backend_args[backend_args.index('--validation-use-existing-as-server') + 1] == 'true'
     assert backend_args[backend_args.index('--validation-qemu-gdb-wait') + 1] == 'true'
     assert backend.get('environment', []) == []
 
@@ -153,14 +155,18 @@ def main():
     require_not_contains(starter, '</dev/tcp/127.0.0.1/"$as_server_port"')
     require_contains(starter, 'is_tcp_listening')
     require_contains(starter, '/proc/net/tcp')
+    require_contains(starter, 'backend_api_ready')
+    require_contains(starter, '--connect-timeout 0.2 --max-time 0.5')
+    require_contains(starter, 'if ! is_tcp_listening "$backend_port"; then')
     assert (
         starter.index('if is_tcp_listening "$port"; then')
-        < starter.index('curl -fsS "http://127.0.0.1:$backend_port/api/projects"')
+        < starter.index('if backend_api_ready; then')
     )
     require_contains(starter, 'backend_port=')
     require_contains(starter, 'as_server_port=')
     require_contains(starter, 'audio-studio-gui-debug-helper.pid')
     require_contains(starter, 'audio-studio-gui-debug-qemu.pid')
+    require_contains(starter, 'Waiting for frontend Build')
     assert not (VASS_ROOT / '.vscode' / 'audio-studio-start-gui-debug-validation.py').exists()
 
     stopper = (VASS_ROOT / '.vscode' / 'audio-studio-stop-gui-debug.sh').read_text(encoding='utf-8')
@@ -198,8 +204,6 @@ def main():
     compounds = {item['name']: item for item in launch['compounds']}
     full_stack = compounds['Audio Studio GUI: Full Stack Debug']
     assert full_stack['configurations'] == [
-        'Audio Studio GUI: Simulator Keep Alive',
-        'Audio Studio GUI: as_server Debug',
         'Audio Studio GUI: Backend Debug Server',
         'Audio Studio GUI: Frontend Debug Chrome (Mac)',
     ]

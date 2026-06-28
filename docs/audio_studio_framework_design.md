@@ -228,25 +228,33 @@ Build 语义：
 backend 不再从环境变量猜路径，统一用 argv/config 注入：
 
 ```bash
-out/linux/simulator/gui_backend/Debug/audio_studio_server . 8080 \
+out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
   --as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode once \
+  --as-server-rpc-mode socket \
+  --as-server-host 127.0.0.1 \
+  --as-server-port 9900 \
   --validation-python python3 \
   --validation-script ../application/rv32qemu/sof-build-test.py \
-  --validation-as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
   --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --validation-as-server-host 127.0.0.1 \
-  --validation-as-server-port 9901 \
   --runtime-as-server-host 127.0.0.1 \
-  --runtime-as-server-port 9901 \
+  --runtime-as-server-port 9900 \
   --audio-driver-factory simulator
 ```
 
 `BackendRuntimeConfig` 在 `main.cpp` 里解析，然后注入 `BuildOrchestrator` 和 `GuiRuntimeEngine`。
 
 ### 4.2 BuildOrchestrator
+
+GUI Build 的 server 生命周期由 `BuildOrchestrator` 和 `application/rv32qemu/sof-build-test.py` helper 共同管理：
+
+1. Build 前停止旧 helper/session，清理旧 marker 和 test list。
+2. 启动 helper；helper 创建 datalink 文件和唯一 `as_server`，写入 `audio_studio_as_server.ready`。
+3. backend 通过同一 socket `as_server` 调用 `config.compile`。
+4. compile 成功后 backend 写入 `audio_studio_test_list.txt`，helper 再启动 `sof-test-run.py`，执行 `ac_run -> trace on -> pipeinstall -> keep-alive`。
+5. pipeinstall 成功后 helper 写入 `audio_studio_validation.ready`，Build 返回 `PIPE_LOADED`，helper/as_server/QEMU/audio_controller session 保持存活。
+6. compile/pipeinstall 失败或 Unload 时，backend 停止 helper，并清理本次 build session。
 
 ```mermaid
 classDiagram

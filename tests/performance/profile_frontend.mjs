@@ -55,7 +55,7 @@ function run(command, args, { cwd = root, env = process.env } = {}) {
 async function ensureBackend() {
   if (options.url) return { url: options.url, stop: () => { } };
 
-  const server = path.join(root, 'out', 'linux', 'a2', 'gui_backend', 'Release', 'audio_studio_server');
+  const server = path.join(root, 'out', 'linux', 'a2', 'gui_backend', 'Release', 'audio_studio_gui_server');
   if (!fs.existsSync(server)) {
     await run(path.join(root, 'scripts', 'build_all.sh'), ['--profile', 'gui_backend', '-r', 'linux', 'a2']);
   }

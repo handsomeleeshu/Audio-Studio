@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -120,24 +121,19 @@ audiostudio::BackendRuntimeConfig explicitBackendConfig(const fs::path& root) {
   config.compile_as_server_timeout_ms = 3210;
   config.validation_python = "python3";
   config.validation_script_path = (root / "explicit-deps/validation/build-test.py").string();
-  config.validation_as_server_path = (root / "explicit-deps/validation/as_server").string();
   config.validation_as_log_path = (root / "explicit-deps/validation/as_log").string();
   config.validation_trace_ldc_path = (root / "explicit-deps/validation/trace.ldc").string();
-  config.validation_as_server_host = "10.10.0.11";
-  config.validation_as_server_port = 19001;
   config.validation_ready_timeout_ms = 6543;
-  config.validation_use_existing_as_server = true;
   config.validation_datalink_endpoint = (root / "explicit-deps/validation/as_datalink").string();
   config.validation_qemu_gdb_port = 1234;
   config.validation_qemu_gdb_wait = true;
-  config.runtime_as_server_host = "10.10.0.12";
-  config.runtime_as_server_port = 19002;
+  config.runtime_as_server_host = config.compile_as_server_host;
+  config.runtime_as_server_port = config.compile_as_server_port;
   config.runtime_audio_driver_factory = "test_audio_driver";
 
   writeText(config.compile_as_server_path, "compile as_server");
   writeText(config.compile_alsatplg_path, "alsatplg");
   writeText(config.validation_script_path, "validation script");
-  writeText(config.validation_as_server_path, "validation as_server");
   writeText(config.validation_as_log_path, "validation as_log");
   writeText(config.validation_trace_ldc_path, "trace ldc");
   return config;
@@ -152,7 +148,6 @@ void poisonBackendEnvironment() {
   ::setenv("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "env_driver", 1);
   ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_HOST", "192.0.2.11", 1);
   ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_PORT", "29001", 1);
-  ::setenv("AUDIO_STUDIO_VALIDATION_AS_SERVER_PATH", "/env/should/not/use/validation-as-server", 1);
   ::setenv("AUDIO_STUDIO_VALIDATION_AS_LOG_PATH", "/env/should/not/use/as-log", 1);
   ::setenv("AUDIO_STUDIO_VALIDATION_TRACE_LDC", "/env/should/not/use/trace.ldc", 1);
   ::setenv("AUDIO_STUDIO_VALIDATION_READY_TIMEOUT_MS", "7777", 1);
@@ -161,10 +156,12 @@ void poisonBackendEnvironment() {
 struct FakeCompileClient final : public audiostudio::IConfigCompileClient {
   bool ok = true;
   bool called = false;
+  std::function<void()> before_compile;
   audiostudio::GuiConfigCompileRequest last_request;
 
   audiostudio::GuiConfigCompileResult compile(const audiostudio::GuiConfigCompileRequest& request) override {
     called = true;
+    if (before_compile) before_compile();
     last_request = request;
     if (!ok) {
       audiostudio::GuiConfigCompileResult result;
@@ -185,18 +182,27 @@ struct FakeCompileClient final : public audiostudio::IConfigCompileClient {
 struct FakeValidationRunner final : public audiostudio::IValidationRunner {
   bool called = false;
   int start_count = 0;
+  int wait_count = 0;
   int stop_count = 0;
   std::string last_stopped_workspace;
   std::string last_test_list;
   std::string last_script;
-  audiostudio::ValidationRequest last_request;
+  audiostudio::ValidationRequest last_start_request;
+  audiostudio::ValidationRequest last_wait_request;
 
   audiostudio::ValidationResult start(const audiostudio::ValidationRequest& request) override {
     called = true;
     ++start_count;
-    last_request = request;
+    last_start_request = request;
     last_test_list = request.test_list_path;
     last_script = request.script_path;
+    return {true, "fake as_server ready"};
+  }
+
+  audiostudio::ValidationResult waitReady(const audiostudio::ValidationRequest& request) override {
+    ++wait_count;
+    last_wait_request = request;
+    last_test_list = request.test_list_path;
     return {true, "fake validation passed"};
   }
 
@@ -586,6 +592,9 @@ int main() {
 
   auto compile = std::make_shared<FakeCompileClient>();
   auto validation = std::make_shared<FakeValidationRunner>();
+  compile->before_compile = [&validation]() {
+    assert(validation->start_count == validation->wait_count + 1);
+  };
   auto orchestrator = makeOrchestrator(temp_root, compile, validation, backend_config);
   auto orchestrated_runtime = std::make_shared<audiostudio::GuiRuntimeEngine>(orchestrator, backend_config);
   audiostudio::HttpServer orchestrated_server(temp_root.string(), 0, orchestrated_runtime, engine, engine,
@@ -636,6 +645,8 @@ int main() {
   assert(build_res.body.find("\"workspace_revision\"") != std::string::npos);
   assert(compile->called);
   assert(validation->called);
+  assert(validation->start_count == 1);
+  assert(validation->wait_count == 1);
   assert(compile->last_request.input_path.find(workspace_id) != std::string::npos);
   assert(compile->last_request.input_path.find("a2_pipeline_all.json") != std::string::npos);
   assert(compile->last_request.output_dir.find(workspace_id) != std::string::npos);
@@ -652,17 +663,17 @@ int main() {
   assert(compile->last_request.as_server_port == backend_config.compile_as_server_port);
   assert(compile->last_request.as_server_timeout_ms == backend_config.compile_as_server_timeout_ms);
   assert(validation->last_script == backend_config.validation_script_path);
-  assert(validation->last_request.python == backend_config.validation_python);
-  assert(validation->last_request.as_server_path == backend_config.validation_as_server_path);
-  assert(validation->last_request.as_log_path == backend_config.validation_as_log_path);
-  assert(validation->last_request.trace_ldc_path == backend_config.validation_trace_ldc_path);
-  assert(validation->last_request.as_server_host == backend_config.validation_as_server_host);
-  assert(validation->last_request.as_server_port == backend_config.validation_as_server_port);
-  assert(validation->last_request.ready_timeout_ms == backend_config.validation_ready_timeout_ms);
-  assert(validation->last_request.use_existing_as_server == backend_config.validation_use_existing_as_server);
-  assert(validation->last_request.datalink_endpoint == backend_config.validation_datalink_endpoint);
-  assert(validation->last_request.qemu_gdb_port == backend_config.validation_qemu_gdb_port);
-  assert(validation->last_request.qemu_gdb_wait == backend_config.validation_qemu_gdb_wait);
+  assert(validation->last_start_request.python == backend_config.validation_python);
+  assert(validation->last_start_request.as_server_path == backend_config.compile_as_server_path);
+  assert(validation->last_start_request.as_log_path == backend_config.validation_as_log_path);
+  assert(validation->last_start_request.trace_ldc_path == backend_config.validation_trace_ldc_path);
+  assert(validation->last_start_request.as_server_host == backend_config.compile_as_server_host);
+  assert(validation->last_start_request.as_server_port == backend_config.compile_as_server_port);
+  assert(validation->last_start_request.ready_timeout_ms == backend_config.validation_ready_timeout_ms);
+  assert(validation->last_start_request.datalink_endpoint == backend_config.validation_datalink_endpoint);
+  assert(validation->last_start_request.qemu_gdb_port == backend_config.validation_qemu_gdb_port);
+  assert(validation->last_start_request.qemu_gdb_wait == backend_config.validation_qemu_gdb_wait);
+  assert(validation->last_wait_request.tplg_path.find("audio_studio.tplg") != std::string::npos);
   const std::string generated_test_list = readText(validation->last_test_list);
   assert(generated_test_list.find("ac_run --endpoint '" +
                                   backend_config.validation_datalink_endpoint +
@@ -781,12 +792,12 @@ int main() {
   auto simulator_all_build_res = orchestrated_server.handle(simulator_all_build_req);
   assert(simulator_all_build_res.status == 200);
   assert(simulator_all_build_res.body.find("\"ok\":true") != std::string::npos);
-  assert(simulator_all_build_res.body.find("\"pipeline_ids\":[\"PLAYBACK_MAIN\",\"CAPTURE_MAIN\"]") != std::string::npos);
+  assert(simulator_all_build_res.body.find("\"pipeline_ids\":[\"PLAYBACK_MAIN\",\"CAPTURE_MAIN\",\"DSP_FILTER_COVERAGE\"]") != std::string::npos);
   const std::string simulator_all_json = readText(compile->last_request.input_path);
   const std::string simulator_all_pipelines = testJsonArrayField(simulator_all_json, "pipelines");
   assert(simulator_all_pipelines.find("PLAYBACK_MAIN") != std::string::npos);
   assert(simulator_all_pipelines.find("CAPTURE_MAIN") != std::string::npos);
-  assert(simulator_all_pipelines.find("DSP_FILTER_COVERAGE") == std::string::npos);
+  assert(simulator_all_pipelines.find("DSP_FILTER_COVERAGE") != std::string::npos);
   assert(simulator_all_pipelines.find("builtin.file_input") == std::string::npos);
   assert(simulator_all_pipelines.find("builtin.file_output") == std::string::npos);
 
@@ -834,7 +845,6 @@ int main() {
   relative_config.compile_as_server_path = fs::relative(relative_config.compile_as_server_path, relative_root_abs).string();
   relative_config.compile_alsatplg_path = fs::relative(relative_config.compile_alsatplg_path, relative_root_abs).string();
   relative_config.validation_script_path = fs::relative(relative_config.validation_script_path, relative_root_abs).string();
-  relative_config.validation_as_server_path = fs::relative(relative_config.validation_as_server_path, relative_root_abs).string();
   relative_config.validation_as_log_path = fs::relative(relative_config.validation_as_log_path, relative_root_abs).string();
   relative_config.validation_trace_ldc_path = fs::relative(relative_config.validation_trace_ldc_path, relative_root_abs).string();
   auto relative_orchestrator = makeOrchestrator(relative_root, relative_compile, relative_validation, relative_config);
@@ -961,7 +971,9 @@ int main() {
   assert(fail_build_res.body.find("\"diagnostics\"") != std::string::npos);
   assert(fail_build_res.body.find("\"node_marks\"") != std::string::npos);
   assert(fail_build_res.body.find("\"port_marks\"") != std::string::npos);
-  assert(!fail_validation->called);
+  assert(fail_validation->start_count == 1);
+  assert(fail_validation->wait_count == 0);
+  assert(fail_validation->stop_count >= 1);
 
   const fs::path invalid_root = makeTempRoot();
   auto invalid_compile = std::make_shared<FakeCompileClient>();

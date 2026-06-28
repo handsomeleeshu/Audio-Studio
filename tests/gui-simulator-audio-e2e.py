@@ -479,7 +479,7 @@ def main():
     parser.add_argument("--artifacts-dir", type=Path)
     args = parser.parse_args()
 
-    backend = ROOT / "out/linux/simulator/gui_backend/Debug/audio_studio_server"
+    backend = ROOT / "out/linux/simulator/gui_backend/Debug/audio_studio_gui_server"
     as_server = ROOT / "out/linux/simulator/rpc_socket/Debug/as_server"
     as_log = ROOT / "out/linux/simulator/rpc_socket/Debug/as_log"
     alsatplg = ROOT / "third_party/alsatplg/bin/alsatplg"
@@ -504,14 +504,13 @@ def main():
         str(backend), str(ROOT), str(http_port),
         "--as-server", str(as_server),
         "--alsatplg", str(alsatplg),
-        "--as-server-rpc-mode", "once",
+        "--as-server-rpc-mode", "socket",
+        "--as-server-host", "127.0.0.1",
+        "--as-server-port", str(rpc_port),
         "--validation-python", "python3",
         "--validation-script", str(helper),
-        "--validation-as-server", str(as_server),
         "--validation-as-log", str(as_log),
         "--validation-trace-ldc", str(trace_ldc),
-        "--validation-as-server-host", "127.0.0.1",
-        "--validation-as-server-port", str(rpc_port),
         "--validation-datalink", str(work / "as_datalink"),
         "--runtime-as-server-host", "127.0.0.1",
         "--runtime-as-server-port", str(rpc_port),

@@ -59,6 +59,15 @@ assert.ok(
   'successful unload should set the selected runtime target to PIPE_UNLOADED'
 );
 
+assert.ok(
+  /async function stopRuntimeGroup[\s\S]*const current = runtimeStatusForGroupId\(stopId\)[\s\S]*current !== RUNTIME_STATES\.PIPE_RUNNING[\s\S]*return false/.test(html),
+  'Stop must be ignored for PIPE_UNLOADED/NOT_READY groups instead of promoting them to PIPE_LOADED'
+);
+assert.ok(
+  /async function stopRuntimeGroup[\s\S]*await postRuntimeGroupState\('stop', stopId, RUNTIME_STATES\.PIPE_LOADED\)[\s\S]*setRuntimeStatusForGroup\(stopId, RUNTIME_STATES\.PIPE_LOADED, ['"]stop_button['"]\)/.test(html),
+  'Stop should return PIPE_RUNNING groups to PIPE_LOADED only after posting backend stop'
+);
+
 assertIncludes('function upsertUpdatedPipelineFromBuildResponse', 'build responses should upsert backend-generated pipeline data');
 assert.ok(
   /upsertUpdatedPipelineFromBuildResponse\(res\)/.test(html),

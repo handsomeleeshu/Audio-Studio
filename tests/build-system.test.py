@@ -392,6 +392,7 @@ def assert_audio_cli_lets_server_select_default_driver():
     audio_service_h = read_text(ROOT / 'server' / 'framework' / 'audio' / 'include' / 'audio_service.hpp')
     as_server = read_text(ROOT / 'server' / 'as_server' / 'main.cpp')
     gui_backend = read_text(ROOT / 'GUI' / 'backend' / 'src' / 'project_orchestration.cpp')
+    gui_backend_main = read_text(ROOT / 'GUI' / 'backend' / 'src' / 'main.cpp')
     gui_backend_cmake = read_text(ROOT / 'GUI' / 'backend' / 'CMakeLists.txt')
     rv32_helper = read_text(ROOT.parent / 'application' / 'rv32qemu' / 'sof-build-test.py')
     rv32_audio_case = read_text(ROOT.parent / 'Misc' / 'sof_test' / 'simple_test' / 'rv32qemu-as-audio-controller-test-lists.txt')
@@ -415,9 +416,10 @@ def assert_audio_cli_lets_server_select_default_driver():
     assert 'config.options["endpoint"]' not in default_audio_config
     default_log_config = as_server.split('LogSessionConfig defaultLogConfigFromOptions', 1)[1].split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[0]
     assert 'config.options["endpoint"]' not in default_log_config
-    require_contains(gui_backend, 'AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY')
-    require_contains(gui_backend, 'runtimeAudioDriverFactory(request_json)')
-    require_contains(gui_backend, 'envString("AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY", "simulator")')
+    require_contains(gui_backend, 'runtimeAudioDriverFactory(request_json, config_)')
+    require_contains(gui_backend_main, '--audio-driver-factory')
+    assert 'AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY' not in gui_backend
+    assert 'AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY' not in gui_backend_main
     require_contains(gui_backend, 'config.blocking_write = true')
     playback_start = gui_backend.split('struct GuiRuntimeEngine::PlaybackWorker', 1)[1].split('std::string stopJson()', 1)[0]
     capture_start = gui_backend.split('struct GuiRuntimeEngine::CaptureWorker', 1)[1].split('void stop()', 1)[0]
@@ -426,11 +428,13 @@ def assert_audio_cli_lets_server_select_default_driver():
     assert 'config.blocking_write = false' not in gui_backend
     assert 'writeFrames(frame.bytes, {1000})' not in gui_backend
     require_contains(gui_backend_cmake, 'AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS')
-    require_contains(gui_backend_cmake, 'target_sources(audio_studio_server PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})')
+    require_contains(gui_backend_cmake, 'target_sources(audio_studio_gui_server PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})')
     require_contains(gui_backend_cmake, 'target_sources(audio_studio_backend_tests PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})')
     require_contains(gui_backend_cmake, 'target_link_libraries(audio_studio_core PUBLIC audio_studio_driver_socket)')
     require_contains(rv32_helper, '"--audio-driver-factory", "simulator"')
     require_contains(rv32_helper, '"--datalink", datalink_endpoint')
+    require_contains(rv32_helper, 'def audio_studio_root(script_dir):')
+    require_contains(rv32_helper, 'cwd=audio_studio_root(script_dir)')
     require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')
 
 
@@ -516,6 +520,8 @@ def assert_rv32_gui_keep_alive_mode_is_opt_in():
 
     require_contains(rv32_helper, 'parser.add_argument("--gui-keep-alive", action="store_true"')
     require_contains(rv32_helper, 'parser.add_argument("--gui-ready-marker"')
+    require_contains(rv32_helper, 'parser.add_argument("--gui-as-server-ready-marker"')
+    require_contains(rv32_helper, 'parser.add_argument("--gui-test-list"')
     require_contains(rv32_helper, 'parser.add_argument("--gui-ready-after-pipeinstall", action="store_true"')
     require_contains(rv32_helper, 'if args.gui_keep_alive and not args.gui_ready_marker:')
     require_contains(rv32_helper, 'test_cmd.extend(["--gui-keep-alive", "--gui-ready-marker",')
@@ -523,7 +529,7 @@ def assert_rv32_gui_keep_alive_mode_is_opt_in():
     require_contains(rv32_helper, 'run_test_command(test_cmd, cwd=test_dir, cleanup_on_terminate=args.gui_keep_alive)')
     require_contains(rv32_helper, 'signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)')
 
-    default_test_cmd = rv32_helper.split('test_cmd = [', 1)[1].split(']', 1)[0]
+    default_test_cmd = rv32_helper.split('if args.test:', 1)[1].split('test_cmd = [', 1)[1].split(']', 1)[0]
     assert '--gui-keep-alive' not in default_test_cmd
     assert '--gui-ready-marker' not in default_test_cmd
 
@@ -825,13 +831,13 @@ def main():
         '"CAPTURE_MAIN SRC Dither"',
     ]:
         require_contains(as_config_conf, expected_control)
-    for split_control in [
+    for topology_control in [
         '"PLAYBACK_MAIN CHREMAP Channel Remap"',
-        '"PLAYBACK_MAIN CHREMAP Channel Layout"',
-        '"PLAYBACK_MAIN DELAY Max Delay"',
-        '"PLAYBACK_MAIN FADER Balance"',
+        '"PLAYBACK_MAIN DELAY Delay Line"',
+        '"PLAYBACK_MAIN FADER Fader Balance"',
+        '"CAPTURE_MAIN CHREMAP Channel Remap"',
     ]:
-        assert split_control not in as_config_conf, f'unexpected split SOF topology control: {split_control}'
+        require_contains(as_config_conf, topology_control)
     require_contains(as_config_result, '"preset_count":3')
     for path in [
         as_config_out / 'a2_test.conf',
@@ -946,8 +952,8 @@ def main():
     require_contains(no_tplg_result, '"tplg_built":false')
     no_tplg_conf = read_text(as_config_no_tplg_out / 'a2_no_tplg_test.conf')
     require_contains(no_tplg_conf, '"PLAYBACK_MAIN VOLUME Volume"')
-    assert '"PLAYBACK_MAIN CHREMAP Channel Remap"' not in no_tplg_conf
-    assert '"PLAYBACK_MAIN DELAY Max Delay"' not in no_tplg_conf
+    require_contains(no_tplg_conf, '"PLAYBACK_MAIN CHREMAP Channel Remap"')
+    require_contains(no_tplg_conf, '"PLAYBACK_MAIN DELAY Delay Line"')
     for path in [
         as_config_no_tplg_out / 'a2_no_tplg_test.conf',
         as_config_no_tplg_out / 'a2_no_tplg_test_private.bin',
@@ -1029,7 +1035,7 @@ def main():
     assert_as_config_decode_status(rpc_compile, rpc_config_out, 'a2_rpc_test')
     rpc_conf = read_text(rpc_config_out / 'a2_rpc_test.conf')
     require_contains(rpc_conf, '"PLAYBACK_MAIN VOLUME Volume"')
-    assert '"PLAYBACK_MAIN FADER Balance"' not in rpc_conf
+    require_contains(rpc_conf, '"PLAYBACK_MAIN FADER Fader Balance"')
     assert (rpc_config_out / 'a2_rpc_test.tplg').exists()
     assert 'ALSA lib' not in read_text(rpc_config_out / 'a2_rpc_test_alsatplg.log')
 
@@ -1041,7 +1047,7 @@ def main():
     require_contains(gui_backend_config, 'CONFIG_GUI_BACKEND=y')
     require_contains(gui_backend_config, '# CONFIG_SERVER is not set')
     require_contains(gui_backend_header, '#define CONFIG_GUI_BACKEND 1')
-    assert (GUI_BACKEND_BUILD_DIR / 'audio_studio_server').exists()
+    assert (GUI_BACKEND_BUILD_DIR / 'audio_studio_gui_server').exists()
     assert (GUI_BACKEND_BUILD_DIR / 'audio_studio_backend_tests').exists()
     run(['ctest', '--test-dir', str(GUI_BACKEND_BUILD_DIR), '--output-on-failure'])
 

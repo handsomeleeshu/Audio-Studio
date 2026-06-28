@@ -6,7 +6,7 @@ PORT="${1:-8080}"
 DURATION="${AUDIO_STUDIO_PROFILE_SECONDS:-30}"
 INTERVAL_MS="${AUDIO_STUDIO_SAMPLE_INTERVAL_MS:-1}"
 PROFILER="${AUDIO_STUDIO_PROFILER:-sample}"
-BIN="$ROOT/build/profile/audio_studio_server"
+BIN="$ROOT/build/profile/audio_studio_gui_server"
 OUT_DIR="$ROOT/profiles/backend"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
