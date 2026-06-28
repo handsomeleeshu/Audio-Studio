@@ -33,6 +33,14 @@ def main():
     assert sim['miDebuggerServerAddress'] == '127.0.0.1:${input:audioStudioQemuGdbPort}'
     assert sim['preLaunchTask'] == 'Audio Studio GUI: wait simulator qemu gdbstub'
     assert sim['launchCompleteCommand'] == 'exec-continue'
+    assert sim['sourceFileMap'] == {
+        '/home/shuai/work/code/vass': '${workspaceFolder}',
+        '/vass': '${workspaceFolder}',
+    }
+    assert any(
+        item['text'] == 'set substitute-path /home/shuai/work/code/vass ${workspaceFolder}'
+        for item in sim['setupCommands']
+    )
     assert any(item['text'] == 'break main' and not item['ignoreFailures'] for item in sim['setupCommands'])
     assert 'debugServerPath' not in sim
     assert 'debugServerArgs' not in sim
