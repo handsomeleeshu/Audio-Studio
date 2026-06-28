@@ -33,7 +33,8 @@ def main():
     assert sim['miDebuggerPath'] == '${workspaceFolder}/.vscode/riscv-gdb-wrapper.sh'
     assert sim['miDebuggerServerAddress'] == '127.0.0.1:${input:audioStudioQemuGdbPort}'
     assert sim['preLaunchTask'] == 'Audio Studio GUI: wait simulator qemu gdbstub'
-    assert sim['launchCompleteCommand'] == 'exec-continue'
+    assert sim['stopAtConnect'] is True
+    assert sim['launchCompleteCommand'] == 'None'
     assert sim['sourceFileMap'] == {
         '/home/shuai/work/code/vass': '${workspaceFolder}',
         '/vass': '${workspaceFolder}',
@@ -58,7 +59,8 @@ def main():
     assert rv32_simple['miDebuggerServerAddress'] == '127.0.0.1:${input:rv32qemuGdbPort}'
     assert rv32_simple['preLaunchTask'] == 'rv32qemu: start simple test gdbstub'
     assert rv32_simple['postDebugTask'] == 'rv32qemu: stop debug session'
-    assert rv32_simple['launchCompleteCommand'] == 'exec-continue'
+    assert rv32_simple['stopAtConnect'] is True
+    assert rv32_simple['launchCompleteCommand'] == 'None'
     assert rv32_simple['sourceFileMap'] == {
         '/home/shuai/work/code/vass': '${workspaceFolder}',
         '/vass': '${workspaceFolder}',
@@ -151,6 +153,7 @@ def main():
     ]
     rv32_stop_task = task_by_label['rv32qemu: stop debug session']
     assert rv32_stop_task['command'] == '${workspaceFolder}/.vscode/rv32qemu-stop-debug.sh'
+    assert rv32_stop_task['args'] == ['${input:rv32qemuGdbPort}']
 
     starter = (VASS_ROOT / '.vscode' / 'audio-studio-start-qemu-gdbstub.sh').read_text(encoding='utf-8')
     require_not_contains(starter, 'audio-studio-start-gui-debug-validation.py')
@@ -177,6 +180,8 @@ def main():
 
     rv32_starter = (VASS_ROOT / '.vscode' / 'rv32qemu-start-gdbstub.sh').read_text(encoding='utf-8')
     require_contains(rv32_starter, 'rv32qemu-debug')
+    require_contains(rv32_starter, 'stop_debug_processes')
+    require_contains(rv32_starter, '(pgrep -f "$pattern" || true)')
     require_contains(rv32_starter, 'sof-build-test.py')
     require_contains(rv32_starter, '--qemu-gdb-port')
     require_contains(rv32_starter, '--qemu-gdb-wait')
@@ -187,8 +192,12 @@ def main():
     require_not_contains(rv32_starter, 'audio-studio-gui-debug')
 
     rv32_stopper = (VASS_ROOT / '.vscode' / 'rv32qemu-stop-debug.sh').read_text(encoding='utf-8')
+    require_contains(rv32_stopper, 'stop_debug_processes')
+    require_contains(rv32_stopper, '(pgrep -f "$pattern" || true)')
     require_contains(rv32_stopper, 'rv32qemu-debug-helper.pid')
     require_contains(rv32_stopper, 'rv32qemu-debug-qemu.pid')
+    require_contains(rv32_stopper, 'qemu-system-riscv32.*-gdb tcp::')
+    require_contains(rv32_stopper, '--qemu-gdb-port')
     require_not_contains(rv32_stopper, 'audio-studio-gui-debug')
 
     gdb_wrapper = (VASS_ROOT / '.vscode' / 'riscv-gdb-wrapper.sh').read_text(encoding='utf-8')
