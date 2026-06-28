@@ -80,7 +80,7 @@ def main():
     assert backend_args[backend_args.index('--validation-as-server-port') + 1] == '${input:audioStudioAsServerPort}'
     assert backend_args[backend_args.index('--runtime-as-server-port') + 1] == '${input:audioStudioAsServerPort}'
     assert backend_args[backend_args.index('--validation-use-existing-as-server') + 1] == 'true'
-    assert backend_args[backend_args.index('--validation-qemu-gdb-wait') + 1] == 'false'
+    assert backend_args[backend_args.index('--validation-qemu-gdb-wait') + 1] == 'true'
     assert backend.get('environment', []) == []
 
     backend_source = ''
