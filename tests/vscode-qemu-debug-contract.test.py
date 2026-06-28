@@ -31,7 +31,7 @@ def main():
     assert sim['program'].endswith('/application/rv32qemu/build/sof_freertos_riscv')
     assert sim['miDebuggerPath'] == '${workspaceFolder}/.vscode/riscv-gdb-wrapper.sh'
     assert sim['miDebuggerServerAddress'] == '127.0.0.1:${input:audioStudioQemuGdbPort}'
-    assert sim['preLaunchTask'] == 'Audio Studio GUI: start simulator qemu gdbstub'
+    assert sim['preLaunchTask'] == 'Audio Studio GUI: wait simulator qemu gdbstub'
     assert sim['launchCompleteCommand'] == 'exec-continue'
     assert any(item['text'] == 'break main' and not item['ignoreFailures'] for item in sim['setupCommands'])
     assert 'debugServerPath' not in sim
@@ -95,8 +95,11 @@ def main():
         require_not_contains(backend_source, forbidden)
 
     tasks = json.loads((VASS_ROOT / '.vscode' / 'tasks.json').read_text(encoding='utf-8'))
+    tasks_text = (VASS_ROOT / '.vscode' / 'tasks.json').read_text(encoding='utf-8')
+    require_not_contains(tasks_text, 'audio-studio-gui-debug-build.pid')
+    require_not_contains(tasks_text, 'build-response.json')
     task_by_label = {item['label']: item for item in tasks['tasks']}
-    start_task = task_by_label['Audio Studio GUI: start simulator qemu gdbstub']
+    start_task = task_by_label['Audio Studio GUI: wait simulator qemu gdbstub']
     assert start_task['command'] == '${workspaceFolder}/.vscode/audio-studio-start-qemu-gdbstub.sh'
     assert start_task['args'] == [
         '${input:audioStudioQemuGdbPort}', '${workspaceFolder}',
@@ -106,28 +109,18 @@ def main():
     assert build_backend['args'][-1] == 'simulator'
 
     starter = (VASS_ROOT / '.vscode' / 'audio-studio-start-qemu-gdbstub.sh').read_text(encoding='utf-8')
-    require_contains(starter, 'audio-studio-start-gui-debug-validation.py')
-    require_contains(starter, 'setsid python3')
+    require_not_contains(starter, 'audio-studio-start-gui-debug-validation.py')
+    require_not_contains(starter, 'setsid python3')
+    require_not_contains(starter, '/api/pipeline/build')
     require_contains(starter, 'backend_port=')
     require_contains(starter, 'as_server_port=')
     require_contains(starter, '/dev/tcp/127.0.0.1/"$port"')
-    require_contains(starter, 'audio-studio-gui-debug-build.pid')
+    require_contains(starter, 'audio-studio-gui-debug-helper.pid')
+    require_contains(starter, 'audio-studio-gui-debug-qemu.pid')
+    assert not (VASS_ROOT / '.vscode' / 'audio-studio-start-gui-debug-validation.py').exists()
 
-    build_launcher = (VASS_ROOT / '.vscode' / 'audio-studio-start-gui-debug-validation.py').read_text(encoding='utf-8')
-    require_contains(build_launcher, '/api/pipeline/build')
-    require_contains(build_launcher, '"build_scope": "all_pipelines"')
-    require_contains(build_launcher, 'frontend_connections')
-
-    spec = importlib.util.spec_from_file_location(
-        'audio_studio_gui_debug_validation',
-        VASS_ROOT / '.vscode' / 'audio-studio-start-gui-debug-validation.py',
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    simulator_config = json.loads((ROOT / 'configs/platform/simulator/simulator.json').read_text())
-    simulator_config['workspace_id'] = 'debug-contract'
-    snapshot = module.graph_snapshot(simulator_config)
-    assert len(snapshot['working_groups']) == len(simulator_config['pipelines'])
+    stopper = (VASS_ROOT / '.vscode' / 'audio-studio-stop-gui-debug.sh').read_text(encoding='utf-8')
+    require_not_contains(stopper, 'audio-studio-gui-debug-build.pid')
 
     gdb_wrapper = (VASS_ROOT / '.vscode' / 'riscv-gdb-wrapper.sh').read_text(encoding='utf-8')
     require_contains(gdb_wrapper, 'riscv64-unknown-elf-gdb')
