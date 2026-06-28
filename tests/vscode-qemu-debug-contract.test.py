@@ -2,6 +2,7 @@
 import json
 import importlib.util
 import pathlib
+import re
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -126,6 +127,12 @@ def main():
     tasks_text = (VASS_ROOT / '.vscode' / 'tasks.json').read_text(encoding='utf-8')
     require_not_contains(tasks_text, 'audio-studio-gui-debug-build.pid')
     require_not_contains(tasks_text, 'build-response.json')
+    task_inputs = {item['id']: item for item in tasks.get('inputs', [])}
+    task_input_refs = set(re.findall(r'\$\{input:([^}]+)\}', tasks_text))
+    assert task_input_refs <= task_inputs.keys(), (
+        f'missing tasks.json inputs: {sorted(task_input_refs - task_inputs.keys())}'
+    )
+    assert task_inputs['rv32qemuGdbPort']['default'] == '1235'
     task_by_label = {item['label']: item for item in tasks['tasks']}
     start_task = task_by_label['Audio Studio GUI: wait simulator qemu gdbstub']
     assert start_task['command'] == '${workspaceFolder}/.vscode/audio-studio-start-qemu-gdbstub.sh'
