@@ -35,14 +35,8 @@ def main():
     assert sim['preLaunchTask'] == 'Audio Studio GUI: wait simulator qemu gdbstub'
     assert sim['stopAtConnect'] is True
     assert sim['launchCompleteCommand'] == 'None'
-    assert sim['sourceFileMap'] == {
-        '/home/shuai/work/code/vass': '${workspaceFolder}',
-        '/vass': '${workspaceFolder}',
-    }
-    assert any(
-        item['text'] == 'set substitute-path /home/shuai/work/code/vass ${workspaceFolder}'
-        for item in sim['setupCommands']
-    )
+    assert 'sourceFileMap' not in sim
+    assert not any('substitute-path' in item['text'] for item in sim['setupCommands'])
     assert any(item['text'] == 'tbreak main' and not item['ignoreFailures'] for item in sim['setupCommands'])
     assert 'debugServerPath' not in sim
     assert 'debugServerArgs' not in sim
@@ -61,14 +55,8 @@ def main():
     assert rv32_simple['postDebugTask'] == 'rv32qemu: stop debug session'
     assert rv32_simple['stopAtConnect'] is True
     assert rv32_simple['launchCompleteCommand'] == 'None'
-    assert rv32_simple['sourceFileMap'] == {
-        '/home/shuai/work/code/vass': '${workspaceFolder}',
-        '/vass': '${workspaceFolder}',
-    }
-    assert any(
-        item['text'] == 'set substitute-path /home/shuai/work/code/vass ${workspaceFolder}'
-        for item in rv32_simple['setupCommands']
-    )
+    assert 'sourceFileMap' not in rv32_simple
+    assert not any('substitute-path' in item['text'] for item in rv32_simple['setupCommands'])
     assert any(item['text'] == 'tbreak main' for item in rv32_simple['setupCommands'])
 
     backend = configs['Audio Studio GUI: Backend Debug Server']
