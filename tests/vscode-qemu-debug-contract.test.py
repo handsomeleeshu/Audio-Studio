@@ -21,9 +21,12 @@ def main():
     helper = (VASS_ROOT / 'application' / 'rv32qemu' / 'sof-build-test.py').read_text(encoding='utf-8')
     require_contains(helper, 'parser.add_argument("--qemu-gdb-port"')
     require_contains(helper, 'parser.add_argument("--qemu-gdb-wait"')
+    require_contains(helper, 'parser.add_argument("--as-server-gdbserver-port"')
     require_contains(helper, 'parser.add_argument("--gui-as-server-ready-marker"')
     require_contains(helper, 'parser.add_argument("--gui-test-list"')
     require_contains(helper, '-gdb tcp::')
+    require_contains(helper, 'gdbserver')
+    require_not_contains(helper, '--attach')
 
     launch = json.loads((VASS_ROOT / '.vscode' / 'launch.json').read_text(encoding='utf-8'))
     configs = {item['name']: item for item in launch['configurations']}
@@ -77,6 +80,7 @@ def main():
         '--datalink',
         '--qemu-gdb-port',
         '--qemu-gdb-wait',
+        '--as-server-gdbserver-port',
         '--audio-driver-factory',
     ]:
         assert option in backend_args, f'missing backend arg {option}'
@@ -100,6 +104,7 @@ def main():
         assert option not in backend_args, f'legacy GUI backend arg must be removed: {option}'
     assert backend_args[backend_args.index('--as-server-port') + 1] == '${input:audioStudioAsServerPort}'
     assert backend_args[backend_args.index('--qemu-gdb-wait') + 1] == 'true'
+    assert backend_args[backend_args.index('--as-server-gdbserver-port') + 1] == '${input:audioStudioAsServerGdbPort}'
     assert backend.get('environment', []) == []
 
     as_server_debug = configs['Audio Studio GUI: as_server Debug']
@@ -109,7 +114,7 @@ def main():
     assert as_server_debug['preLaunchTask'] == 'Audio Studio GUI: wait as_server gdbserver'
     assert as_server_debug['miDebuggerServerAddress'] == '127.0.0.1:${input:audioStudioAsServerGdbPort}'
     assert as_server_debug['targetArchitecture'] == 'x64'
-    assert as_server_debug['launchCompleteCommand'] == 'None'
+    assert as_server_debug['launchCompleteCommand'] == 'exec-continue'
     assert 'args' not in as_server_debug
     assert 'customLaunchSetupCommands' not in as_server_debug
 
@@ -168,8 +173,7 @@ def main():
     as_server_task = task_by_label['Audio Studio GUI: wait as_server gdbserver']
     assert as_server_task['command'] == '${workspaceFolder}/.vscode/audio-studio-wait-as-server-debug.sh'
     assert as_server_task['args'] == [
-        '${input:audioStudioAsServerPort}', '${input:audioStudioAsServerGdbPort}', '${workspaceFolder}',
-        '${input:audioStudioServerPort}'
+        '${input:audioStudioAsServerGdbPort}', '${workspaceFolder}', '${input:audioStudioServerPort}'
     ]
 
     rv32_start_task = task_by_label['rv32qemu: start simple test gdbstub']
@@ -210,11 +214,11 @@ def main():
     require_contains(as_server_starter, 'is_tcp_listening')
     require_contains(as_server_starter, '/proc/net/tcp')
     require_contains(as_server_starter, 'backend_api_ready')
-    require_contains(as_server_starter, 'find_as_server_pid')
+    require_contains(as_server_starter, 'find_as_server_gdbserver_pid')
     require_contains(as_server_starter, 'audio-studio-gui-debug-as-server.pid')
     require_contains(as_server_starter, 'audio-studio-gui-debug-as-server-gdbserver.pid')
     require_contains(as_server_starter, 'gdbserver')
-    require_contains(as_server_starter, '--attach')
+    require_not_contains(as_server_starter, '--attach')
     require_contains(as_server_starter, 'Waiting for frontend Build')
     require_contains(as_server_starter, '--datalink $debug_dir/as_datalink')
     require_not_contains(as_server_starter, '/api/pipeline/build')

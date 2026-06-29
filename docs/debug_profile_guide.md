@@ -120,8 +120,9 @@ python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e
 - File Input 无法 RUN：确认前端真的选择了合法 WAV，不允许 fallback/debug file。
 - Capture 空文件：检查 FILE_IO_DAI input WAV 是否 stage，capture frame 是否持续返回 bytes。
 - as_server debug 弹 `Parameter 'arch'`：不要用 GDB `customLaunchSetupCommands`
-  手动 attach。GUI full-stack 使用 `audio-studio-wait-as-server-debug.sh`
-  等 frontend Build 拉起 helper-owned as_server，再启动
-  `gdbserver --attach`，VSCode 通过 `miDebuggerServerAddress` 连接该
-  gdbserver。
+  手动 attach，也不要让外部 gdbserver attach helper 子进程；Ubuntu 默认
+  ptrace/Yama 会拒绝这种跨父子关系 attach。GUI full-stack 会把
+  `--as-server-gdbserver-port` 传给 helper，helper 直接用 gdbserver 启动
+  唯一的 helper-owned as_server，VSCode 通过 `miDebuggerServerAddress`
+  连接该 gdbserver 并自动 continue。
 - QEMU gdb 不能断下：确认 `--qemu-gdb-wait` 已传入，gdb port 未被占用，`riscv-gdb-wrapper.sh` 能找到 riscv gdb。

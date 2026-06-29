@@ -1622,6 +1622,9 @@ ValidationResult ProcessValidationRunner::start(const ValidationRequest& request
       (request.trace_ldc_path.empty() ? "" : " --trace-ldc " + shellQuote(request.trace_ldc_path)) +
       (request.datalink_endpoint.empty() ? "" : " --datalink-endpoint " + shellQuote(request.datalink_endpoint)) +
       (request.qemu_gdb_port == 0 ? "" : " --qemu-gdb-port " + std::to_string(request.qemu_gdb_port)) +
+      (request.as_server_gdbserver_port == 0
+           ? ""
+           : " --as-server-gdbserver-port " + std::to_string(request.as_server_gdbserver_port)) +
       (request.qemu_gdb_wait ? " --qemu-gdb-wait" : "") +
       " --gui-keep-alive --gui-ready-marker " + shellQuote(ready_path) +
       " --gui-as-server-ready-marker " + shellQuote(as_server_ready_path) +
@@ -1932,6 +1935,7 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   validation_request.ready_timeout_ms = config_.ready_timeout_ms;
   validation_request.datalink_endpoint = config_.datalink_endpoint;
   validation_request.qemu_gdb_port = config_.qemu_gdb_port;
+  validation_request.as_server_gdbserver_port = config_.as_server_gdbserver_port;
   validation_request.qemu_gdb_wait = config_.qemu_gdb_wait;
 
   auto validation_start = validation_runner_->start(validation_request);

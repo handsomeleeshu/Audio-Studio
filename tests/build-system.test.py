@@ -423,6 +423,7 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(gui_backend_main, '--as-log')
     require_contains(gui_backend_main, '--trace-ldc')
     require_contains(gui_backend_main, '--datalink')
+    require_contains(gui_backend_main, '--as-server-gdbserver-port')
     assert '--validation-' not in gui_backend_main
     assert '--runtime-as-server' not in gui_backend_main
     assert '--as-server-rpc-mode' not in gui_backend_main
@@ -443,6 +444,9 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(gui_backend_cmake, 'target_link_libraries(audio_studio_core PUBLIC audio_studio_driver_socket)')
     require_contains(rv32_helper, '"--audio-driver-factory", "simulator"')
     require_contains(rv32_helper, '"--datalink", datalink_endpoint')
+    require_contains(rv32_helper, 'parser.add_argument("--as-server-gdbserver-port"')
+    require_contains(rv32_helper, 'gdbserver')
+    assert '--attach' not in rv32_helper
     require_contains(rv32_helper, 'def audio_studio_root(script_dir):')
     require_contains(rv32_helper, 'cwd=audio_studio_root(script_dir)')
     require_contains(rv32_audio_case, 'ac_run --endpoint as_datalink --mtu 512')

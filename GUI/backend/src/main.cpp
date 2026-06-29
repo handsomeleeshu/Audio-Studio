@@ -44,6 +44,7 @@ int parseBackendOptions(int argc, char** argv, BackendOptions& options) {
   int http_port = options.http_port;
   int as_server_port = options.runtime.as_server_port;
   int qemu_gdb_port = options.runtime.qemu_gdb_port;
+  int as_server_gdbserver_port = options.runtime.as_server_gdbserver_port;
   unsigned long long as_server_timeout_ms = options.runtime.as_server_timeout_ms;
 
   CLI::App app{"Audio Studio GUI backend", "audio_studio_gui_server"};
@@ -64,6 +65,8 @@ int parseBackendOptions(int argc, char** argv, BackendOptions& options) {
   app.add_option("--datalink", options.runtime.datalink_endpoint, "Simulator datalink endpoint prefix");
   app.add_option("--qemu-gdb-port", qemu_gdb_port, "QEMU gdbstub port. Zero disables QEMU debug");
   app.add_option("--qemu-gdb-wait", options.runtime.qemu_gdb_wait, "Start QEMU stopped for debugger attach");
+  app.add_option("--as-server-gdbserver-port", as_server_gdbserver_port,
+                 "Run helper-owned as_server under gdbserver on this port. Zero disables as_server gdbserver");
   app.add_option("--audio-driver-factory", options.runtime.runtime_audio_driver_factory, "Default runtime audio driver factory");
   app.allow_extras(false);
 
@@ -74,6 +77,8 @@ int parseBackendOptions(int argc, char** argv, BackendOptions& options) {
     options.http_port = checkedPort(http_port, "--port");
     options.runtime.as_server_port = checkedPort(as_server_port, "--as-server-port");
     options.runtime.qemu_gdb_port = checkedPort(qemu_gdb_port, "--qemu-gdb-port", true);
+    options.runtime.as_server_gdbserver_port =
+        checkedPort(as_server_gdbserver_port, "--as-server-gdbserver-port", true);
     options.runtime.as_server_timeout_ms = checkedU32(as_server_timeout_ms, "--as-server-timeout-ms");
     if (options.runtime.ready_timeout_ms <= 0) {
       throw CLI::ValidationError("--ready-timeout-ms must be positive");

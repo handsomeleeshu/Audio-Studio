@@ -1491,7 +1491,7 @@ sequenceDiagram
 
 ### 13.2 Debug configuration
 
-VSCode configurations wire GUI frontend, GUI backend, as_server attach, simulator keep-alive and QEMU gdbstub. GUI backend passes QEMU debug settings to helper through `--qemu-gdb-port` and `--qemu-gdb-wait`. as_server debug attaches to the helper-created process so the simulator session uses a single server instance.
+VSCode configurations wire GUI frontend, GUI backend, helper-owned as_server debug, simulator keep-alive and QEMU gdbstub. GUI backend passes QEMU debug settings to helper through `--qemu-gdb-port` and `--qemu-gdb-wait`, and passes `--as-server-gdbserver-port` when full-stack debug should run the unique helper-owned as_server under gdbserver. VSCode connects to that gdbserver and continues the target, so the simulator session still uses a single server instance without relying on ptrace attach.
 
 ### 13.3 Validation matrix
 

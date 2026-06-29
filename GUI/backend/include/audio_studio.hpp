@@ -59,6 +59,7 @@ struct BackendRuntimeConfig {
   long ready_timeout_ms = 120000;
   std::string datalink_endpoint;
   uint16_t qemu_gdb_port = 0;
+  uint16_t as_server_gdbserver_port = 0;
   bool qemu_gdb_wait = false;
   std::string runtime_audio_driver_factory;
 };
@@ -137,6 +138,7 @@ struct ValidationRequest {
   long ready_timeout_ms = 120000;
   std::string datalink_endpoint;
   uint16_t qemu_gdb_port = 0;
+  uint16_t as_server_gdbserver_port = 0;
   bool qemu_gdb_wait = false;
 };
 
