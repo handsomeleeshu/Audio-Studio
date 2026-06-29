@@ -417,6 +417,15 @@ def assert_audio_cli_lets_server_select_default_driver():
     default_log_config = as_server.split('LogSessionConfig defaultLogConfigFromOptions', 1)[1].split('AudioServiceConfig defaultAudioConfigFromOptions', 1)[0]
     assert 'config.options["endpoint"]' not in default_log_config
     require_contains(gui_backend, 'runtimeAudioDriverFactory(request_json, config_)')
+    require_contains(gui_backend_main, '#include <CLI/CLI.hpp>')
+    require_contains(gui_backend_main, 'CLI::App app{"Audio Studio GUI backend"')
+    require_contains(gui_backend_main, '--helper-script')
+    require_contains(gui_backend_main, '--as-log')
+    require_contains(gui_backend_main, '--trace-ldc')
+    require_contains(gui_backend_main, '--datalink')
+    assert '--validation-' not in gui_backend_main
+    assert '--runtime-as-server' not in gui_backend_main
+    assert '--as-server-rpc-mode' not in gui_backend_main
     require_contains(gui_backend_main, '--audio-driver-factory')
     assert 'AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY' not in gui_backend
     assert 'AUDIO_STUDIO_GUI_AUDIO_DRIVER_FACTORY' not in gui_backend_main
@@ -430,6 +439,7 @@ def assert_audio_cli_lets_server_select_default_driver():
     require_contains(gui_backend_cmake, 'AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS')
     require_contains(gui_backend_cmake, 'target_sources(audio_studio_gui_server PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})')
     require_contains(gui_backend_cmake, 'target_sources(audio_studio_backend_tests PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})')
+    require_contains(gui_backend_cmake, 'target_link_libraries(audio_studio_gui_server PRIVATE audio_studio_core audio_studio_cli11)')
     require_contains(gui_backend_cmake, 'target_link_libraries(audio_studio_core PUBLIC audio_studio_driver_socket)')
     require_contains(rv32_helper, '"--audio-driver-factory", "simulator"')
     require_contains(rv32_helper, '"--datalink", datalink_endpoint')

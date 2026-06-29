@@ -157,15 +157,12 @@ cmake --build out/linux/simulator/audio_controller/Debug --parallel 16
 out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
   --as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode socket \
   --as-server-host 127.0.0.1 \
   --as-server-port 9900 \
-  --validation-python python3 \
-  --validation-script ../application/rv32qemu/sof-build-test.py \
-  --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
-  --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --runtime-as-server-host 127.0.0.1 \
-  --runtime-as-server-port 9900 \
+  --helper-python python3 \
+  --helper-script ../application/rv32qemu/sof-build-test.py \
+  --as-log out/linux/simulator/rpc_socket/Debug/as_log \
+  --trace-ldc ../application/rv32qemu/build/sof.ldc \
   --audio-driver-factory simulator
 ```
 
@@ -250,7 +247,7 @@ python3 ../application/rv32qemu/sof-build-test.py -t ../Misc/sof_test/simple_tes
 - rv32qemu simulator keep-alive
 - QEMU gdbstub / RISC-V gdb
 
-`Audio Studio GUI: Simulator Keep Alive` 已改成可 debug QEMU 的方式：backend 把 `--validation-qemu-gdb-port` 和 `--validation-qemu-gdb-wait` 传给 `sof-build-test.py`，`.vscode/riscv-gdb-wrapper.sh` 负责连接 gdbstub。
+`Audio Studio GUI: Simulator Keep Alive` 已改成可 debug QEMU 的方式：backend 把 `--qemu-gdb-port` 和 `--qemu-gdb-wait` 传给 `sof-build-test.py`，`.vscode/riscv-gdb-wrapper.sh` 负责连接 gdbstub。
 
 ## 8. 扩展原则
 

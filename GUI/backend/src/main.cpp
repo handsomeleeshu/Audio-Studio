@@ -1,8 +1,9 @@
 #include "audio_studio.hpp"
 
+#include <CLI/CLI.hpp>
+
 #include <cstdint>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -10,117 +11,85 @@ namespace {
 
 struct BackendOptions {
   std::string root = ".";
-  int http_port = 8080;
+  uint16_t http_port = 8080;
   audiostudio::BackendRuntimeConfig runtime;
 };
 
-bool isOption(const std::string& value) {
-  return value.size() > 2 && value[0] == '-' && value[1] == '-';
-}
-
-uint16_t parsePort(const std::string& value, const std::string& option) {
-  const int parsed = std::stoi(value);
-  if (parsed <= 0 || parsed > 65535) {
-    throw std::invalid_argument(option + " must be in range 1..65535");
+uint16_t checkedPort(int value, const std::string& option, bool allow_zero = false) {
+  const int min_value = allow_zero ? 0 : 1;
+  if (value < min_value || value > 65535) {
+    throw CLI::ValidationError(option + " must be in range " + std::to_string(min_value) + "..65535");
   }
-  return static_cast<uint16_t>(parsed);
+  return static_cast<uint16_t>(value);
 }
 
-uint32_t parseU32(const std::string& value, const std::string& option) {
-  const unsigned long parsed = std::stoul(value);
-  if (parsed > 0xffffffffUL) throw std::invalid_argument(option + " is too large");
-  return static_cast<uint32_t>(parsed);
+uint32_t checkedU32(unsigned long long value, const std::string& option) {
+  if (value > 0xffffffffULL) throw CLI::ValidationError(option + " is too large");
+  return static_cast<uint32_t>(value);
 }
 
-long parsePositiveLong(const std::string& value, const std::string& option) {
-  const long parsed = std::stol(value);
-  if (parsed <= 0) throw std::invalid_argument(option + " must be positive");
-  return parsed;
-}
-
-bool parseBool(const std::string& value, const std::string& option) {
-  if (value == "true" || value == "1" || value == "yes") return true;
-  if (value == "false" || value == "0" || value == "no") return false;
-  throw std::invalid_argument(option + " must be true or false");
-}
-
-void printUsage(const char* program) {
-  std::cout
-      << "usage: " << program << " [root] [port] [options]\n"
-      << "options:\n"
-      << "  --root PATH\n"
-      << "  --port PORT\n"
-      << "  --as-server PATH\n"
-      << "  --alsatplg PATH\n"
-      << "  --as-server-rpc-mode once|socket\n"
-      << "  --as-server-host HOST\n"
-      << "  --as-server-port PORT\n"
-      << "  --as-server-timeout-ms MS\n"
-      << "  --validation-python PYTHON\n"
-      << "  --validation-script PATH\n"
-      << "  --validation-as-log PATH\n"
-      << "  --validation-trace-ldc PATH\n"
-      << "  --validation-ready-timeout-ms MS\n"
-      << "  --validation-datalink PATH\n"
-      << "  --validation-qemu-gdb-port PORT\n"
-      << "  --validation-qemu-gdb-wait BOOL\n"
-      << "  --runtime-as-server-host HOST\n"
-      << "  --runtime-as-server-port PORT\n"
-      << "  --audio-driver-factory NAME\n";
+int parseInt(const std::string& value, const std::string& option) {
+  try {
+    size_t consumed = 0;
+    const int parsed = std::stoi(value, &consumed);
+    if (consumed != value.size()) throw std::invalid_argument("trailing characters");
+    return parsed;
+  } catch (const std::exception&) {
+    throw CLI::ValidationError(option + " must be an integer");
+  }
 }
 
 int parseBackendOptions(int argc, char** argv, BackendOptions& options) {
   std::vector<std::string> positional;
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg = argv[i];
-    if (arg == "--help" || arg == "-h") {
-      printUsage(argv[0]);
-      return 1;
+  int http_port = options.http_port;
+  int as_server_port = options.runtime.as_server_port;
+  int qemu_gdb_port = options.runtime.qemu_gdb_port;
+  unsigned long long as_server_timeout_ms = options.runtime.as_server_timeout_ms;
+
+  CLI::App app{"Audio Studio GUI backend", "audio_studio_gui_server"};
+  app.option_defaults()->always_capture_default();
+  app.add_option("args", positional, "Optional positional args: [root] [port]")->expected(0, 2);
+  app.add_option("--root", options.root, "Audio Studio root directory");
+  app.add_option("--port", http_port, "HTTP server port");
+  app.add_option("--as-server", options.runtime.as_server_path, "as_server executable used by the build helper");
+  app.add_option("--alsatplg", options.runtime.alsatplg_path, "alsatplg executable used by config.compile");
+  app.add_option("--as-server-host", options.runtime.as_server_host, "as_server RPC host");
+  app.add_option("--as-server-port", as_server_port, "as_server RPC port");
+  app.add_option("--as-server-timeout-ms", as_server_timeout_ms, "as_server RPC connection timeout");
+  app.add_option("--helper-python", options.runtime.helper_python, "Python executable used to start the simulator helper");
+  app.add_option("--helper-script", options.runtime.helper_script_path, "Simulator helper script path");
+  app.add_option("--as-log", options.runtime.as_log_path, "as_log executable used by the simulator helper");
+  app.add_option("--trace-ldc", options.runtime.trace_ldc_path, "SOF trace LDC dictionary used by the helper as_server");
+  app.add_option("--ready-timeout-ms", options.runtime.ready_timeout_ms, "Build helper ready timeout in milliseconds");
+  app.add_option("--datalink", options.runtime.datalink_endpoint, "Simulator datalink endpoint prefix");
+  app.add_option("--qemu-gdb-port", qemu_gdb_port, "QEMU gdbstub port. Zero disables QEMU debug");
+  app.add_option("--qemu-gdb-wait", options.runtime.qemu_gdb_wait, "Start QEMU stopped for debugger attach");
+  app.add_option("--audio-driver-factory", options.runtime.runtime_audio_driver_factory, "Default runtime audio driver factory");
+  app.allow_extras(false);
+
+  try {
+    app.parse(argc, argv);
+    if (!positional.empty()) options.root = positional[0];
+    if (positional.size() > 1) http_port = parseInt(positional[1], "port");
+    options.http_port = checkedPort(http_port, "--port");
+    options.runtime.as_server_port = checkedPort(as_server_port, "--as-server-port");
+    options.runtime.qemu_gdb_port = checkedPort(qemu_gdb_port, "--qemu-gdb-port", true);
+    options.runtime.as_server_timeout_ms = checkedU32(as_server_timeout_ms, "--as-server-timeout-ms");
+    if (options.runtime.ready_timeout_ms <= 0) {
+      throw CLI::ValidationError("--ready-timeout-ms must be positive");
     }
-    if (!isOption(arg)) {
-      positional.push_back(arg);
-      continue;
-    }
-    if (i + 1 >= argc) throw std::invalid_argument("missing value for " + arg);
-    const std::string value = argv[++i];
-    if (arg == "--root") options.root = value;
-    else if (arg == "--port") options.http_port = parsePort(value, arg);
-    else if (arg == "--as-server") options.runtime.compile_as_server_path = value;
-    else if (arg == "--alsatplg") options.runtime.compile_alsatplg_path = value;
-    else if (arg == "--as-server-rpc-mode") options.runtime.compile_as_server_rpc_mode = value;
-    else if (arg == "--as-server-host") options.runtime.compile_as_server_host = value;
-    else if (arg == "--as-server-port") options.runtime.compile_as_server_port = parsePort(value, arg);
-    else if (arg == "--as-server-timeout-ms") options.runtime.compile_as_server_timeout_ms = parseU32(value, arg);
-    else if (arg == "--validation-python") options.runtime.validation_python = value;
-    else if (arg == "--validation-script") options.runtime.validation_script_path = value;
-    else if (arg == "--validation-as-log") options.runtime.validation_as_log_path = value;
-    else if (arg == "--validation-trace-ldc") options.runtime.validation_trace_ldc_path = value;
-    else if (arg == "--validation-ready-timeout-ms") options.runtime.validation_ready_timeout_ms = parsePositiveLong(value, arg);
-    else if (arg == "--validation-datalink") options.runtime.validation_datalink_endpoint = value;
-    else if (arg == "--validation-qemu-gdb-port") options.runtime.validation_qemu_gdb_port = parsePort(value, arg);
-    else if (arg == "--validation-qemu-gdb-wait") options.runtime.validation_qemu_gdb_wait = parseBool(value, arg);
-    else if (arg == "--runtime-as-server-host") options.runtime.runtime_as_server_host = value;
-    else if (arg == "--runtime-as-server-port") options.runtime.runtime_as_server_port = parsePort(value, arg);
-    else if (arg == "--audio-driver-factory") options.runtime.runtime_audio_driver_factory = value;
-    else throw std::invalid_argument("unknown option: " + arg);
+  } catch (const CLI::ParseError& error) {
+    return app.exit(error);
   }
-  if (!positional.empty()) options.root = positional[0];
-  if (positional.size() > 1) options.http_port = parsePort(positional[1], "port");
-  if (positional.size() > 2) throw std::invalid_argument("too many positional arguments");
-  return 0;
+  return -1;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
   BackendOptions options;
-  try {
-    const int parse_result = parseBackendOptions(argc, argv, options);
-    if (parse_result != 0) return 0;
-  } catch (const std::exception& e) {
-    std::cerr << "argument error: " << e.what() << std::endl;
-    return 2;
-  }
+  const int parse_result = parseBackendOptions(argc, argv, options);
+  if (parse_result >= 0) return parse_result;
 
   auto build_orchestrator = std::make_shared<audiostudio::BuildOrchestrator>(
       options.root, nullptr, nullptr, options.runtime);
@@ -129,12 +98,12 @@ int main(int argc, char** argv) {
   auto target_config = std::make_shared<audiostudio::FakeTargetConfigController>();
   auto inspector = std::make_shared<audiostudio::FakeInspectorController>();
   auto algorithm_cost = std::make_shared<audiostudio::RpcAlgorithmCostController>(
-      options.runtime.runtime_as_server_host, options.runtime.runtime_as_server_port);
+      options.runtime.as_server_host, options.runtime.as_server_port);
   auto dsp_core_loading = std::make_shared<audiostudio::RpcDspCoreLoadingController>(
-      options.runtime.runtime_as_server_host, options.runtime.runtime_as_server_port);
+      options.runtime.as_server_host, options.runtime.as_server_port);
   auto event_log = std::make_shared<audiostudio::FakeEventLogController>();
   auto system_health = std::make_shared<audiostudio::RpcSystemHealthController>(
-      options.runtime.runtime_as_server_host, options.runtime.runtime_as_server_port);
+      options.runtime.as_server_host, options.runtime.as_server_port);
   auto audio_io = std::make_shared<audiostudio::FakeAudioIoController>();
   auto real_time_probe = std::make_shared<audiostudio::FakeRealTimeProbeController>();
   audiostudio::HttpServer server(options.root, options.http_port, runtime, node_controls, node_controls, target_config,

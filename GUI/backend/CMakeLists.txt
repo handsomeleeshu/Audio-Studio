@@ -32,7 +32,7 @@ if(CONFIG_RPC_CLIENT)
 endif()
 
 add_executable(audio_studio_gui_server src/main.cpp)
-target_link_libraries(audio_studio_gui_server PRIVATE audio_studio_core)
+target_link_libraries(audio_studio_gui_server PRIVATE audio_studio_core audio_studio_cli11)
 if(AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS)
   target_sources(audio_studio_gui_server PRIVATE ${AUDIO_STUDIO_BACKEND_TRANSPORT_DRIVER_OBJECTS})
 endif()

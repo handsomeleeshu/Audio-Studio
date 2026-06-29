@@ -113,29 +113,29 @@ fs::path makeTempRoot() {
 
 audiostudio::BackendRuntimeConfig explicitBackendConfig(const fs::path& root) {
   audiostudio::BackendRuntimeConfig config;
-  config.compile_as_server_path = (root / "explicit-deps/compile/as_server").string();
-  config.compile_alsatplg_path = (root / "explicit-deps/tools/alsatplg").string();
-  config.compile_as_server_rpc_mode = "socket";
-  config.compile_as_server_host = "10.10.0.10";
-  config.compile_as_server_port = 19000;
-  config.compile_as_server_timeout_ms = 3210;
-  config.validation_python = "python3";
-  config.validation_script_path = (root / "explicit-deps/validation/build-test.py").string();
-  config.validation_as_log_path = (root / "explicit-deps/validation/as_log").string();
-  config.validation_trace_ldc_path = (root / "explicit-deps/validation/trace.ldc").string();
-  config.validation_ready_timeout_ms = 6543;
-  config.validation_datalink_endpoint = (root / "explicit-deps/validation/as_datalink").string();
-  config.validation_qemu_gdb_port = 1234;
-  config.validation_qemu_gdb_wait = true;
-  config.runtime_as_server_host = config.compile_as_server_host;
-  config.runtime_as_server_port = config.compile_as_server_port;
+  config.as_server_path = (root / "explicit-deps/compile/as_server").string();
+  config.alsatplg_path = (root / "explicit-deps/tools/alsatplg").string();
+  config.as_server_rpc_mode = "socket";
+  config.as_server_host = "10.10.0.10";
+  config.as_server_port = 19000;
+  config.as_server_timeout_ms = 3210;
+  config.helper_python = "python3";
+  config.helper_script_path = (root / "explicit-deps/validation/build-test.py").string();
+  config.as_log_path = (root / "explicit-deps/validation/as_log").string();
+  config.trace_ldc_path = (root / "explicit-deps/validation/trace.ldc").string();
+  config.ready_timeout_ms = 6543;
+  config.datalink_endpoint = (root / "explicit-deps/validation/as_datalink").string();
+  config.qemu_gdb_port = 1234;
+  config.qemu_gdb_wait = true;
+  config.as_server_host = config.as_server_host;
+  config.as_server_port = config.as_server_port;
   config.runtime_audio_driver_factory = "test_audio_driver";
 
-  writeText(config.compile_as_server_path, "compile as_server");
-  writeText(config.compile_alsatplg_path, "alsatplg");
-  writeText(config.validation_script_path, "validation script");
-  writeText(config.validation_as_log_path, "validation as_log");
-  writeText(config.validation_trace_ldc_path, "trace ldc");
+  writeText(config.as_server_path, "compile as_server");
+  writeText(config.alsatplg_path, "alsatplg");
+  writeText(config.helper_script_path, "validation script");
+  writeText(config.as_log_path, "validation as_log");
+  writeText(config.trace_ldc_path, "trace ldc");
   return config;
 }
 
@@ -656,27 +656,27 @@ int main() {
   assert(compile->last_request.build_tplg);
   assert(compile->last_request.strict);
   assert(compile->last_request.plugin_paths.empty());
-  assert(compile->last_request.alsatplg == backend_config.compile_alsatplg_path);
-  assert(compile->last_request.as_server == backend_config.compile_as_server_path);
-  assert(compile->last_request.as_server_rpc_mode == backend_config.compile_as_server_rpc_mode);
-  assert(compile->last_request.as_server_host == backend_config.compile_as_server_host);
-  assert(compile->last_request.as_server_port == backend_config.compile_as_server_port);
-  assert(compile->last_request.as_server_timeout_ms == backend_config.compile_as_server_timeout_ms);
-  assert(validation->last_script == backend_config.validation_script_path);
-  assert(validation->last_start_request.python == backend_config.validation_python);
-  assert(validation->last_start_request.as_server_path == backend_config.compile_as_server_path);
-  assert(validation->last_start_request.as_log_path == backend_config.validation_as_log_path);
-  assert(validation->last_start_request.trace_ldc_path == backend_config.validation_trace_ldc_path);
-  assert(validation->last_start_request.as_server_host == backend_config.compile_as_server_host);
-  assert(validation->last_start_request.as_server_port == backend_config.compile_as_server_port);
-  assert(validation->last_start_request.ready_timeout_ms == backend_config.validation_ready_timeout_ms);
-  assert(validation->last_start_request.datalink_endpoint == backend_config.validation_datalink_endpoint);
-  assert(validation->last_start_request.qemu_gdb_port == backend_config.validation_qemu_gdb_port);
-  assert(validation->last_start_request.qemu_gdb_wait == backend_config.validation_qemu_gdb_wait);
+  assert(compile->last_request.alsatplg == backend_config.alsatplg_path);
+  assert(compile->last_request.as_server == backend_config.as_server_path);
+  assert(compile->last_request.as_server_rpc_mode == backend_config.as_server_rpc_mode);
+  assert(compile->last_request.as_server_host == backend_config.as_server_host);
+  assert(compile->last_request.as_server_port == backend_config.as_server_port);
+  assert(compile->last_request.as_server_timeout_ms == backend_config.as_server_timeout_ms);
+  assert(validation->last_script == backend_config.helper_script_path);
+  assert(validation->last_start_request.python == backend_config.helper_python);
+  assert(validation->last_start_request.as_server_path == backend_config.as_server_path);
+  assert(validation->last_start_request.as_log_path == backend_config.as_log_path);
+  assert(validation->last_start_request.trace_ldc_path == backend_config.trace_ldc_path);
+  assert(validation->last_start_request.as_server_host == backend_config.as_server_host);
+  assert(validation->last_start_request.as_server_port == backend_config.as_server_port);
+  assert(validation->last_start_request.ready_timeout_ms == backend_config.ready_timeout_ms);
+  assert(validation->last_start_request.datalink_endpoint == backend_config.datalink_endpoint);
+  assert(validation->last_start_request.qemu_gdb_port == backend_config.qemu_gdb_port);
+  assert(validation->last_start_request.qemu_gdb_wait == backend_config.qemu_gdb_wait);
   assert(validation->last_wait_request.tplg_path.find("audio_studio.tplg") != std::string::npos);
   const std::string generated_test_list = readText(validation->last_test_list);
   assert(generated_test_list.find("ac_run --endpoint '" +
-                                  backend_config.validation_datalink_endpoint +
+                                  backend_config.datalink_endpoint +
                                   "' --mtu 512") != std::string::npos);
   assert(generated_test_list.find("trace on") != std::string::npos);
   assert(generated_test_list.find("pipeinstall -p ") == std::string::npos);
@@ -842,11 +842,11 @@ int main() {
   auto relative_validation = std::make_shared<FakeValidationRunner>();
   const auto relative_root = fs::relative(relative_root_abs, fs::current_path());
   auto relative_config = explicitBackendConfig(relative_root_abs);
-  relative_config.compile_as_server_path = fs::relative(relative_config.compile_as_server_path, relative_root_abs).string();
-  relative_config.compile_alsatplg_path = fs::relative(relative_config.compile_alsatplg_path, relative_root_abs).string();
-  relative_config.validation_script_path = fs::relative(relative_config.validation_script_path, relative_root_abs).string();
-  relative_config.validation_as_log_path = fs::relative(relative_config.validation_as_log_path, relative_root_abs).string();
-  relative_config.validation_trace_ldc_path = fs::relative(relative_config.validation_trace_ldc_path, relative_root_abs).string();
+  relative_config.as_server_path = fs::relative(relative_config.as_server_path, relative_root_abs).string();
+  relative_config.alsatplg_path = fs::relative(relative_config.alsatplg_path, relative_root_abs).string();
+  relative_config.helper_script_path = fs::relative(relative_config.helper_script_path, relative_root_abs).string();
+  relative_config.as_log_path = fs::relative(relative_config.as_log_path, relative_root_abs).string();
+  relative_config.trace_ldc_path = fs::relative(relative_config.trace_ldc_path, relative_root_abs).string();
   auto relative_orchestrator = makeOrchestrator(relative_root, relative_compile, relative_validation, relative_config);
   auto relative_open = relative_orchestrator->openProjectByName("a2/A2.json");
   assert(relative_open.status == 200);

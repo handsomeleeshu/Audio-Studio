@@ -46,22 +46,20 @@ struct TelemetryCore {
 };
 
 struct BackendRuntimeConfig {
-  std::string compile_as_server_path;
-  std::string compile_alsatplg_path;
-  std::string compile_as_server_rpc_mode = "once";
-  std::string compile_as_server_host = "127.0.0.1";
-  uint16_t compile_as_server_port = 9900;
-  uint32_t compile_as_server_timeout_ms = 5000;
-  std::string validation_python = "python3";
-  std::string validation_script_path;
-  std::string validation_as_log_path;
-  std::string validation_trace_ldc_path;
-  long validation_ready_timeout_ms = 120000;
-  std::string validation_datalink_endpoint;
-  uint16_t validation_qemu_gdb_port = 0;
-  bool validation_qemu_gdb_wait = false;
-  std::string runtime_as_server_host = "127.0.0.1";
-  uint16_t runtime_as_server_port = 9900;
+  std::string as_server_path;
+  std::string alsatplg_path;
+  std::string as_server_rpc_mode = "socket";
+  std::string as_server_host = "127.0.0.1";
+  uint16_t as_server_port = 9900;
+  uint32_t as_server_timeout_ms = 5000;
+  std::string helper_python = "python3";
+  std::string helper_script_path;
+  std::string as_log_path;
+  std::string trace_ldc_path;
+  long ready_timeout_ms = 120000;
+  std::string datalink_endpoint;
+  uint16_t qemu_gdb_port = 0;
+  bool qemu_gdb_wait = false;
   std::string runtime_audio_driver_factory;
 };
 

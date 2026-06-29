@@ -44,15 +44,12 @@ backend 通过 argv 注入依赖：
 Audio-Studio/out/linux/simulator/gui_backend/Debug/audio_studio_gui_server Audio-Studio 18080 \
   --as-server Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg Audio-Studio/third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode socket \
   --as-server-host 127.0.0.1 \
   --as-server-port 9900 \
-  --validation-python python3 \
-  --validation-script application/rv32qemu/sof-build-test.py \
-  --validation-as-log Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
-  --validation-trace-ldc application/rv32qemu/build/sof.ldc \
-  --runtime-as-server-host 127.0.0.1 \
-  --runtime-as-server-port 9900 \
+  --helper-python python3 \
+  --helper-script application/rv32qemu/sof-build-test.py \
+  --as-log Audio-Studio/out/linux/simulator/rpc_socket/Debug/as_log \
+  --trace-ldc application/rv32qemu/build/sof.ldc \
   --audio-driver-factory simulator
 ```
 
@@ -122,4 +119,9 @@ python3 tests/gui-simulator-audio-e2e.py --artifacts-dir /tmp/audio-studio-gui-e
 - as_log timeout：检查 System Info pump 是否独占 log service；当前 LogService mirror session 和 intercepted-entry return contract 应避免该问题。
 - File Input 无法 RUN：确认前端真的选择了合法 WAV，不允许 fallback/debug file。
 - Capture 空文件：检查 FILE_IO_DAI input WAV 是否 stage，capture frame 是否持续返回 bytes。
+- as_server debug 弹 `Parameter 'arch'`：不要用 GDB `customLaunchSetupCommands`
+  手动 attach。GUI full-stack 使用 `audio-studio-wait-as-server-debug.sh`
+  等 frontend Build 拉起 helper-owned as_server，再启动
+  `gdbserver --attach`，VSCode 通过 `miDebuggerServerAddress` 连接该
+  gdbserver。
 - QEMU gdb 不能断下：确认 `--qemu-gdb-wait` 已传入，gdb port 未被占用，`riscv-gdb-wrapper.sh` 能找到 riscv gdb。

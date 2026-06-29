@@ -18,15 +18,12 @@ backend 依赖路径通过参数传入，不再从环境变量猜测：
 out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
   --as-server out/linux/simulator/rpc_socket/Debug/as_server \
   --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-rpc-mode socket \
   --as-server-host 127.0.0.1 \
   --as-server-port 9900 \
-  --validation-python python3 \
-  --validation-script ../application/rv32qemu/sof-build-test.py \
-  --validation-as-log out/linux/simulator/rpc_socket/Debug/as_log \
-  --validation-trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --runtime-as-server-host 127.0.0.1 \
-  --runtime-as-server-port 9900 \
+  --helper-python python3 \
+  --helper-script ../application/rv32qemu/sof-build-test.py \
+  --as-log out/linux/simulator/rpc_socket/Debug/as_log \
+  --trace-ldc ../application/rv32qemu/build/sof.ldc \
   --audio-driver-factory simulator
 ```
 

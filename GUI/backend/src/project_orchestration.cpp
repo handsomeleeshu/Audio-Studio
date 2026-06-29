@@ -1198,18 +1198,18 @@ std::string absolutePathFromRoot(const std::string& root_dir, const std::string&
 
 BackendRuntimeConfig normalizedBackendConfig(const std::string& root_dir,
                                              BackendRuntimeConfig config) {
-  config.compile_as_server_path = absolutePathFromRoot(root_dir, config.compile_as_server_path);
-  config.compile_alsatplg_path = absolutePathFromRoot(root_dir, config.compile_alsatplg_path);
-  config.validation_script_path = absolutePathFromRoot(root_dir, config.validation_script_path);
-  config.validation_as_log_path = absolutePathFromRoot(root_dir, config.validation_as_log_path);
-  config.validation_trace_ldc_path = absolutePathFromRoot(root_dir, config.validation_trace_ldc_path);
-  config.validation_datalink_endpoint = absolutePathFromRoot(root_dir, config.validation_datalink_endpoint);
-  config.compile_as_server_rpc_mode = lowerAscii(config.compile_as_server_rpc_mode);
-  if (config.compile_as_server_rpc_mode != "socket") config.compile_as_server_rpc_mode = "once";
-  if (config.runtime_as_server_host.empty()) config.runtime_as_server_host = config.compile_as_server_host;
-  if (config.runtime_as_server_port == 0) config.runtime_as_server_port = config.compile_as_server_port;
-  if (config.validation_python.empty()) config.validation_python = "python3";
-  if (config.validation_ready_timeout_ms <= 0) config.validation_ready_timeout_ms = 120000;
+  config.as_server_path = absolutePathFromRoot(root_dir, config.as_server_path);
+  config.alsatplg_path = absolutePathFromRoot(root_dir, config.alsatplg_path);
+  config.helper_script_path = absolutePathFromRoot(root_dir, config.helper_script_path);
+  config.as_log_path = absolutePathFromRoot(root_dir, config.as_log_path);
+  config.trace_ldc_path = absolutePathFromRoot(root_dir, config.trace_ldc_path);
+  config.datalink_endpoint = absolutePathFromRoot(root_dir, config.datalink_endpoint);
+  config.as_server_rpc_mode = lowerAscii(config.as_server_rpc_mode);
+  if (config.as_server_rpc_mode != "socket") config.as_server_rpc_mode = "once";
+  if (config.as_server_host.empty()) config.as_server_host = config.as_server_host;
+  if (config.as_server_port == 0) config.as_server_port = config.as_server_port;
+  if (config.helper_python.empty()) config.helper_python = "python3";
+  if (config.ready_timeout_ms <= 0) config.ready_timeout_ms = 120000;
   return config;
 }
 
@@ -1913,26 +1913,26 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   fs::create_directories(record.output_dir);
   const std::string test_list_path = (fs::path(record.output_dir) / "audio_studio_test_list.txt").string();
   const std::string validation_pipeline = validationPipelineSelector(request_json, snapshot_json, regenerated.pipeline_ids);
-  const std::string validation_datalink = config_.validation_datalink_endpoint.empty()
-                                            ? "as_datalink"
-                                            : config_.validation_datalink_endpoint;
+  const std::string helper_datalink = config_.datalink_endpoint.empty()
+                                          ? "as_datalink"
+                                          : config_.datalink_endpoint;
 
   ValidationRequest validation_request;
   validation_request.workspace_id = record.workspace_id;
   validation_request.workspace_dir = record.workspace_dir;
   validation_request.project_name = record.project_name;
   validation_request.test_list_path = test_list_path;
-  validation_request.python = config_.validation_python;
-  validation_request.script_path = config_.validation_script_path;
-  validation_request.as_server_path = config_.compile_as_server_path;
-  validation_request.as_log_path = config_.validation_as_log_path;
-  validation_request.trace_ldc_path = config_.validation_trace_ldc_path;
-  validation_request.as_server_host = config_.compile_as_server_host;
-  validation_request.as_server_port = config_.compile_as_server_port;
-  validation_request.ready_timeout_ms = config_.validation_ready_timeout_ms;
-  validation_request.datalink_endpoint = config_.validation_datalink_endpoint;
-  validation_request.qemu_gdb_port = config_.validation_qemu_gdb_port;
-  validation_request.qemu_gdb_wait = config_.validation_qemu_gdb_wait;
+  validation_request.python = config_.helper_python;
+  validation_request.script_path = config_.helper_script_path;
+  validation_request.as_server_path = config_.as_server_path;
+  validation_request.as_log_path = config_.as_log_path;
+  validation_request.trace_ldc_path = config_.trace_ldc_path;
+  validation_request.as_server_host = config_.as_server_host;
+  validation_request.as_server_port = config_.as_server_port;
+  validation_request.ready_timeout_ms = config_.ready_timeout_ms;
+  validation_request.datalink_endpoint = config_.datalink_endpoint;
+  validation_request.qemu_gdb_port = config_.qemu_gdb_port;
+  validation_request.qemu_gdb_wait = config_.qemu_gdb_wait;
 
   auto validation_start = validation_runner_->start(validation_request);
   if (!validation_start.ok) {
@@ -1947,12 +1947,12 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
   compile_request.output_dir = record.output_dir;
   compile_request.project_name = record.project_name;
   compile_request.working_dir = root_dir_;
-  compile_request.alsatplg = config_.compile_alsatplg_path;
-  compile_request.as_server = config_.compile_as_server_path;
-  compile_request.as_server_rpc_mode = config_.compile_as_server_rpc_mode;
-  compile_request.as_server_host = config_.compile_as_server_host;
-  compile_request.as_server_port = config_.compile_as_server_port;
-  compile_request.as_server_timeout_ms = config_.compile_as_server_timeout_ms;
+  compile_request.alsatplg = config_.alsatplg_path;
+  compile_request.as_server = config_.as_server_path;
+  compile_request.as_server_rpc_mode = config_.as_server_rpc_mode;
+  compile_request.as_server_host = config_.as_server_host;
+  compile_request.as_server_port = config_.as_server_port;
+  compile_request.as_server_timeout_ms = config_.as_server_timeout_ms;
   compile_request.build_tplg = true;
   compile_request.strict = true;
   compile_request.plugin_paths = {};
@@ -1967,7 +1967,7 @@ HttpResponse BuildOrchestrator::buildPipeline(const std::string& request_json) {
 
   validation_request.tplg_path = compile_result.tplg_path;
   const std::string test_list =
-      "ac_run --endpoint " + shellQuote(validation_datalink) + " --mtu 512\n"
+      "ac_run --endpoint " + shellQuote(helper_datalink) + " --mtu 512\n"
       "trace on\n"
       "pipeinstall " + (validation_pipeline.empty() ? std::string() : ("-p " + validation_pipeline + " ")) +
       compile_result.tplg_path + "\n"
@@ -2719,9 +2719,9 @@ private:
       if (!status.ok()) throw std::runtime_error(status.message());
 
       audio_studio::rpc::SocketRpcEndpoint endpoint;
-      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.runtime_as_server_host);
+      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.as_server_host);
       endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
-          request_json, "as_server_port", config_.runtime_as_server_port));
+          request_json, "as_server_port", config_.as_server_port));
       endpoint.timeout_ms = 1000;
       system_info_endpoint_ = endpoint;
       system_info_endpoint_.timeout_ms = 250;
@@ -3034,9 +3034,9 @@ private:
       if (!status.ok()) throw std::runtime_error(status.message());
 
       audio_studio::rpc::SocketRpcEndpoint endpoint;
-      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.runtime_as_server_host);
+      endpoint.host = simpleJsonStringField(request_json, "as_server_host", config_.as_server_host);
       endpoint.port = static_cast<uint16_t>(simpleJsonIntField(
-          request_json, "as_server_port", config_.runtime_as_server_port));
+          request_json, "as_server_port", config_.as_server_port));
       endpoint.timeout_ms = 1000;
 
       json_transport_ = std::make_unique<audio_studio::rpc::SocketJsonRpcTransport>(drivers.socket(), endpoint);
