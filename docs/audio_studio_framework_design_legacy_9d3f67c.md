@@ -1,13 +1,13 @@
 # Audio Studio Framework 设计文档
 
-版本：0.9
-日期：2026-06-29
-文档状态：从 `9d3f67c` 长版设计基线恢复并合并当前落地实现；按当前 Audio-Studio 仓库继续演进
+版本：0.8
+日期：2026-06-16
+文档状态：正式设计基线，按当前 `handsomeleeshu/Audio-Studio` 仓库继续演进
 适用范围：Audio Studio GUI、GUI Web Backend、CLI、as_server、Framework、Driver Abstraction Layer、Platform Adapter、Audio Controller Peer、Build System、as_config、as_control、as_play/as_record、as_log/as_dump、HTML GUI 与 Audio Studio Server JSON-RPC 部署设计。
 
 > 本文档不是讨论结论摘要，而是后续工程实现、代码组织、模块拆分、接口定义和调用关系设计的基线文档。
-> Audio Studio 是通用 PC 端音频配置、控制、调试、观测框架；当前 GUI 运行主线是 `simulator/simulator.json + rv32qemu + SOF FILE_IO_DAI + audio_controller`，A2 仍是重要平台 profile 和历史完整示例。
-> GUI 已基本开发完成，文档更新不改变现有 UI 设计风格；后续工作集中在把 GUI layout、build、runtime、System Info、playback/capture 与 `as_server`、simulator helper、SOF test 稳定连接。
+> Audio Studio 是通用 PC 端音频配置、控制、调试、观测框架；A2 是第一个平台 profile 和验证平台。
+> GUI 已基本开发完成，后续不重新设计 GUI 内部 UI、UML 或核心源码结构，只在现有 GUI 工程下补充与 `as_server` 通信所需的轻量 RPC 适配层。
 > **重要修正：`frontend` / `backend` 是 GUI 子工程内部概念，不是 Audio Studio 正式 server 架构。正式 `as_server` 必须是独立顶层 `server/` 子工程，不能放到 GUI 的 `backend/` 目录下。**
 > **重要修正：Audio Studio 不定义独立发布的正式 Client SDK 层。GUI、GUI/backend、CLI 都通过 JSON-RPC 与 `as_server` 通信；工程内部必须提供 typed RPC facade 和 remote handle，让业务代码像调用本地 API 一样调用远端能力，但这些 facade 属于 `rpc/` 的轻量适配层，不形成独立 SDK 架构层。**
 
@@ -23,18 +23,18 @@
 https://github.com/handsomeleeshu/Audio-Studio
 ```
 
-当前仓库已经有真实 GUI backend orchestration、as_server RPC、driver abstraction、audio_controller、simulator helper 和 SOF test 集成。GUI 相关前后端代码统一归入 `GUI/` 逻辑域：
+当前仓库已有 GUI demo 和 mock backend runtime。为了和后续正式框架分层保持一致，当前 GUI 相关前后端代码已统一归入 `GUI/` 逻辑域：
 
 ```text
 Audio-Studio/
   GUI/
     frontend/                 # 当前 HTML GUI 前端代码的逻辑归属
-    backend/                  # 当前 GUI Web Backend / runtime orchestration 的逻辑归属
-  cli/                        # CLI 前端，包含 as_config/as_control/as_play/as_record/as_log/as_dump
+    backend/                  # 当前 GUI Web Backend / mock runtime 的逻辑归属
+  cli/                        # 后续新增 CLI 前端，包含 as_config/as_control/as_play/as_record/as_log/as_dump
   rpc/                        # 顶层 JSON-RPC codec/client/server/transport helper
   drivers/                    # 顶层 driver interface、registry 与 host/platform 实现
-  server/                     # 正式 as_server，组合 framework/platform，并链接 rpc/drivers
-  audio_controller/            # Audio Studio 对端 controller 参考实现，主要用 C 实现
+  server/                     # 后续新增正式 as_server，组合 framework/platform，并链接 rpc/drivers
+  audio_controller/            # 后续新增 Audio Studio 对端 controller 参考实现，主要用 C 实现
   scripts/                    # 构建、Kconfig、CMake、toolchain、代码生成、打包脚本
   configs/                    # built-in catalog、平台 JSON、platform/profile defconfig
   docs/                       # 设计文档、开发说明、调试说明
@@ -91,16 +91,16 @@ GUI/frontend/assets/js/configParser.js
   产品 JSON 解析逻辑。
 
 GUI/backend/include/audio_studio.hpp
-  当前 GUI backend 的 controller interface、HTTP server、runtime/build orchestration 声明。
+  当前 GUI mock backend 的 controller interface 与 HttpServer 声明。
 
 GUI/backend/src/http_server.cpp
   当前 GUI 静态资源 server + GUI REST API route。
 
 GUI/backend/src/mock_runtime.cpp
-  legacy mock runtime/controller 测试替身；真实 runtime 由 project_orchestration 与 GuiRuntimeEngine 接管。
+  当前 fake runtime/controller 实现。
 
 GUI/backend/src/main.cpp
-  当前 GUI backend 入口，解析 BackendRuntimeConfig 并注入运行期依赖。
+  当前 GUI mock backend 入口。
 ```
 
 这部分代码不需要推倒重写。后续演进策略是：
@@ -109,12 +109,12 @@ GUI/backend/src/main.cpp
 1. GUI/frontend/ 保持现有 standalone GUI 结构。
 2. 原 Audio-Studio/backend/ 已迁移为 GUI/backend/。
 3. GUI/backend/ 不承载正式 framework/drivers/platform，不作为 as_server 的实现目录。
-4. GUI/backend/ 继续保留当前 GUI REST API、页面托管、workspace/session、BuildOrchestrator 与 GuiRuntimeEngine。
+4. GUI/backend/ 继续保留当前 GUI REST API、页面托管、mock runtime 与 GUI session。
 5. 正式 as_server 位于顶层 server/，负责 framework service、platform、TransportManager，并通过顶层 rpc/drivers 组合通信与硬件抽象。
-6. GUI/backend/ 只通过 JSON-RPC 调用 as_server，不链接、不编译、不拥有 server/framework。
+6. GUI/backend/ 只通过 JSON-RPC 调用 audio_studio_server，不链接、不编译、不拥有 server/framework。
 7. GUI/frontend/ 只增加轻量 JSON-RPC action executor、target registry、probe stream client 等适配代码。
-8. CLI 位于顶层 cli/，通过 JSON-RPC 直接调用 as_server，不经过 GUI/backend/。
-9. audio_controller/ 作为对端参考实现，用于 simulator 或 A2 直连场景。
+8. CLI 新增到顶层 cli/，通过 JSON-RPC 直接调用 audio_studio_server，不经过 GUI/backend/。
+9. audio_controller/ 新增为对端参考实现，用于 simulator 或 A2 直连场景。
 ```
 
 ### 0.3 关键边界
@@ -129,8 +129,7 @@ GUI/backend:
   GUI 的 Web Backend / Orchestrator。
   负责托管 GUI 静态资源、兼容现有 /api/*、维护 GUI session、GUI 工程状态和 GUI 操作审计。
   根据 Audio Studio Server placement 决定：后端直连 RPC 或返回 client_rpc_action。
-  在当前 simulator 主线中，backend 还负责启动 helper、等待 ready marker、调用同一个 as_server 的 config.compile、维护 GUI build/runtime queue。
-  不承载 framework/drivers/platform，不直接操作平台 transport，不作为 as_server 的正式实现目录。
+  不承载 framework/drivers/platform，不直接操作真实 A2 transport，不负责 as_server session 生命周期。
 
 cli:
   as_config/as_control/as_play/as_record/as_log/as_dump。
@@ -152,7 +151,7 @@ platform:
   选择 profile、注册平台特定 backend/driver、定义平台默认配置。
 
 audio_controller:
-  Audio Studio 对端 controller 参考实现，承接 controller 协议。simulator 和 A2 直连都可复用 controller 类协议，差异在 data-link driver 与平台 driver ops。
+  Audio Studio 对端 controller 参考实现，承接 controller 协议。A2 直连和 simulator 都可复用 controller 类协议，差异在 data-link driver。
 ```
 
 ---
@@ -161,7 +160,7 @@ audio_controller:
 
 ### 1.1 GUI 目标路径
 
-GUI 已基本开发完成，本文不重新设计 GUI 的 UI 组件路径或视觉风格。正式源码路径如下：
+GUI 已基本开发完成，本文不重新设计 GUI 的 UI 组件路径、UML 或内部页面结构。后续只把当前 GUI 代码归入明确的逻辑子工程：
 
 ```text
 Audio-Studio/GUI/
@@ -1394,7 +1393,7 @@ GUI/backend 不编译 server/framework。
 GUI/backend 不注册 drivers。
 GUI/backend 不包含 platform/a2。
 GUI/backend 不拥有 TransportManager。
-GUI/backend 不直接和 A2 physical transport、7870 tinymix 或 platform device 通信；当前 simulator 主线只通过 helper 启动 audio_controller/as_server，并通过 JSON-RPC 与 as_server 通信。
+GUI/backend 不直接和 A2 physical transport、7870 tinymix、audio_controller peer 通信。
 ```
 
 ---
@@ -2698,7 +2697,7 @@ sequenceDiagram
   RPC-->>CLI: write output/report
 ```
 
-当前 rv32qemu 验证路径使用 `configs/platform/simulator/simulator.json` 生成 simulator topology；A2.json 保留为 A2 profile 示例。编译产物再由 `audio_controller` 的 pipeinstall 安装指定 pipeline。验证点包括：
+当前 rv32qemu 验证路径使用同一个 `A2.json` 生成 `as-config-a2-fileio.tplg`，再由 `audio_controller` 的 pipeinstall 安装指定 pipeline。验证点包括：
 
 - playback pipeline：FILEIO0 -> channel_remap -> delay -> fader_balance -> host，使用生成的 stereo 1 kHz tone，验证 play 链路有非零输出。
 - capture pipeline：host -> channel_remap -> FILEIO0，使用 file input，验证 srecord 链路有非零 capture WAV。
@@ -3327,7 +3326,7 @@ cli/Kconfig
 linux/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake    -> out/linux/a2/as_server_minimal/Debug/as_server
 windows/a2 -> configs/profile/as_server_minimal_defconfig + configs/platform/a2/a2_defconfig -> scripts/cmake/toolchain/windows-mingw.cmake -> out/windows/a2/as_server_minimal/Debug/as_server.exe
 macos/a2   -> configs/profile/as_server_minimal_defconfig + configs/platform/a2/a2_defconfig -> scripts/cmake/toolchain/macos-clang.cmake -> out/macos/a2/as_server_minimal/Debug/as_server
-linux/simulator gui_backend -> configs/profile/gui_backend_defconfig + configs/platform/simulator/simulator_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake -> out/linux/simulator/gui_backend/Release/audio_studio_gui_server
+linux/a2 gui_backend -> configs/profile/gui_backend_defconfig + configs/platform/a2/a2_defconfig -> scripts/cmake/toolchain/linux-gcc.cmake -> out/linux/a2/gui_backend/Release/audio_studio_server
 ```
 
 macOS 构建支持使用 native Clang 工具链，通过 `scripts/cmake/toolchain/macos-clang.cmake` 配置。CI 在 `macos-latest` runner 上验证 macOS driver tests。
@@ -3397,7 +3396,7 @@ Windows 该用 Win32
 
 `as_config` 的目标是把 Audio Studio project JSON 编译为目标平台可消费的配置产物。`A2.json` 是 Audio Studio 第一个测试平台配置和贯穿本文的完整示例，不代表 `as_config` 是 A2 专用工具。
 
-第一阶段示例目标是把 Audio Studio project JSON 编译为 SOF/ALSA topology binary，同时保留 Audio Controller / DSP 需要的 private config。
+第一阶段示例目标是把 `A2.json` 编译为 Linux ALSA/ASoC 可加载的 topology binary，同时保留 A2 Controller / DSP 需要的 private config。
 
 生成的 `a2.tplg` 必须同时满足两类消费者：
 
@@ -7280,7 +7279,7 @@ as_config --input configs/platform/a2/A2.json --out-dir out/as_config/a2 --proje
 
 `as_config` 的目标是把 Audio Studio project JSON 编译为目标平台可消费的配置产物。`A2.json` 是 Audio Studio 第一个测试平台配置和贯穿本文的完整示例，不代表 `as_config` 是 A2 专用工具。
 
-第一阶段示例目标是把 Audio Studio project JSON 编译为 SOF/ALSA topology binary，同时保留 Audio Controller / DSP 需要的 private config。
+第一阶段示例目标是把 `A2.json` 编译为 Linux ALSA/ASoC 可加载的 topology binary，同时保留 A2 Controller / DSP 需要的 private config。
 
 生成的 `a2.tplg` 必须同时满足两类消费者：
 
@@ -7776,878 +7775,6 @@ preset/scene 默认不暴露为 KControl，除非后续显式定义自定义 con
 
 
 ---
-
-
-## 13. 当前落地基线详图：从 GUI 到 SOF Test 的完整闭环
-
-本章是 2026-06-29 的合并基线，用来把旧长文档中的架构构思和当前短文档中的真实实现事实对齐。前文保留了分层原则、RPC facade、driver abstraction、as_config、as_control、as_play/as_record、as_log/as_dump、platform profile、plugin SDK 等历史设计细节；本章明确当前已经落地或必须按当前代码继续演进的主线。
-
-当前主线不是纯 mock GUI，也不是 A2-only 架构，而是：
-
-```text
-GUI/frontend
-  -> GUI/backend HTTP API
-    -> BuildOrchestrator / GuiRuntimeEngine
-      -> as_server JSON-RPC
-        -> framework/config/audio/log/system_info/transport
-          -> drivers/* default implementation
-            -> simulator datalink/audio/log/control device
-              -> audio_controller C peer
-                -> rv32qemu SOF firmware and FILE_IO_DAI
-                  -> SOF audio_studio ASINFO trace
-                    -> LogService interceptor
-                      -> SystemInfoService snapshot
-                        -> GUI dashboard live panels
-```
-
-这条链路里每一层都有清晰边界：GUI backend 是浏览器后端和工作区编排层；`as_server` 是 service 权威；driver 层拥有 OS、socket、pipe、filesystem、datalink、audio、control、log、dump 的具体实现；`audio_controller` 是 simulator/SOF test 侧的 C peer；SOF firmware 只通过 trace、FILE_IO DAI 和 audio_controller 协议暴露运行时事实。
-
-### 13.1 当前第一屏架构图
-
-```mermaid
-flowchart LR
-    subgraph Browser[GUI/frontend]
-        Canvas[Pipeline canvas]
-        Inspector[Inspector]
-        FileIn[File Input]
-        FileOut[File Output]
-        Dashboard[Runtime dashboard]
-    end
-
-    subgraph Backend[GUI/backend]
-        HTTP[HttpServer /api]
-        Workspace[Workspace JSON copy]
-        Build[BuildOrchestrator]
-        Runtime[GuiRuntimeEngine]
-        Queue[Playback queue]
-    end
-
-    subgraph Server[as_server]
-        RPC[JsonRpcServer]
-        Config[ConfigService]
-        Audio[AudioService]
-        Log[LogService]
-        SysInfo[SystemInfoService]
-        Transport[TransportManager]
-    end
-
-    subgraph Sim[Simulator platform]
-        Datalink[SimulatorDatalinkDevice]
-        AC[audio_controller]
-        SOF[rv32qemu SOF]
-        FileIO[SOF FILE_IO_DAI]
-    end
-
-    Canvas --> HTTP
-    Inspector --> HTTP
-    FileIn --> HTTP
-    FileOut --> HTTP
-    Dashboard --> HTTP
-    HTTP --> Workspace
-    HTTP --> Build
-    HTTP --> Runtime
-    Runtime --> Queue
-    Build --> RPC
-    Runtime --> RPC
-    RPC --> Config
-    RPC --> Audio
-    RPC --> Log
-    RPC --> SysInfo
-    Audio --> Transport
-    Log --> Transport
-    Transport --> Datalink
-    Datalink --> AC
-    AC --> SOF
-    SOF --> FileIO
-    SOF -- ASINFO trace --> Log
-    Log -- intercept ASINFO --> SysInfo
-```
-
-### 13.2 What It Is / What It Is Not
-
-Audio Studio 是一个可以把产品 JSON 编译成 SOF topology、启动 simulator、通过前端播放/录制 WAV、展示 DSP runtime 信息，并给 CLI 提供同一套 JSON-RPC 能力的工具链壳层。它的核心价值是把 GUI 友好的操作模型、server 侧 RPC service、driver abstraction、audio_controller 对端协议和 SOF test 环境连接起来。
-
-它不是以下东西：
-
-```text
-1. 不是纯前端 mock demo。
-   当前 GUI build/load/run 已经接入 as_server、rv32qemu helper、audio_controller 和 SOF FILE_IO_DAI。
-
-2. 不是第二套 as_server。
-   GUI/backend 只负责 HTTP API、workspace、build/runtime queue、浏览器状态语义和调试辅助。
-
-3. 不是 platform-specific backend 大杂烩。
-   OS/socket/filesystem/audio/log/datalink 访问都应在 drivers/framework/platform 层完成。
-
-4. 不是旧 rv32qemu 专属命名架构。
-   公共 profile 使用 simulator 命名；rv32qemu 是当前 simulator 后端和验证环境。
-
-5. 不是独立 Client SDK 产品。
-   C++/JS typed facade 和 remote handle 是 rpc 内部适配层，服务于 GUI、CLI、测试和 server，不形成另一个发布层。
-```
-
-### 13.3 当前目录职责图
-
-```mermaid
-flowchart TB
-    Root[Audio-Studio]
-    Root --> GUI[GUI]
-    GUI --> FE[frontend: HTML/CSS/JS UI]
-    GUI --> BE[backend: HTTP + orchestration]
-    Root --> RPC[rpc: JSON-RPC codec/registry/transport]
-    Root --> Drivers[drivers: interface + default implementations]
-    Root --> Server[server]
-    Server --> AsServer[as_server main]
-    Server --> Framework[framework services]
-    Server --> Platform[platform adapters]
-    Root --> CLI[cli: as_* frontends]
-    Root --> AC[audio_controller: C peer]
-    Root --> Configs[configs: catalog + platform JSON]
-    Root --> Tests[tests: frontend/backend/RPC/e2e contracts]
-
-    Framework --> ConfigSvc[config]
-    Framework --> AudioSvc[audio]
-    Framework --> ControlSvc[control]
-    Framework --> LogSvc[log]
-    Framework --> DumpSvc[dump]
-    Framework --> SystemSvc[system_info]
-    Framework --> TransportSvc[transport]
-
-    Platform --> SimPlatform[simulator]
-    Platform --> A2Platform[a2]
-```
-
-当前正式源码目录以 `GUI/frontend` 和 `GUI/backend` 为准。历史根目录 `frontend/`、`backend/` 只能作为兼容 URL 或迁移说明出现，不能重新作为活跃源码树。
-
-### 13.4 Product JSON 当前模型
-
-当前 JSON 原则是“简洁、无冗余、不丢 tplg 编译所需信息、不破坏 plugins 扩展”。核心输入包括：
-
-```text
-configs/platform/simulator/simulator.json
-configs/platform/a2/A2.json
-configs/built-in-algorithm.json
-plugins/*/module catalog
-```
-
-顶层 section：
-
-```json
-{
-  "meta": {},
-  "imports": [],
-  "resource_catalog": {},
-  "module_types": [],
-  "pipelines": [],
-  "frontend_connections": [],
-  "presets": []
-}
-```
-
-语义边界：
-
-```text
-imports:
-  加载共享 catalog，例如 configs/built-in-algorithm.json。
-
-resource_catalog:
-  描述 compute/core/memory 等资源。simulator 当前只需要 audio_core0。
-
-module_types:
-  平台私有或三方插件扩展；built-in 模块来自 import catalog。
-
-pipelines:
-  唯一的 SOF graph 描述，as_config/config.compile 只消费这部分和必要 catalog/preset。
-
-frontend_connections:
-  GUI-only runtime/layout 连接，描述 File Input/File Output 和 HOST external port 的关系；as_config 忽略。
-
-presets:
-  参数 preset，包括 inspector_preset。
-```
-
-旧 `module_instances` 已取消。node 同时承担实例和布局节点角色；HOST/DAI 的 binding/endpoints 都放在 node params 中，不恢复 parallel section。
-
-```mermaid
-classDiagram
-    class ProjectJson {
-      +meta
-      +imports[]
-      +resource_catalog
-      +module_types[]
-      +pipelines[]
-      +frontend_connections[]
-      +presets[]
-    }
-    class Pipeline {
-      +pipeline_id
-      +nodes[]
-      +edges[]
-    }
-    class Node {
-      +node_id
-      +name
-      +module_type
-      +params
-      +ui
-    }
-    class FrontendConnection {
-      +pipeline_id
-      +nodes[]
-      +edges[]
-    }
-    class Preset {
-      +preset_id
-      +values
-    }
-    ProjectJson --> Pipeline
-    ProjectJson --> FrontendConnection
-    ProjectJson --> Preset
-    Pipeline --> Node
-    FrontendConnection --> Node
-```
-
-### 13.5 Build / Load / Run 状态机
-
-参数生命周期只有三态，且这三态同时约束 GUI button、Inspector settable policy、backend runtime state 和保存策略：
-
-```text
-PIPE_UNLOADED  # build/load 前可改
-PIPE_LOADED    # build/load 后、RUN 前可改
-PIPE_RUNNING   # RUN 中可改
-```
-
-```mermaid
-stateDiagram-v2
-    [*] --> PIPE_UNLOADED
-    PIPE_UNLOADED --> BUILDING: Build clicked
-    BUILDING --> PIPE_LOADED: config.compile + pipeinstall ok
-    BUILDING --> PIPE_UNLOADED: compile/helper/pipeinstall failed
-    PIPE_LOADED --> PIPE_RUNNING: Run selected pipeline
-    PIPE_RUNNING --> PIPE_LOADED: Stop or EOS drained
-    PIPE_LOADED --> PIPE_UNLOADED: Unload
-    PIPE_RUNNING --> PIPE_LOADED: runtime error cleanup
-```
-
-Build 语义：
-
-```text
-1. Build 永远按当前 layout 的所有 working groups 一起编译。
-2. 前端只选中一个 pipeline 时，也不能只让一个 pipeline 变 Loaded。
-3. 任一 pipeline 编译或安装失败，Build 整体失败。
-4. Build 成功后所有 pipeline 从 PIPE_UNLOADED 同步变为 PIPE_LOADED。
-5. Play/Record 是独立运行，RUN 只针对当前 selected working group。
-6. Save 只有最近一次 build 成功后才允许写回源 JSON。
-```
-
-### 13.6 GUI/backend 启动配置与依赖注入
-
-backend 不再从环境变量猜路径，统一通过 argv/config 注入。当前 simulator 主线示例：
-
-```bash
-out/linux/simulator/gui_backend/Debug/audio_studio_gui_server . 8080 \
-  --as-server out/linux/simulator/rpc_socket/Debug/as_server \
-  --alsatplg third_party/alsatplg/bin/alsatplg \
-  --as-server-host 127.0.0.1 \
-  --as-server-port 9900 \
-  --helper-python python3 \
-  --helper-script ../application/rv32qemu/sof-build-test.py \
-  --as-log out/linux/simulator/rpc_socket/Debug/as_log \
-  --trace-ldc ../application/rv32qemu/build/sof.ldc \
-  --audio-driver-factory simulator
-```
-
-`BackendRuntimeConfig` 在 `GUI/backend/src/main.cpp` 里解析，然后注入：
-
-```text
-BuildOrchestrator:
-  as_server path, alsatplg path, helper path, RPC host/port, platform project paths.
-
-GuiRuntimeEngine:
-  as_server host/port, audio driver factory, playback/capture runtime options, systemInfo polling options.
-
-HttpServer:
-  document root, compatibility static routes, API route table, workspace manager.
-```
-
-```mermaid
-classDiagram
-    class BackendRuntimeConfig {
-      +document_root
-      +listen_port
-      +as_server_path
-      +alsatplg_path
-      +as_server_host
-      +as_server_port
-      +helper_python
-      +helper_script
-      +as_log_path
-      +trace_ldc
-      +audio_driver_factory
-      +qemu_gdb_port
-      +qemu_gdb_wait
-    }
-    class HttpServer
-    class BuildOrchestrator
-    class GuiRuntimeEngine
-    class WorkspaceManager
-    BackendRuntimeConfig --> HttpServer
-    BackendRuntimeConfig --> BuildOrchestrator
-    BackendRuntimeConfig --> GuiRuntimeEngine
-    HttpServer --> WorkspaceManager
-    HttpServer --> BuildOrchestrator
-    HttpServer --> GuiRuntimeEngine
-```
-
-### 13.7 BuildOrchestrator 实现方式
-
-GUI Build 的 server 生命周期由 `BuildOrchestrator` 和 `application/rv32qemu/sof-build-test.py` helper 共同管理。
-
-```mermaid
-sequenceDiagram
-    participant FE as GUI/frontend
-    participant HTTP as GUI/backend HttpServer
-    participant BO as BuildOrchestrator
-    participant H as rv32qemu helper
-    participant AS as as_server
-    participant AC as audio_controller
-    participant SOF as rv32qemu SOF
-
-    FE->>HTTP: POST /api/pipeline/build(layout snapshot)
-    HTTP->>BO: buildPipeline(snapshot)
-    BO->>BO: stop old helper/session
-    BO->>H: start helper --gui-keep-alive
-    H->>AS: launch unique as_server socket
-    H-->>BO: write audio_studio_as_server.ready
-    BO->>AS: JSON-RPC config.compile
-    AS-->>BO: tplg + report + artifacts
-    BO->>H: write audio_studio_test_list.txt
-    H->>AC: ac_run over datalink
-    H->>SOF: trace on
-    H->>AC: pipeinstall compiled tplg
-    H-->>BO: write audio_studio_validation.ready
-    BO-->>HTTP: PIPE_LOADED + updated workspace
-    HTTP-->>FE: build success
-```
-
-步骤展开：
-
-```text
-1. GET /api/config 拷贝源 JSON 到 /tmp/audio-studio-gui-workspaces/...。
-2. 前端提交完整 layout snapshot。
-3. backend 合并 pipelines[] 与 frontend_connections[]。
-4. backend strip 临时 audio_studio_gui 后用于 compile。
-5. SocketConfigCompileClient 调用 as_server config.compile。
-6. compile 成功后生成 SOF test list: ac_run -> trace on -> pipeinstall <tplg>。
-7. ProcessValidationRunner 调用 sof-build-test.py --audio-controller-log --gui-keep-alive。
-8. helper 在 pipeinstall 成功后写 ready marker。
-9. backend 返回 PIPE_LOADED 并保留 helper/as_server/QEMU/audio_controller session。
-10. Unload 停止 validation 进程组，返回 PIPE_UNLOADED。
-```
-
-### 13.8 GUI/runtime audio 数据面
-
-Playback 使用 backend queue，capture 使用前端 polling。这样 File Input 不会因为单次 RPC 写入阻塞 UI；File Output 也不会在 backend 中积压无界数据。
-
-```mermaid
-sequenceDiagram
-    participant UI as Frontend File Input
-    participant HTTP as GUI Backend HTTP
-    participant Q as Playback Queue
-    participant RPC as AudioRpcClient
-    participant AS as as_server
-    participant SOF as SOF FILE_IO_DAI
-
-    UI->>HTTP: POST /api/runtime/run(playback params)
-    HTTP->>AS: audio.createPlaybackSession
-    HTTP->>AS: audio.startPlayback
-    UI->>HTTP: POST /api/runtime/audio/playback/stream(binary PCM)
-    HTTP->>Q: enqueue frame
-    HTTP-->>UI: accepted + queued_audio_ms + next_push_ms
-    UI->>HTTP: POST /api/runtime/audio/playback/frame(metadata)
-    HTTP-->>UI: accepted/stalled/blocked_edge_key
-    loop worker thread
-        Q->>RPC: pop frame
-        RPC->>AS: audio.writePlayback
-        AS->>SOF: audio_controller stream write
-    end
-    UI->>HTTP: POST /api/runtime/audio/playback/eos
-    HTTP->>Q: wait queue empty + drain
-    HTTP->>AS: close playback session
-    HTTP-->>UI: EOS drained
-```
-
-```mermaid
-sequenceDiagram
-    participant UI as Frontend File Output
-    participant HTTP as GUI Backend HTTP
-    participant AS as as_server
-    participant SOF as SOF FILE_IO_DAI
-
-    UI->>HTTP: POST /api/runtime/run(capture params)
-    HTTP->>AS: audio.createCaptureSession
-    HTTP->>AS: audio.startCapture
-    loop timer
-        UI->>HTTP: GET /api/runtime/audio/capture/frame?max_bytes=N
-        HTTP->>AS: audio.readCapture
-        AS->>SOF: audio_controller stream read
-        HTTP-->>UI: data_base64 + next_poll_ms
-    end
-    UI->>HTTP: POST /api/runtime/stop
-    HTTP->>AS: close capture session
-```
-
-堵塞判断分两层：
-
-```text
-backend queue layer:
-  queue bytes 超过高水位、RPC 未就绪、worker 100ms 没有 dequeue 时，frame response 直接 stalled。
-
-SOF system-info layer:
-  backend 通过 systemInfo.buffers 检查 SOF buffer produced/consumed bytes。
-  同一 buffer consumed_bytes 连续 100ms 不变，或 SOF 明确上报 stalled:true，返回 blocking_source="system_info"。
-```
-
-### 13.9 as_server service 分层
-
-```mermaid
-classDiagram
-    class JsonRpcServer {
-      +serveConnection()
-      +dispatch(method, params)
-    }
-    class RpcApiRegistry {
-      +registerMethods()
-      +describe()
-    }
-    class RpcRuntimeContext {
-      +audio()
-      +config()
-      +log()
-      +systemInfo()
-      +driverManager()
-    }
-    class ConfigService
-    class AudioService
-    class ControlService
-    class LogService
-    class DumpService
-    class SystemInfoService
-    class TransportManager
-    class DriverManager
-
-    JsonRpcServer --> RpcApiRegistry
-    JsonRpcServer --> RpcRuntimeContext
-    RpcRuntimeContext --> ConfigService
-    RpcRuntimeContext --> AudioService
-    RpcRuntimeContext --> ControlService
-    RpcRuntimeContext --> LogService
-    RpcRuntimeContext --> DumpService
-    RpcRuntimeContext --> SystemInfoService
-    RpcRuntimeContext --> DriverManager
-    AudioService --> TransportManager
-    ControlService --> DriverManager
-    LogService --> DriverManager
-    DumpService --> DriverManager
-    TransportManager --> DriverManager
-```
-
-`as_server` 是真正 service 宿主。它拥有：
-
-```text
-1. JSON-RPC method registry。
-2. RpcRuntimeContext。
-3. framework service 实例。
-4. driver manager 与 factory registry。
-5. platform registry。
-6. session registry。
-7. transport logical channels。
-8. System Info snapshot pump。
-```
-
-GUI/backend、CLI 和测试都不绕过 `as_server` 直接访问 framework service。需要本地离线运行的 `as_config` 可以作为例外直接调用 ConfigService，但它必须与 `config.compile` 共用编译核心。
-
-### 13.10 RPC API 单点定义与 typed facade
-
-业务 RPC API 的唯一手写 contract 文件是：
-
-```text
-rpc/api/audio_studio_rpc_api.cpp
-```
-
-新增或修改 API 时，同一个 block 应同时定义：
-
-```text
-method name
-summary / service / version
-request params schema 或 typed request struct
-result schema 或 typed result struct
-server handler
-typed C++ facade method
-HTML/JS facade method
-CLI tool/action mapping
-smoke test params
-permission / allowlist / placement policy
-documentation description
-```
-
-业务代码应该使用 typed facade 和 remote handle：
-
-```cpp
-AudioRpcClient audio(rpc_client);
-
-auto playback = audio.createPlaybackSession({
-  .sample_rate = 48000,
-  .channels = 2,
-  .bytes_per_sample = 2,
-});
-
-playback.start();
-playback.writeFrames(pcm_bytes, {.timeout_ms = 1000});
-playback.drain();
-playback.stop();
-playback.close();
-```
-
-而不是在页面组件、CLI tool main 或 server main 中散落拼接：
-
-```text
-jsonRpcCall("audio.writePlayback", {"session_id": "..."})
-```
-
-这种裸调用只允许存在于 transport、typed facade、registry smoke test 或低层 RPC 测试中。
-
-### 13.11 System Info 与 ASINFO trace
-
-SOF 侧 `sof/src/audio_studio/` 是可 Kconfig 控制的模块。它基于 ll task 周期输出运行时信息，统一前导为：
-
-```c
-#define AUDIO_STUDIO_INFO_PREFIX "ASINFO|"
-```
-
-输出示例：
-
-```text
-ASINFO|heartbeat|seq=42|timestamp_ms=123400
-ASINFO|core|id=0|freq_mhz=600|load_percent=37.5
-ASINFO|module|id=PLAYBACK_MAIN__VOLUME|pipeline=PLAYBACK_MAIN|state=ACTIVE|core=0|cpu_percent=1.2|memory_bytes=4096|latency_ms=0.7
-ASINFO|buffer|id=HOST_IN.out->CHREMAP.in|from=HOST_IN.out|to=CHREMAP.in|size_bytes=8192|avail_bytes=2048|produced_bytes=4800|consumed_bytes=4700
-ASINFO|heap|category=runtime|index=0|block_size=256|free_count=5|total_count=64|used_bytes=15104|free_bytes=1280
-```
-
-`LogService` 拦截 `ASINFO|`，交给 `SystemInfoService`，不进入普通 `as_log` 输出。
-
-```mermaid
-sequenceDiagram
-    participant SOF as SOF trace producer
-    participant LD as LDC decoder
-    participant Log as LogService
-    participant SI as SystemInfoService
-    participant GUI as GUI dashboard
-    participant CLI as as_log
-
-    SOF->>LD: raw trace event
-    LD->>Log: decoded line
-    alt ASINFO line
-        Log->>SI: consumeLogEntry(entry)
-        SI->>SI: update snapshot
-        Log--xCLI: hidden from ordinary log stream
-        GUI->>SI: systemInfo.snapshot/components/buffers/health
-    else ordinary firmware log
-        Log->>Log: append ordinary entry
-        CLI->>Log: log.readEntries
-        Log-->>CLI: decoded ordinary entry
-    end
-```
-
-1s 没有 heartbeat 时，snapshot 变为 disconnected，并清空 modules/buffers/heap runtime 值，避免 UI 展示历史状态。
-
-### 13.12 drivers 的实现方式和原则
-
-driver 层分三部分：
-
-```text
-interface:
-  放在 drivers/<domain>/include 或 drivers/include，定义最小抽象接口。
-
-default implementation:
-  POSIX/Win32/CoreAudio/WASAPI/ALSA/socket/pipe/filesystem/datalink 等实现。
-
-factory/registry:
-  DriverManager 按 profile、Kconfig、runtime args 和 platform adapter 选择实现。
-```
-
-```mermaid
-classDiagram
-    class DriverManager {
-      +registerAudioFactory(name, factory)
-      +registerLogFactory(name, factory)
-      +registerDatalinkFactory(name, factory)
-      +createAudioDevice(name, options)
-      +createLogDevice(name, options)
-      +createDatalinkDevice(name, options)
-    }
-    class IAudioDevice {
-      <<interface>>
-      +createPlaybackSession(format)
-      +writePlayback(session, bytes)
-      +readCapture(session, maxBytes)
-      +close(session)
-    }
-    class ILogDevice {
-      <<interface>>
-      +openSession(options)
-      +readEntries(max)
-      +close(session)
-    }
-    class IDataLinkDevice {
-      <<interface>>
-      +open(endpoint)
-      +readFrame(timeout)
-      +writeFrame(frame)
-      +close()
-    }
-    class SimulatorAudioDevice
-    class SimulatorLogDevice
-    class SimulatorDatalinkDevice
-    class HostAlsaAudioDevice
-    class WasapiAudioDevice
-
-    DriverManager --> IAudioDevice
-    DriverManager --> ILogDevice
-    DriverManager --> IDataLinkDevice
-    SimulatorAudioDevice ..|> IAudioDevice
-    HostAlsaAudioDevice ..|> IAudioDevice
-    WasapiAudioDevice ..|> IAudioDevice
-    SimulatorLogDevice ..|> ILogDevice
-    SimulatorDatalinkDevice ..|> IDataLinkDevice
-```
-
-关键规则：
-
-```text
-1. framework 不直接调用 OS API。
-2. framework 不直接 include platform 私有头文件。
-3. OS-specific 行为放 drivers/os、drivers/filesystem、drivers/socket、drivers/pipe 等。
-4. simulator 特有行为放 platform/simulator 或 drivers/* 的 simulator implementation。
-5. A2/7870 行为是可选 platform extension，不污染 simulator 主线。
-6. GUI/backend 不写 __APPLE__/WIN32/readlink/socket/fifo 细节；需要能力时扩展 driver interface。
-```
-
-### 13.13 audio_controller C peer
-
-`audio_controller` 是 simulator/SOF test 侧的 C endpoint。它接收来自 datalink 的控制帧，执行 pipeinstall、audio playback/capture、log/control/dump 等 controller 协议。
-
-```mermaid
-classDiagram
-    class ac_context {
-      +ops
-      +slots[]
-      +transport
-      +command_dispatch
-    }
-    class ac_driver_ops {
-      <<struct>>
-      +alloc(size)
-      +free(ptr)
-      +file_open(path, mode)
-      +file_read(file, buf, len)
-      +file_write(file, buf, len)
-      +time_ms()
-      +sleep_ms(ms)
-    }
-    class ac_transport {
-      +read_frame()
-      +write_frame()
-    }
-    class ac_audio_slot {
-      +host_pages
-      +stream_state
-      +format
-      +drain_state
-    }
-    class SOFHostPages
-    class FileIODAI
-
-    ac_context --> ac_driver_ops
-    ac_context --> ac_transport
-    ac_context --> ac_audio_slot
-    ac_audio_slot --> SOFHostPages
-    SOFHostPages --> FileIODAI
-```
-
-实现原则：
-
-```text
-1. 不直接 malloc/free；slot 初始化时由上层传入 memory ops。
-2. 不直接绑定 host 文件系统；file/time/transport 都通过 ops。
-3. HOST PTABLE 模式只分配两个 4K pages。
-4. period * period_bytes 逻辑只保留给非 HOST PTABLE。
-5. Playback EOS 后使用 drain flush，保证尾部 PCM 被 FILE_IO_DAI 写出。
-6. simulator 和 A2 直连复用 controller 协议，差异只在 datalink device 和 platform ops。
-```
-
-### 13.14 rv32qemu / sof_test 集成
-
-VASS 侧集成点：
-
-```text
-application/rv32qemu/sof-build-test.py
-  构建/运行 rv32qemu SOF firmware，支持 audio-controller-log、gui-keep-alive、ready marker、QEMU gdbstub。
-
-Misc/sof_test/sof-test-run.py
-  SOF test runner，按 test-list 执行 ac_run、trace on、pipeinstall、splay/srecord 等命令。
-
-Misc/sof_test/simple_test/*.txt
-  test-list fixtures，包括 tplg-splay、rv32qemu-as-log、audio-controller、FILE_IO capacity 等。
-
-sof/src/audio_studio/audio_studio.c
-  ASINFO producer。
-
-sof/src/drivers/file_io/*
-  FILE_IO DAI DMA、WAV reader/writer、playback/capture sink/source。
-```
-
-```mermaid
-flowchart TB
-    BuildOrch[GUI BuildOrchestrator]
-    Helper[application/rv32qemu/sof-build-test.py]
-    TestRun[Misc/sof_test/sof-test-run.py]
-    TestList[audio_studio_test_list.txt]
-    Cmd1[ac_run]
-    Cmd2[trace on]
-    Cmd3[pipeinstall compiled.tplg]
-    QEMU[rv32qemu firmware]
-    AC[audio_controller]
-    SOF[SOF runtime]
-    ASINFO[ASINFO trace]
-
-    BuildOrch --> Helper
-    BuildOrch --> TestList
-    Helper --> TestRun
-    TestRun --> TestList
-    TestList --> Cmd1
-    TestList --> Cmd2
-    TestList --> Cmd3
-    Cmd1 --> AC
-    Cmd2 --> QEMU
-    Cmd3 --> AC
-    AC --> SOF
-    SOF --> ASINFO
-```
-
-helper lifecycle：
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Starting: backend starts helper
-    Starting --> AsServerReady: as_server socket ready marker
-    AsServerReady --> CompileReady: backend config.compile ok
-    CompileReady --> SofTestRunning: sof-test-run launched
-    SofTestRunning --> ValidationReady: pipeinstall ok marker
-    ValidationReady --> KeepAlive: simulator/as_server/audio_controller stay resident
-    KeepAlive --> Stopping: Unload / build restart / backend exit
-    Starting --> Failed: as_server/helper failed
-    AsServerReady --> Failed: config.compile failed
-    SofTestRunning --> Failed: pipeinstall/test failed
-    Failed --> Stopping
-    Stopping --> Idle
-```
-
-### 13.15 VSCode full-stack debug
-
-根 `.vscode` 覆盖：
-
-```text
-1. GUI frontend Chrome。
-2. GUI backend C++。
-3. as_server attach/debug。
-4. simulator keep-alive。
-5. QEMU gdbstub + RISC-V gdb attach。
-```
-
-当前 debug 规则：
-
-```text
-Audio Studio GUI: Simulator Keep Alive:
-  通过 helper 给 QEMU 增加 -gdb tcp::<port> 和可选 -S。
-  backend 通过 --qemu-gdb-port、--qemu-gdb-wait 传递参数。
-
-Audio Studio GUI: as_server Debug:
-  不直接启动第二个 as_server。
-  等待 frontend Build 触发 backend/helper 创建唯一 as_server。
-  audio-studio-wait-as-server-debug.sh 对该 PID 启动 gdbserver --attach。
-  cpptools 通过 miDebuggerServerAddress 连接 gdbserver。
-```
-
-这样可以避免两个 `as_server` 抢 socket/datalink，也避免手写 GDB attach 命令带来的 target architecture 初始化错误。
-
-### 13.16 HTTP API 当前职责
-
-| Method | Path | 主要职责 |
-|---|---|---|
-| GET | `/api/projects` | 列出 `configs/platform/*/*.json` |
-| GET | `/api/config?project=simulator/simulator.json` | 创建 workspace copy 并返回 config |
-| POST | `/api/pipeline/build` | 全 layout build/load，调用 `config.compile` 与 helper validation |
-| POST | `/api/pipeline/unload` | 停止 keep-alive simulator/helper/as_server session |
-| POST | `/api/runtime/run` | 选中 pipeline RUN，创建 playback/capture session |
-| POST | `/api/runtime/audio/playback/stream` | File Input 二进制 PCM 数据面 |
-| POST | `/api/runtime/audio/playback/frame` | File Input frame 元信息、backpressure、blocking edge |
-| POST | `/api/runtime/audio/playback/eos` | EOS，drain queue 后关闭 playback |
-| GET | `/api/runtime/audio/capture/frame` | File Output 从 as_server capture stream 拉 PCM |
-| POST | `/api/runtime/stop` | 停止 selected pipeline runtime |
-| POST | `/api/runtime/file-io-dai/input` | 给 FILE_IO_DAI capture/source 阶段 WAV |
-| GET | `/api/runtime/file-io-dai/output` | 读取 FILE_IO_DAI playback/sink 输出 WAV |
-| GET | `/api/algorithm/cost/live` | PER-ALGORITHM COST，来自 SystemInfoService |
-| GET | `/api/dsp/core/loading` | DSP CORE LOADING，来自 SystemInfoService |
-| GET | `/api/system/health/live` | SYSTEM HEALTH，来自 SystemInfoService |
-| POST | `/api/param/update` | RUN 中参数更新入口，当前返回 pending_as_control |
-| POST | `/api/project/save` | 写回源 JSON，strip `audio_studio_gui` |
-
-### 13.17 对旧设计内容的保留和废弃规则
-
-从旧长文档恢复时，按以下规则处理历史内容：
-
-```text
-保留：
-  分层原则、driver abstraction、RPC registry、typed facade、remote handle、session lifecycle、stream descriptor、as_config IR、private data、KControl 映射、SOF logger/probe 参考、audio_controller protocol、platform profile 设计。
-
-改写：
-  A2-only 叙述改为 platform profile 示例；当前 GUI live path 以 simulator/rv32qemu 为主线。
-  mock runtime 叙述改为 legacy test double；真实 runtime 是 BuildOrchestrator + GuiRuntimeEngine + as_server。
-  旧 validation 前缀参数名改为 helper/as-log/trace-ldc/qemu-gdb-* 当前命名。
-  Client SDK 叙述改为 rpc 内部 typed facade，不形成独立发布层。
-
-删除/不再作为主线：
-  根 frontend/backend 源码目录。
-  GUI/backend/server/framework 或 backend/drivers 这类嵌套正式 server 结构。
-  module_instances 旧实例表。
-  backend 从环境变量猜测依赖路径。
-  让 GUI/backend 绕过 as_server 直接操作平台资源。
-```
-
-### 13.18 当前验证矩阵
-
-文档类改动至少应验证：
-
-```bash
-python3 - <<'PY'
-from pathlib import Path
-p = Path('docs/audio_studio_framework_design.md')
-text = p.read_text()
-assert 'GUI/backend/server/framework' not in text or '错误：' in text
-assert 'module_instances' in text
-assert '--helper-script' in text
-assert '--' + 'validation-' not in text
-assert text.count('```mermaid') >= 20
-print('audio studio design doc contract ok')
-PY
-
-git diff --check -- docs/audio_studio_framework_design.md docs/audio_studio_framework_design_legacy_9d3f67c.md docs/audio_studio_framework_design_2026-06-29_slim.md
-```
-
-工程验证按改动范围选择：纯文档恢复不强制重跑 simulator；如果同步改了 GUI/backend、as_server、audio_controller 或 VASS helper，则必须补充对应单测、`ctest` 和 rv32qemu smoke。
 
 ## 附录 B：文档落地检查清单
 
